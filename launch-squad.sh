@@ -36,5 +36,6 @@ if [ "$CAPTAIN" = "claude" ]; then
         "$@"
 else
     exec codex \
+        --dangerously-bypass-approvals-and-sandbox \
         "$@"
 fi

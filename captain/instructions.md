@@ -53,9 +53,11 @@ To launch a sub-squad:
 2. Create a tmux window in your own worker session for the sub-captain to live in.
 3. Send the launch command:
    ```
-   SQUAD_SESSION=sub-refactor SQUAD_CAPTAIN=claude /opt/squad/launch-squad.sh "Refactor the authentication module to use JWT"
+   SQUAD_SESSION=sub-refactor SQUAD_CAPTAIN=codex /opt/squad/launch-squad.sh "Refactor the authentication module to use JWT"
    ```
 4. Monitor the sub-captain like any other worker — capture its pane output to check progress.
+
+**Important:** Sub-squad captains must always be `codex`. Two concurrent `claude` processes cannot run in the same container due to CLI lock conflicts.
 
 The sub-captain will get its own tmux session for its workers and manage them independently. You just watch the sub-captain and relay status to the human.
 
