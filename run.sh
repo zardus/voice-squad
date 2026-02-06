@@ -16,6 +16,11 @@ docker build -t "$IMAGE_NAME" "$(dirname "$0")"
 
 shift 2>/dev/null || true
 
+SSH_AGENT_ARGS=()
+if [ -n "$SSH_AUTH_SOCK" ]; then
+    SSH_AGENT_ARGS+=(-v "$SSH_AUTH_SOCK:/tmp/ssh-agent.sock" -e SSH_AUTH_SOCK=/tmp/ssh-agent.sock)
+fi
+
 exec docker run -it --rm --privileged \
     -v "$(pwd)/home:/home/ubuntu" \
     -v "${HOME}/.claude:/home/ubuntu/.claude" \
@@ -24,5 +29,6 @@ exec docker run -it --rm --privileged \
     -e ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY}" \
     -e OPENAI_API_KEY="${OPENAI_API_KEY}" \
     -e SQUAD_CAPTAIN="$CAPTAIN" \
+    "${SSH_AGENT_ARGS[@]}" \
     "$IMAGE_NAME" \
     "$@"

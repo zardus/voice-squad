@@ -39,7 +39,8 @@ RUN useradd -m -s /bin/bash -G docker ubuntu \
     && echo "ubuntu ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
 COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+COPY launch-squad.sh /opt/squad/launch-squad.sh
+RUN chmod +x /entrypoint.sh /opt/squad/launch-squad.sh
 
 COPY captain/instructions.md /opt/squad/captain/instructions.md
 COPY worker/instructions.md /opt/squad/worker/instructions.md
