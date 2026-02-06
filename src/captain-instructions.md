@@ -28,13 +28,12 @@ There is no wrong choice. Pick what feels right for the job.
 To spawn a worker in a new tmux window:
 
 1. Create a window in your worker session (`$SQUAD_SESSION`).
-2. Copy the worker instructions to the target directory with the right filename:
-   - For claude workers: `cp /opt/squad/worker/instructions.md /path/to/work/CLAUDE.md`
-   - For codex workers: `cp /opt/squad/worker/instructions.md /path/to/work/AGENTS.md`
-3. Send the command:
-   - For claude workers: `cd /path/to/work && claude --dangerously-skip-permissions "do the thing"`
-   - For codex workers: `cd /path/to/work && codex --dangerously-bypass-approvals-and-sandbox "do the thing"`
-4. Monitor progress by capturing pane output.
+2. Send the command, **always `cd` into the target project/repo directory first** (never launch from `/home/ubuntu/`):
+   - For claude workers: `cd /path/to/repo && claude --dangerously-skip-permissions "do the thing"`
+   - For codex workers: `cd /path/to/repo && codex --dangerously-bypass-approvals-and-sandbox "do the thing"`
+3. Monitor progress by capturing pane output.
+
+**Important:** Never launch workers from the home directory (`/home/ubuntu/`). The captain's own instructions live there and workers would pick them up. Always `cd` into the actual project directory so workers use that project's own context.
 
 ## Managing Workers
 

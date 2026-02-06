@@ -43,7 +43,6 @@ COPY launch-squad.sh /opt/squad/launch-squad.sh
 RUN chmod +x /entrypoint.sh /opt/squad/launch-squad.sh
 
 COPY captain-instructions.md /opt/squad/captain/instructions.md
-COPY worker-instructions.md /opt/squad/worker/instructions.md
 COPY mcp-config.json /opt/squad/mcp-config.json
 
 USER ubuntu

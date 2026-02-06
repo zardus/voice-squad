@@ -28,7 +28,6 @@ All build/runtime files live in `src/`:
 - `entrypoint.sh` — Starts dockerd, fixes permissions, calls launch-squad.sh
 - `launch-squad.sh` — Configures captain type, creates tmux worker session, starts captain CLI. Also used to launch sub-squads from within a running squad.
 - `captain-instructions.md` — Injected as CLAUDE.md/AGENTS.md for the captain agent at runtime
-- `worker-instructions.md` — Copied into worker directories before spawning workers
 - `mcp-config.json` — Gives the captain access to tmux via the `tmux-mcp` npm package
 
 `run.sh` at the root is the host-side entry point.
