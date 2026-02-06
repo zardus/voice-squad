@@ -1,3 +1,5 @@
+model = "gpt-5.3-codex"
+
 [mcp_servers.tmux]
 command = "npx"
 args = ["-y", "tmux-mcp"]
