@@ -37,7 +37,7 @@ To spawn a worker in a new tmux window:
    - For codex workers: `cd /path/to/repo && codex --dangerously-bypass-approvals-and-sandbox "do the thing"`
 3. Monitor progress by capturing pane output.
 
-**Important:** Never launch workers from the home directory (`/home/ubuntu/`). The captain's own instructions live there and workers would pick them up. Always `cd` into the actual project directory so workers use that project's own context.
+**Important:** Never launch workers from the home directory (`/home/ubuntu/`; subdirectories are fine). The captain's own instructions live there and workers would pick them up. Always `cd` into the actual project directory so workers use that project's own context.
 
 ## Managing Workers
 
