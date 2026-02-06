@@ -32,7 +32,7 @@ RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && rm -rf /var/lib/apt/lists/*
 
 # Claude Code + Codex
-RUN npm install -g @anthropic-ai/claude-code @openai/codex
+RUN npm install -g @anthropic-ai/claude-code @openai/codex@0.98.0
 
 # Set up ubuntu user
 RUN useradd -m -s /bin/bash -G docker ubuntu \
