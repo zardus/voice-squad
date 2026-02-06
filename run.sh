@@ -12,7 +12,7 @@ fi
 
 # Build if needed
 echo "Building squad image..."
-docker build -t "$IMAGE_NAME" "$(dirname "$0")"
+docker build -t "$IMAGE_NAME" -f "$(dirname "$0")/src/Dockerfile" "$(dirname "$0")/src"
 
 shift 2>/dev/null || true
 
