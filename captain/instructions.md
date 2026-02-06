@@ -31,7 +31,9 @@ To spawn a worker in a new tmux window:
 2. Copy the worker instructions to the target directory with the right filename:
    - For claude workers: `cp /opt/squad/worker/instructions.md /path/to/work/CLAUDE.md`
    - For codex workers: `cp /opt/squad/worker/instructions.md /path/to/work/AGENTS.md`
-3. Send the command: `cd /path/to/work && claude "do the thing"` (or `codex` accordingly).
+3. Send the command:
+   - For claude workers: `cd /path/to/work && claude --dangerously-skip-permissions "do the thing"`
+   - For codex workers: `cd /path/to/work && codex --dangerously-bypass-approvals-and-sandbox "do the thing"`
 4. Monitor progress by capturing pane output.
 
 ## Managing Workers
