@@ -18,6 +18,8 @@ fi
 
 # Install MCP config for the captain (tmux access)
 cp /opt/squad/mcp-config.json /home/ubuntu/.squad-mcp.json
+mkdir -p /home/ubuntu/.codex
+cp /opt/squad/codex-mcp-config.toml /home/ubuntu/.codex/config.toml
 
 # Start the worker tmux session (detached)
 tmux new-session -d -s "$SESSION" -n main
