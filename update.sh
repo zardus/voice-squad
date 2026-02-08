@@ -245,16 +245,55 @@ if [ "$RESTART_CAPTAIN" = true ]; then
     fi
     echo "    [check] Voice server healthy (PID $NEW_PID)."
 
-    # All checks passed — kill the old captain and start a new one.
-    # Send Ctrl-C then 'exit' to gracefully stop the current captain process.
-    echo "    Stopping old captain..."
-    tmux send-keys -t captain:0 C-c
+    # All checks passed — find and kill the old captain process directly.
+    # The process hierarchy in captain:0 is: bash (shell) -> claude/codex (captain)
+    # We get the shell PID from tmux, find its child captain process, and kill it.
+
+    # Get the shell PID running in captain:0
+    SHELL_PID=$(tmux list-panes -t captain:0 -F '#{pane_pid}')
+    echo "    Shell PID in captain:0: $SHELL_PID"
+
+    # Find the captain child process (claude or codex) directly under the shell
+    CAPTAIN_PID=$(ps -o pid= --ppid "$SHELL_PID" 2>/dev/null | head -1 | tr -d ' ')
+
+    if [ -n "$CAPTAIN_PID" ]; then
+        CAPTAIN_CMD=$(ps -o comm= -p "$CAPTAIN_PID" 2>/dev/null || echo "unknown")
+        echo "    Found captain process: PID $CAPTAIN_PID ($CAPTAIN_CMD)"
+        echo "    Sending SIGTERM..."
+
+        # Kill the entire process group (captain + its children like tmux-mcp)
+        kill -- -"$CAPTAIN_PID" 2>/dev/null || kill "$CAPTAIN_PID" 2>/dev/null || true
+
+        # Wait up to 5s for the process to die
+        for i in $(seq 1 10); do
+            if ! kill -0 "$CAPTAIN_PID" 2>/dev/null; then
+                echo "    Captain exited after SIGTERM (${i}x0.5s)."
+                break
+            fi
+            sleep 0.5
+        done
+
+        # Force kill if still alive
+        if kill -0 "$CAPTAIN_PID" 2>/dev/null; then
+            echo "    Still alive after 5s — sending SIGKILL..."
+            kill -9 -- -"$CAPTAIN_PID" 2>/dev/null || kill -9 "$CAPTAIN_PID" 2>/dev/null || true
+            sleep 1
+            if kill -0 "$CAPTAIN_PID" 2>/dev/null; then
+                echo "    ERROR: Captain process $CAPTAIN_PID refuses to die!"
+                exit 1
+            fi
+            echo "    Captain killed with SIGKILL."
+        fi
+    else
+        echo "    No captain process found under shell PID $SHELL_PID — proceeding anyway."
+    fi
+
+    # Wait a beat for the shell to settle after its child exits
     sleep 1
+
+    # Clear any leftover text in the tmux pane input line, then launch
     tmux send-keys -t captain:0 C-c
-    sleep 1
-    # Send 'exit' in case the CLI dropped to a prompt
-    tmux send-keys -t captain:0 "exit" Enter
-    sleep 2
+    sleep 0.5
 
     # Launch new captain in the same window (mirrors launch-squad.sh)
     echo "    Launching new captain ($CAPTAIN)..."
@@ -264,7 +303,16 @@ if [ "$RESTART_CAPTAIN" = true ]; then
         tmux send-keys -t captain:0 "codex --dangerously-bypass-approvals-and-sandbox" Enter
     fi
 
-    echo "    Captain restart command sent. New captain should be initializing."
+    # Verify the new captain process started
+    sleep 3
+    NEW_CAPTAIN_PID=$(ps -o pid= --ppid "$SHELL_PID" 2>/dev/null | head -1 | tr -d ' ')
+    if [ -n "$NEW_CAPTAIN_PID" ]; then
+        NEW_CAPTAIN_CMD=$(ps -o comm= -p "$NEW_CAPTAIN_PID" 2>/dev/null || echo "unknown")
+        echo "    New captain running: PID $NEW_CAPTAIN_PID ($NEW_CAPTAIN_CMD)"
+    else
+        echo "    WARNING: No captain process detected yet — it may still be starting."
+    fi
+
     CAPTAIN_RESTARTED=true
 else
     CAPTAIN_RESTARTED=false
