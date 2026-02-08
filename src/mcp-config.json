@@ -3,6 +3,10 @@
     "tmux": {
       "command": "npx",
       "args": ["-y", "tmux-mcp"]
+    },
+    "squad-pane": {
+      "command": "node",
+      "args": ["/opt/squad/squad-pane-mcp/server.js"]
     }
   }
 }
