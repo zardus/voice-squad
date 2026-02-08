@@ -140,6 +140,8 @@ speak "Dispatched two workers for the auth refactor. I'll update you when they f
 
 **The goal is: the human should never be waiting in silence wondering what's happening.** Give brief progress nudges as things happen. You're not narrating every keystroke — but if 30 seconds would pass with no update, a quick one-liner is better than silence.
 
+**Speak frequently — this is your primary communication channel.** The `speak` command sends text-to-speech audio to the human's phone. It is NOT optional narration — it's how the human knows what's going on. You should `speak` after every significant action: after dispatching workers, after verifying they started, after checking on their progress, when tasks complete or fail, and any time something changes. Err on the side of speaking too much rather than too little. If you're doing something and haven't spoken in the last 30 seconds, you're probably overdue for a quick update.
+
 **How to speak well:**
 - Be concise — this is SPOKEN aloud, not read. Short sentences.
 - Progress nudges should be genuinely brief — one sentence max.

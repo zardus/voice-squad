@@ -42,7 +42,7 @@ while true; do
 
 	if [[ $stale_count -ge $STALE_THRESHOLD ]]; then
 	        log "ALERT: $STALE_THRESHOLD consecutive stale checks ($((STALE_THRESHOLD * SLEEP_INTERVAL))s). Injecting heartbeat message."
-	        tmux send-keys -t "$PANE" 'HEARTBEAT MESSAGE: please do a check of the current tasks and nudge them along or clean them up if reasonable. If there are any concrete developments worth reporting, speak them to the human.'
+	        tmux send-keys -t "$PANE" 'HEARTBEAT MESSAGE: please do a check of the current tasks and nudge them along or clean them up if reasonable. If there are any concrete developments worth reporting, use the speak command to give the human a voice update via text-to-speech.'
 	        sleep 1
 	        tmux send-keys -t "$PANE" Enter
 	        log "Heartbeat message injected. Resetting counter."
