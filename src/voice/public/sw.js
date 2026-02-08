@@ -1,4 +1,4 @@
-const CACHE_NAME = "squad-voice-v1";
+const CACHE_NAME = "squad-voice-v2";
 const SHELL_FILES = [
   "/",
   "/index.html",

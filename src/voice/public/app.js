@@ -1,9 +1,9 @@
-// Register service worker
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").catch(() => {});
 }
 
-const output = document.getElementById("output");
+const terminalEl = document.getElementById("terminal");
+const summaryEl = document.getElementById("summary");
 const statusEl = document.getElementById("status");
 const micBtn = document.getElementById("mic-btn");
 const textInput = document.getElementById("text-input");
@@ -12,16 +12,21 @@ const sendBtn = document.getElementById("send-btn");
 let ws = null;
 let mediaRecorder = null;
 let recording = false;
-let audioContext = null;
+let audioChunks = [];
+let autoScroll = true;
 
-// Carry the token from the URL into the WebSocket connection
 const urlParams = new URLSearchParams(location.search);
 const token = urlParams.get("token") || "";
+
+// Track whether user has scrolled up in the terminal
+terminalEl.addEventListener("scroll", () => {
+  const { scrollTop, scrollHeight, clientHeight } = terminalEl;
+  autoScroll = scrollHeight - scrollTop - clientHeight < 40;
+});
 
 function connect() {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
   ws = new WebSocket(`${proto}//${location.host}?token=${encodeURIComponent(token)}`);
-
   ws.binaryType = "arraybuffer";
 
   ws.onopen = () => {
@@ -31,7 +36,7 @@ function connect() {
 
   ws.onmessage = (evt) => {
     if (evt.data instanceof ArrayBuffer) {
-      handleAudioData(evt.data);
+      audioChunks.push(evt.data);
       return;
     }
 
@@ -41,21 +46,18 @@ function connect() {
       case "connected":
         statusEl.textContent = msg.captain;
         statusEl.className = "connected";
-        addMessage("system", `Connected to ${msg.captain} captain`);
         break;
 
-      case "transcription":
-        addMessage("user", msg.text);
-        break;
-
-      case "captain_output":
-        updateCaptainOutput(msg.text);
+      case "tmux_snapshot":
+        terminalEl.textContent = msg.content;
+        if (autoScroll) {
+          terminalEl.scrollTop = terminalEl.scrollHeight;
+        }
         break;
 
       case "captain_done":
-        finalizeCaptainOutput(msg.fullOutput);
         if (msg.summary) {
-          addMessage("summary", msg.summary);
+          summaryEl.textContent = msg.summary;
         }
         break;
 
@@ -69,7 +71,7 @@ function connect() {
         break;
 
       case "error":
-        addMessage("error", msg.message);
+        summaryEl.textContent = "Error: " + msg.message;
         break;
     }
   };
@@ -83,12 +85,6 @@ function connect() {
   ws.onerror = () => ws.close();
 }
 
-let audioChunks = [];
-
-function handleAudioData(buffer) {
-  audioChunks.push(buffer);
-}
-
 function playAudio(chunks) {
   if (!chunks.length) return;
   const blob = new Blob(chunks, { type: "audio/mpeg" });
@@ -98,39 +94,10 @@ function playAudio(chunks) {
   audio.onended = () => URL.revokeObjectURL(url);
 }
 
-let currentCaptainMsg = null;
-
-function updateCaptainOutput(text) {
-  if (!currentCaptainMsg) {
-    currentCaptainMsg = document.createElement("div");
-    currentCaptainMsg.className = "msg captain";
-    output.appendChild(currentCaptainMsg);
-  }
-  currentCaptainMsg.textContent = text;
-  output.scrollTop = output.scrollHeight;
-}
-
-function finalizeCaptainOutput(text) {
-  if (currentCaptainMsg) {
-    currentCaptainMsg.textContent = text;
-  }
-  currentCaptainMsg = null;
-  output.scrollTop = output.scrollHeight;
-}
-
-function addMessage(type, text) {
-  const div = document.createElement("div");
-  div.className = `msg ${type}`;
-  div.textContent = text;
-  output.appendChild(div);
-  output.scrollTop = output.scrollHeight;
-}
-
 // Text command
 function sendText() {
   const text = textInput.value.trim();
   if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
-  addMessage("user", text);
   ws.send(JSON.stringify({ type: "text_command", text }));
   textInput.value = "";
 }
@@ -144,8 +111,6 @@ textInput.addEventListener("keydown", (e) => {
 async function startRecording() {
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-
-    // Pick a supported mimeType
     const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
       ? "audio/webm;codecs=opus"
       : "audio/mp4";
@@ -161,7 +126,6 @@ async function startRecording() {
       stream.getTracks().forEach((t) => t.stop());
       if (ws.readyState !== WebSocket.OPEN || recordedChunks.length === 0) return;
 
-      // Send all audio in one go after recording stops
       ws.send(JSON.stringify({ type: "audio_start", mimeType }));
       for (const chunk of recordedChunks) {
         const buf = await chunk.arrayBuffer();
@@ -174,7 +138,7 @@ async function startRecording() {
     recording = true;
     micBtn.classList.add("recording");
   } catch (err) {
-    addMessage("error", "Mic access denied: " + err.message);
+    summaryEl.textContent = "Mic access denied: " + err.message;
   }
 }
 
@@ -186,7 +150,6 @@ function stopRecording() {
   micBtn.classList.remove("recording");
 }
 
-// Hold-to-talk for mic button
 micBtn.addEventListener("mousedown", (e) => {
   e.preventDefault();
   startRecording();

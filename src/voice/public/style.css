@@ -5,7 +5,7 @@
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   background: #1a1a2e;
   color: #e0e0e0;
   height: 100dvh;
@@ -18,24 +18,36 @@ body {
   height: 100dvh;
 }
 
-header {
+/* Terminal panel — top, takes most of the space */
+#terminal-panel {
+  flex: 1;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 16px;
-  background: #16213e;
+  flex-direction: column;
+  min-height: 0;
   border-bottom: 1px solid #0f3460;
 }
 
-header h1 {
-  font-size: 18px;
+#terminal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: #16213e;
+  border-bottom: 1px solid #0f3460;
+  flex-shrink: 0;
+}
+
+#terminal-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #4ecca3;
   font-weight: 600;
-  color: #e94560;
 }
 
 #status {
-  font-size: 12px;
-  padding: 2px 8px;
+  font-size: 11px;
+  padding: 1px 8px;
   border-radius: 10px;
 }
 
@@ -49,70 +61,66 @@ header h1 {
   color: #e94560;
 }
 
-#output {
+#terminal {
   flex: 1;
   overflow-y: auto;
-  padding: 12px 16px;
-  font-size: 14px;
-  line-height: 1.5;
+  padding: 8px 10px;
+  font-family: "SF Mono", "Cascadia Code", "Fira Code", Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-all;
+  background: #0d0d1a;
+  color: #c8c8d0;
   -webkit-overflow-scrolling: touch;
 }
 
-.msg {
-  margin-bottom: 12px;
-  padding: 8px 12px;
-  border-radius: 8px;
-  word-break: break-word;
-}
-
-.msg.user {
-  background: #0f3460;
-  border-left: 3px solid #e94560;
-}
-
-.msg.captain {
+/* Summary panel — middle */
+#summary-panel {
+  flex-shrink: 0;
+  border-bottom: 1px solid #0f3460;
   background: #16213e;
-  border-left: 3px solid #4ecca3;
-  white-space: pre-wrap;
-  font-family: monospace;
-  font-size: 13px;
+  max-height: 30%;
 }
 
-.msg.summary {
-  background: #1a1a3e;
-  border-left: 3px solid #a78bfa;
+#summary-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #a78bfa;
+  font-weight: 600;
+  padding: 6px 12px 0;
+}
+
+#summary {
+  padding: 6px 12px 10px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #e0e0e0;
+  overflow-y: auto;
+  max-height: calc(30vh - 28px);
   font-style: italic;
 }
 
-.msg.error {
-  background: #3a0000;
-  border-left: 3px solid #e94560;
-  color: #ff6b6b;
+#summary:empty::after {
+  content: "Waiting for output...";
+  color: #555;
+  font-style: italic;
 }
 
-.msg.system {
-  background: transparent;
-  color: #666;
-  font-size: 12px;
-  text-align: center;
-  border: none;
-}
-
+/* Controls — bottom bar */
 #controls {
-  padding: 12px 16px;
-  background: #16213e;
-  border-top: 1px solid #0f3460;
-}
-
-#text-input-row {
   display: flex;
+  align-items: center;
   gap: 8px;
-  margin-bottom: 12px;
+  padding: 10px 12px;
+  background: #16213e;
+  flex-shrink: 0;
 }
 
 #text-input {
   flex: 1;
-  padding: 10px 14px;
+  padding: 10px 12px;
   border: 1px solid #0f3460;
   border-radius: 8px;
   background: #1a1a2e;
@@ -126,13 +134,14 @@ header h1 {
 }
 
 #send-btn {
-  padding: 10px 16px;
+  padding: 10px 14px;
   border: none;
   border-radius: 8px;
   background: #0f3460;
   color: #4ecca3;
   font-size: 18px;
   cursor: pointer;
+  flex-shrink: 0;
 }
 
 #send-btn:active {
@@ -141,16 +150,18 @@ header h1 {
 }
 
 #mic-btn {
-  display: block;
-  width: 64px;
-  height: 64px;
-  margin: 0 auto;
+  width: 48px;
+  height: 48px;
   border: 2px solid #0f3460;
   border-radius: 50%;
   background: #1a1a2e;
   color: #e0e0e0;
   cursor: pointer;
   transition: all 0.15s;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 #mic-btn:active,
@@ -167,5 +178,5 @@ header h1 {
 
 @keyframes pulse {
   0%, 100% { box-shadow: 0 0 0 0 rgba(233, 69, 96, 0.4); }
-  50% { box-shadow: 0 0 0 12px rgba(233, 69, 96, 0); }
+  50% { box-shadow: 0 0 0 10px rgba(233, 69, 96, 0); }
 }

@@ -2,7 +2,7 @@ const express = require("express");
 const http = require("http");
 const path = require("path");
 const { WebSocketServer } = require("ws");
-const { sendToCaptain, pollCaptainOutput } = require("./tmux-bridge");
+const { sendToCaptain, pollCaptainOutput, capturePaneOutput } = require("./tmux-bridge");
 const { transcribe } = require("./stt");
 const { synthesize } = require("./tts");
 const { summarize } = require("./summarize");
@@ -53,6 +53,17 @@ wss.on("connection", (ws) => {
 
   ws.send(JSON.stringify({ type: "connected", captain: CAPTAIN }));
 
+  // Send periodic tmux snapshots so the UI shows a live terminal view
+  let lastSnapshot = "";
+  const snapshotTimer = setInterval(() => {
+    if (ws.readyState !== ws.OPEN) return;
+    const content = capturePaneOutput();
+    if (content !== lastSnapshot) {
+      lastSnapshot = content;
+      ws.send(JSON.stringify({ type: "tmux_snapshot", content }));
+    }
+  }, 1000);
+
   ws.on("message", (data, isBinary) => {
     if (isBinary) {
       // Binary frame = audio chunk
@@ -101,6 +112,7 @@ wss.on("connection", (ws) => {
 
   ws.on("close", () => {
     console.log("[voice] client disconnected");
+    clearInterval(snapshotTimer);
     if (cancelPoll) cancelPoll();
   });
 

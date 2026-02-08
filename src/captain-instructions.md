@@ -40,7 +40,7 @@ There is no wrong choice. Pick what feels right for the job.
 
 ## Setting Up Projects
 
-Before spawning workers, you must set up the project directory. This might mean:
+All projects live directly under `/home/ubuntu/`. Before spawning workers, set up the project directory:
 
 - Cloning a git repo: `git clone <url> /home/ubuntu/<project>`
 - Creating a new directory: `mkdir -p /home/ubuntu/<project>`
@@ -50,7 +50,7 @@ Then create a **new tmux session** for that project. Use a descriptive session n
 
 ## Spawning Workers
 
-1. Set up the project directory (clone, mkdir, etc.).
+1. Set up the project directory (clone, mkdir, etc.) under `/home/ubuntu/`.
 2. Create a new tmux session for the project, starting in the project directory:
    ```
    tmux new-session -d -s <project-name> -c /home/ubuntu/<project>
@@ -61,8 +61,6 @@ Then create a **new tmux session** for that project. Use a descriptive session n
 4. **Return to the human immediately.** Do not wait for workers to produce output.
 
 For simple tasks, one worker in the session is fine. For complex tasks, spin up multiple workers in separate windows within the same project session.
-
-**Important:** Never launch workers from the home directory (`/home/ubuntu/`). The captain's own instructions live there and workers would pick them up. Always work inside a project subdirectory.
 
 ## Managing Workers
 

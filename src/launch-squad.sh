@@ -8,11 +8,12 @@ if [ "$CAPTAIN" != "claude" ] && [ "$CAPTAIN" != "codex" ]; then
     exit 1
 fi
 
-# Install captain instructions with the right filename
+# Captain lives in ~/captain/ so workers (siblings) don't inherit its instructions
+mkdir -p /home/ubuntu/captain
 if [ "$CAPTAIN" = "claude" ]; then
-    cp /opt/squad/captain/instructions.md /home/ubuntu/CLAUDE.md
+    cp /opt/squad/captain/instructions.md /home/ubuntu/captain/CLAUDE.md
 else
-    cp /opt/squad/captain/instructions.md /home/ubuntu/AGENTS.md
+    cp /opt/squad/captain/instructions.md /home/ubuntu/captain/AGENTS.md
 fi
 
 # Install MCP config for the captain (tmux access)
@@ -29,8 +30,8 @@ export VOICE_TOKEN
 
 echo "Starting $CAPTAIN as captain..."
 
-# Create a tmux session for the captain
-tmux new-session -d -s captain
+# Create a tmux session for the captain (starts in ~/captain/ where its instructions live)
+tmux new-session -d -s captain -c /home/ubuntu/captain
 
 # Launch captain inside the tmux session
 if [ "$CAPTAIN" = "claude" ]; then
