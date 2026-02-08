@@ -70,6 +70,25 @@
     </div>
   </div>
 
+  <script>
+  // Nuke all service workers and caches to fix stale-cache issues
+  if ('serviceWorker' in navigator && !new URLSearchParams(location.search).has('cleared')) {
+    navigator.serviceWorker.getRegistrations().then(function(regs) {
+      if (regs.length > 0) {
+        Promise.all(
+          regs.map(function(r) { return r.unregister(); })
+        ).then(function() {
+          return caches.keys().then(function(keys) {
+            return Promise.all(keys.map(function(k) { return caches.delete(k); }));
+          });
+        }).then(function() {
+          var sep = location.search ? '&' : '?';
+          location.href = location.pathname + (location.search || '?') + sep + 'cleared=1' + location.hash;
+        });
+      }
+    });
+  }
+  </script>
   <script src="app.js"></script>
 </body>
 </html>

@@ -29,6 +29,11 @@ const STATUS_FILE = "/tmp/squad-status.json";
 
 const app = express();
 
+app.get('/sw.js', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.sendFile(path.join(__dirname, 'public', 'sw.js'));
+});
+
 app.use(express.static(path.join(__dirname, "public")));
 
 app.get("/api/status", (req, res) => {
