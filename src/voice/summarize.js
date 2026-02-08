@@ -11,13 +11,13 @@ const SHORT_THRESHOLD = 200;
  */
 async function summarize(rawOutput, previousSummary) {
   const trimmed = rawOutput.trim();
-  if (!trimmed) return "The captain produced no output.";
+  if (!trimmed) return "Nothing happened yet.";
   if (trimmed.length < SHORT_THRESHOLD && !previousSummary) return trimmed;
 
-  let prompt = `Summarize this terminal output into 1-3 short sentences suitable for text-to-speech. Be concise and conversational. Focus on what was accomplished or what the result is. Do not use markdown, code blocks, or special formatting.`;
+  let prompt = `You are a voice assistant for someone managing AI coding agents. They can't see the terminal right now — you're their ears. Read this terminal output and tell them what's going on in 1-3 short sentences. Talk directly to them like a teammate giving a quick status update. Be casual and specific. No markdown, no code blocks, no formatting — this will be spoken aloud.`;
 
   if (previousSummary) {
-    prompt += `\n\nThe user was last told: "${previousSummary}"\nOnly tell them what's new or changed since then. If nothing meaningful changed, say so briefly.`;
+    prompt += `\n\nYou last told them: "${previousSummary}"\nOnly mention what's new. If nothing meaningful changed, just say so.`;
   }
 
   prompt += `\n\n${trimmed}`;
