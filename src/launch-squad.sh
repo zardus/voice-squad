@@ -60,11 +60,11 @@ for i in $(seq 1 20); do
         tail -10 /tmp/voice-server.log 2>/dev/null || true
         exit 1
     fi
-    if ss -tln | grep -q ':3000 '; then break; fi
+    if grep -q 'listening on' /tmp/voice-server.log 2>/dev/null; then break; fi
     sleep 0.5
 done
 
-if ! ss -tln | grep -q ':3000 '; then
+if ! grep -q 'listening on' /tmp/voice-server.log 2>/dev/null; then
     echo "WARNING: Voice server not listening after 10s — starting tunnel anyway"
 fi
 
