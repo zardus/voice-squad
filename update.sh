@@ -74,6 +74,10 @@ sudo cp "$REPO_DIR/src/captain-instructions.md" /opt/squad/captain/instructions.
 sudo cp "$REPO_DIR/src/mcp-config.json"         /opt/squad/mcp-config.json
 sudo cp "$REPO_DIR/src/codex-mcp-config.toml"   /opt/squad/codex-mcp-config.toml
 
+# --- Heartbeat monitor script ---
+sudo cp "$REPO_DIR/src/heartbeat.sh"            /opt/squad/heartbeat.sh
+sudo chmod +x /opt/squad/heartbeat.sh
+
 # --- speak CLI script ---
 sudo cp "$REPO_DIR/src/speak" /usr/local/bin/speak
 sudo chmod +x /usr/local/bin/speak
@@ -207,6 +211,20 @@ if tmux has-session -t captain 2>/dev/null; then
     echo "==> Captain tmux session: alive."
 else
     echo "==> WARNING: Captain tmux session not found!"
+fi
+
+# Ensure heartbeat monitor is running (lightweight safety net for stalled captains).
+echo "==> Heartbeat monitor..."
+if pgrep -f "/opt/squad/heartbeat.sh" > /dev/null 2>&1; then
+    echo "    Heartbeat: running."
+else
+    nohup /opt/squad/heartbeat.sh >/tmp/heartbeat.nohup 2>&1 &
+    sleep 0.2
+    if pgrep -f "/opt/squad/heartbeat.sh" > /dev/null 2>&1; then
+        echo "    Heartbeat: started."
+    else
+        echo "    WARNING: heartbeat failed to start. Check /tmp/heartbeat.nohup"
+    fi
 fi
 
 # ---------------------------------------------------------------------------

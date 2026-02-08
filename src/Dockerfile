@@ -99,7 +99,8 @@ RUN usermod -aG docker ubuntu \
 
 COPY entrypoint.sh /entrypoint.sh
 COPY launch-squad.sh /opt/squad/launch-squad.sh
-RUN chmod +x /entrypoint.sh /opt/squad/launch-squad.sh
+COPY heartbeat.sh /opt/squad/heartbeat.sh
+RUN chmod +x /entrypoint.sh /opt/squad/launch-squad.sh /opt/squad/heartbeat.sh
 
 COPY captain-instructions.md /opt/squad/captain/instructions.md
 COPY mcp-config.json /opt/squad/mcp-config.json
