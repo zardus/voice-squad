@@ -2,7 +2,7 @@ const express = require("express");
 const http = require("http");
 const path = require("path");
 const { WebSocketServer } = require("ws");
-const { sendToCaptain, pollCaptainOutput, capturePaneOutput } = require("./tmux-bridge");
+const { sendToCaptain, capturePaneOutput } = require("./tmux-bridge");
 const { transcribe } = require("./stt");
 const { synthesize } = require("./tts");
 const { summarize } = require("./summarize");
@@ -44,30 +44,60 @@ server.on("upgrade", (req, socket, head) => {
   });
 });
 
+const SUMMARY_STABLE_MS = 5000;
+
 wss.on("connection", (ws) => {
   console.log("[voice] client connected");
 
   let audioChunks = [];
   let audioMimeType = "audio/webm";
-  let cancelPoll = null;
-  let lastSummary = "";
 
   ws.send(JSON.stringify({ type: "connected", captain: CAPTAIN }));
 
-  // Send periodic tmux snapshots so the UI shows a live terminal view
+  // Snapshot + auto-summary state
   let lastSnapshot = "";
-  const snapshotTimer = setInterval(() => {
+  let lastSnapshotChangeTime = Date.now();
+  let lastSummarizedContent = null;
+  let lastSummary = "";
+  let summarizing = false;
+
+  const snapshotTimer = setInterval(async () => {
     if (ws.readyState !== ws.OPEN) return;
     const content = capturePaneOutput();
+
+    // Send snapshot to client if content changed
     if (content !== lastSnapshot) {
       lastSnapshot = content;
+      lastSnapshotChangeTime = Date.now();
       ws.send(JSON.stringify({ type: "tmux_snapshot", content }));
+      return;
+    }
+
+    // When content is stable for 5s and differs from last summary, generate one
+    const stableFor = Date.now() - lastSnapshotChangeTime;
+    if (stableFor >= SUMMARY_STABLE_MS && content !== lastSummarizedContent && !summarizing) {
+      summarizing = true;
+      lastSummarizedContent = content;
+      try {
+        const summary = await summarize(content, lastSummary);
+        lastSummary = summary;
+        if (ws.readyState === ws.OPEN) {
+          ws.send(JSON.stringify({ type: "captain_done", summary }));
+
+          const mp3 = await synthesize(summary);
+          ws.send(JSON.stringify({ type: "audio_summary_start" }));
+          ws.send(mp3);
+          ws.send(JSON.stringify({ type: "audio_summary_end" }));
+        }
+      } catch (err) {
+        console.error("[voice] summary/TTS error:", err.message);
+      }
+      summarizing = false;
     }
   }, 1000);
 
   ws.on("message", (data, isBinary) => {
     if (isBinary) {
-      // Binary frame = audio chunk
       audioChunks.push(Buffer.from(data));
       return;
     }
@@ -87,20 +117,13 @@ wss.on("connection", (ws) => {
         break;
 
       case "audio_end":
-        handleAudioCommand(ws, Buffer.concat(audioChunks), audioMimeType);
+        handleAudioCommand(Buffer.concat(audioChunks), audioMimeType);
         audioChunks = [];
         break;
 
       case "text_command":
         if (msg.text && msg.text.trim()) {
-          handleTextCommand(ws, msg.text.trim());
-        }
-        break;
-
-      case "cancel":
-        if (cancelPoll) {
-          cancelPoll();
-          cancelPoll = null;
+          sendCommand(msg.text.trim());
         }
         break;
 
@@ -114,17 +137,13 @@ wss.on("connection", (ws) => {
   ws.on("close", () => {
     console.log("[voice] client disconnected");
     clearInterval(snapshotTimer);
-    if (cancelPoll) cancelPoll();
   });
 
-  async function handleAudioCommand(ws, audioBuffer, mimeType) {
+  async function handleAudioCommand(audioBuffer, mimeType) {
     try {
-      // STT
       const text = await transcribe(audioBuffer, mimeType);
       ws.send(JSON.stringify({ type: "transcription", text }));
-
-      // Send to captain and poll
-      executeCaptainCommand(ws, text);
+      sendCommand(text);
     } catch (err) {
       console.error("[voice] STT error:", err.message);
       ws.send(
@@ -133,66 +152,14 @@ wss.on("connection", (ws) => {
     }
   }
 
-  function handleTextCommand(ws, text) {
-    executeCaptainCommand(ws, text);
-  }
-
-  function executeCaptainCommand(ws, text) {
+  function sendCommand(text) {
     try {
       sendToCaptain(text);
     } catch (err) {
       ws.send(
         JSON.stringify({ type: "error", message: "Failed to send to captain: " + err.message })
       );
-      return;
     }
-
-    cancelPoll = pollCaptainOutput(
-      // onOutput (incremental)
-      (output) => {
-        if (ws.readyState === ws.OPEN) {
-          ws.send(
-            JSON.stringify({
-              type: "captain_output",
-              text: output,
-              incremental: true,
-            })
-          );
-        }
-      },
-      // onDone
-      async (fullOutput) => {
-        cancelPoll = null;
-        if (ws.readyState !== ws.OPEN) return;
-
-        try {
-          const summary = await summarize(fullOutput, lastSummary);
-          lastSummary = summary;
-          ws.send(
-            JSON.stringify({ type: "captain_done", fullOutput, summary })
-          );
-
-          // TTS
-          const mp3 = await synthesize(summary);
-          ws.send(JSON.stringify({ type: "audio_summary_start" }));
-          ws.send(mp3);
-          ws.send(JSON.stringify({ type: "audio_summary_end" }));
-        } catch (err) {
-          console.error("[voice] summary/TTS error:", err.message);
-          ws.send(
-            JSON.stringify({ type: "captain_done", fullOutput, summary: fullOutput.slice(0, 200) })
-          );
-        }
-      },
-      // onError
-      (err) => {
-        cancelPoll = null;
-        console.error("[voice] poll error:", err.message);
-        ws.send(
-          JSON.stringify({ type: "error", message: "Polling error: " + err.message })
-        );
-      }
-    );
   }
 });
 
