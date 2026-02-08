@@ -14,29 +14,52 @@
 </head>
 <body>
   <div id="app">
-    <div id="terminal-panel">
-      <div id="terminal-header">
-        <span id="terminal-title">terminal</span>
-        <span id="status" class="disconnected">disconnected</span>
+    <div id="tab-bar">
+      <button class="tab active" data-tab="terminal">Terminal</button>
+      <button class="tab" data-tab="status">Status</button>
+    </div>
+
+    <div id="terminal-view" class="tab-content active">
+      <div id="terminal-panel">
+        <div id="terminal-header">
+          <span id="terminal-title">terminal</span>
+          <span id="status" class="disconnected">disconnected</span>
+        </div>
+        <pre id="terminal"></pre>
       </div>
-      <pre id="terminal"></pre>
+
+      <div id="update-bar">
+        <button id="update-btn" title="Ask captain for a status update">Status</button>
+      </div>
+
+      <div id="summary-panel">
+        <div id="summary-label">voice summary</div>
+        <div id="summary"></div>
+      </div>
+
+      <div id="transcription-panel">
+        <div id="transcription-label">input transcription</div>
+        <div id="transcription"></div>
+      </div>
     </div>
 
-    <div id="update-bar">
-      <button id="update-btn" title="Ask captain for a status update">Status</button>
-    </div>
-
-    <div id="summary-panel">
-      <div id="summary-label">voice summary</div>
-      <div id="summary"></div>
-    </div>
-
-    <div id="transcription-panel">
-      <div id="transcription-label">input transcription</div>
-      <div id="transcription"></div>
+    <div id="status-view" class="tab-content">
+      <div id="status-header">
+        <span id="status-title">squad overview</span>
+        <span id="status-time">waiting...</span>
+      </div>
+      <div id="status-body">
+        <div id="status-summary">Loading status...</div>
+        <div id="status-panes"></div>
+      </div>
     </div>
 
     <div id="controls">
+      <label id="autoread-toggle" title="Auto-read summaries aloud">
+        <input type="checkbox" id="autoread-cb">
+        <span class="autoread-slider"></span>
+        <span class="autoread-label">Auto-read</span>
+      </label>
       <button id="mic-btn" title="Hold to speak">
         <svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor">
           <path d="M12 14a3 3 0 003-3V5a3 3 0 00-6 0v6a3 3 0 003 3zm-1-9a1 1 0 012 0v6a1 1 0 01-2 0V5zm6 6a5 5 0 01-10 0H5a7 7 0 0014 0h-2zm-5 9a1 1 0 01-1-1v-2h2v2a1 1 0 01-1 1z"/>

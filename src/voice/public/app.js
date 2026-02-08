@@ -10,6 +10,13 @@ const micBtn = document.getElementById("mic-btn");
 const textInput = document.getElementById("text-input");
 const sendBtn = document.getElementById("send-btn");
 const updateBtn = document.getElementById("update-btn");
+const autoreadCb = document.getElementById("autoread-cb");
+
+// Auto-read toggle: OFF by default, persisted in localStorage
+autoreadCb.checked = localStorage.getItem("autoread") === "true";
+autoreadCb.addEventListener("change", () => {
+  localStorage.setItem("autoread", autoreadCb.checked);
+});
 
 let ws = null;
 let mediaRecorder = null;
@@ -109,9 +116,9 @@ function connect() {
   };
 
   ws.onmessage = (evt) => {
-    // Any binary frame from server = TTS audio, play immediately
+    // Any binary frame from server = TTS audio, play only if auto-read is on
     if (evt.data instanceof ArrayBuffer) {
-      playAudio(evt.data);
+      if (autoreadCb.checked) playAudio(evt.data);
       return;
     }
 
@@ -288,5 +295,87 @@ updateBtn.addEventListener("click", () => {
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
   ws.send(JSON.stringify({ type: "text_command", text: "Give me a status update on all the tasks" }));
 });
+
+// --- Tab switching ---
+const tabs = document.querySelectorAll("#tab-bar .tab");
+const tabContents = document.querySelectorAll(".tab-content");
+
+tabs.forEach((tab) => {
+  tab.addEventListener("click", () => {
+    const target = tab.dataset.tab;
+    tabs.forEach((t) => t.classList.toggle("active", t === tab));
+    tabContents.forEach((c) => {
+      c.classList.toggle("active", c.id === target + "-view");
+    });
+    // Fetch status immediately when switching to status tab
+    if (target === "status") fetchStatus();
+  });
+});
+
+// --- Status tab ---
+const statusTimeEl = document.getElementById("status-time");
+const statusSummaryEl = document.getElementById("status-summary");
+const statusPanesEl = document.getElementById("status-panes");
+
+let lastStatusTimestamp = null;
+
+function relativeTime(isoString) {
+  if (!isoString) return "never";
+  const diff = Math.floor((Date.now() - new Date(isoString).getTime()) / 1000);
+  if (diff < 5) return "just now";
+  if (diff < 60) return `${diff}s ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  return `${Math.floor(diff / 3600)}h ago`;
+}
+
+function updateRelativeTime() {
+  if (lastStatusTimestamp) {
+    statusTimeEl.textContent = relativeTime(lastStatusTimestamp);
+  }
+}
+
+function renderStatus(data) {
+  lastStatusTimestamp = data.timestamp;
+  statusTimeEl.textContent = data.timestamp ? relativeTime(data.timestamp) : "waiting...";
+  statusSummaryEl.textContent = data.summary;
+
+  statusPanesEl.innerHTML = "";
+  if (data.sessions && data.sessions.length) {
+    for (const session of data.sessions) {
+      for (const win of session.windows) {
+        const details = document.createElement("details");
+        details.className = "pane-details";
+
+        const summary = document.createElement("summary");
+        summary.textContent = `${session.name} / ${win.name}`;
+        details.appendChild(summary);
+
+        const pre = document.createElement("pre");
+        pre.className = "pane-snippet";
+        pre.textContent = win.snippet;
+        details.appendChild(pre);
+
+        statusPanesEl.appendChild(details);
+      }
+    }
+  }
+}
+
+async function fetchStatus() {
+  try {
+    const resp = await fetch(`/api/status?token=${encodeURIComponent(token)}`);
+    if (resp.ok) {
+      const data = await resp.json();
+      renderStatus(data);
+    }
+  } catch (e) {
+    // ignore fetch errors
+  }
+}
+
+// Poll status every 15 seconds
+setInterval(fetchStatus, 15000);
+// Update relative time every second
+setInterval(updateRelativeTime, 1000);
 
 connect();
