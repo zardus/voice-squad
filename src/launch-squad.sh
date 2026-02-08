@@ -20,6 +20,11 @@ cp /opt/squad/mcp-config.json /home/ubuntu/.squad-mcp.json
 mkdir -p /home/ubuntu/.codex
 cp /opt/squad/codex-mcp-config.toml /home/ubuntu/.codex/config.toml
 
+# Expose API keys for the voice server (~/env prefixes them with _ to
+# prevent the captain CLIs from using API mode)
+[ -n "$_OPENAI_API_KEY" ] && export OPENAI_API_KEY="$_OPENAI_API_KEY"
+[ -n "$_ANTHROPIC_API_KEY" ] && export ANTHROPIC_API_KEY="$_ANTHROPIC_API_KEY"
+
 # Generate auth token for voice interface
 VOICE_TOKEN=$(head -c 32 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9' | head -c 32)
 export VOICE_TOKEN
