@@ -10,7 +10,6 @@ const micBtn = document.getElementById("mic-btn");
 const textInput = document.getElementById("text-input");
 const sendBtn = document.getElementById("send-btn");
 const updateBtn = document.getElementById("update-btn");
-const updateOutput = document.getElementById("update-output");
 
 let ws = null;
 let mediaRecorder = null;
@@ -284,24 +283,10 @@ micBtn.addEventListener("mouseleave", () => {
 document.addEventListener("touchstart", () => ensureMicStream().catch(() => {}), { once: true });
 document.addEventListener("click", () => ensureMicStream().catch(() => {}), { once: true });
 
-// Update button
-updateBtn.addEventListener("click", async () => {
-  if (updateBtn.classList.contains("running")) return;
-  updateBtn.classList.add("running");
-  updateBtn.textContent = "Updating...";
-  updateOutput.textContent = "";
-  updateOutput.className = "visible";
-  try {
-    const res = await fetch(`/api/update?token=${encodeURIComponent(token)}`, { method: "POST" });
-    const data = await res.json();
-    updateOutput.textContent = data.output || data.error || "No output";
-    updateOutput.className = data.ok ? "visible" : "visible error";
-  } catch (err) {
-    updateOutput.textContent = "Request failed: " + err.message;
-    updateOutput.className = "visible error";
-  }
-  updateBtn.classList.remove("running");
-  updateBtn.textContent = "Update";
+// Status button — ask captain for a task status update
+updateBtn.addEventListener("click", () => {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  ws.send(JSON.stringify({ type: "text_command", text: "Give me a status update on all the tasks" }));
 });
 
 connect();

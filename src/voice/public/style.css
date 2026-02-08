@@ -106,32 +106,6 @@ body {
   color: #1a1a2e;
 }
 
-#update-btn.running {
-  color: #a78bfa;
-  border-color: #a78bfa;
-  cursor: wait;
-}
-
-#update-output {
-  flex: 1;
-  font-family: "SF Mono", "Cascadia Code", "Fira Code", Consolas, monospace;
-  font-size: 11px;
-  line-height: 1.4;
-  color: #c8c8d0;
-  white-space: pre-wrap;
-  word-break: break-all;
-  max-height: 120px;
-  overflow-y: auto;
-  display: none;
-}
-
-#update-output.visible {
-  display: block;
-}
-
-#update-output.error {
-  color: #e94560;
-}
 
 /* Summary panel — middle */
 #summary-panel {

@@ -1,7 +1,6 @@
 const express = require("express");
 const http = require("http");
 const path = require("path");
-const { spawn } = require("child_process");
 const { WebSocketServer } = require("ws");
 const { sendToCaptain, capturePaneOutputAsync } = require("./tmux-bridge");
 const { transcribe } = require("./stt");
@@ -28,29 +27,6 @@ function checkToken(req) {
 const app = express();
 
 app.use(express.static(path.join(__dirname, "public")));
-
-// POST /api/update — run update.sh and return output
-app.post("/api/update", (req, res) => {
-  if (!checkToken(req)) {
-    return res.status(401).json({ error: "Unauthorized" });
-  }
-  console.log("[api] /api/update triggered");
-  const child = spawn("/home/ubuntu/voice-squad/update.sh", [], {
-    cwd: "/home/ubuntu/voice-squad",
-    timeout: 120000,
-  });
-  let output = "";
-  child.stdout.on("data", (chunk) => { output += chunk.toString(); });
-  child.stderr.on("data", (chunk) => { output += chunk.toString(); });
-  child.on("close", (code) => {
-    console.log(`[api] update.sh exited with code ${code}`);
-    res.json({ ok: code === 0, code, output });
-  });
-  child.on("error", (err) => {
-    console.error("[api] update.sh spawn error:", err.message);
-    res.status(500).json({ ok: false, error: err.message });
-  });
-});
 
 const server = http.createServer(app);
 const wss = new WebSocketServer({ noServer: true });
