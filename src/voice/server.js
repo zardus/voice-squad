@@ -11,10 +11,13 @@ const PORT = process.env.VOICE_PORT || 3000;
 const CAPTAIN = process.env.SQUAD_CAPTAIN || "claude";
 const TOKEN = process.env.VOICE_TOKEN;
 
-if (!TOKEN) {
-  console.error("[voice] VOICE_TOKEN not set, exiting");
+const REQUIRED_ENV = { VOICE_TOKEN: TOKEN, OPENAI_API_KEY: process.env.OPENAI_API_KEY, ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY };
+const missing = Object.entries(REQUIRED_ENV).filter(([, v]) => !v).map(([k]) => k);
+if (missing.length) {
+  console.error(`[voice] Missing env vars: ${missing.join(", ")}`);
   process.exit(1);
 }
+console.log("[voice] env OK: VOICE_TOKEN, OPENAI_API_KEY, ANTHROPIC_API_KEY all set");
 
 function checkToken(req) {
   const url = new URL(req.url, `http://${req.headers.host}`);
