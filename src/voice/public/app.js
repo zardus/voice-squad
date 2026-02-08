@@ -12,7 +12,9 @@ const sendBtn = document.getElementById("send-btn");
 const updateBtn = document.getElementById("update-btn");
 const autoreadCb = document.getElementById("autoread-cb");
 const voiceMicBtn = document.getElementById("voice-mic-btn");
+const voiceReplayBtn = document.getElementById("voice-replay-btn");
 const controlsEl = document.getElementById("controls");
+let lastTtsAudioData = null;
 
 // Auto-read toggle: OFF by default, persisted in localStorage
 let autoreadBeforeVoice = null; // saved state when entering Voice tab
@@ -119,8 +121,10 @@ function connect() {
   };
 
   ws.onmessage = (evt) => {
-    // Any binary frame from server = TTS audio, play only if auto-read is on
+    // Any binary frame from server = TTS audio, store for replay and play if auto-read is on
     if (evt.data instanceof ArrayBuffer) {
+      lastTtsAudioData = evt.data;
+      voiceReplayBtn.disabled = false;
       if (autoreadCb.checked) playAudio(evt.data);
       return;
     }
@@ -318,6 +322,11 @@ voiceMicBtn.addEventListener("mouseup", () => {
 voiceMicBtn.addEventListener("mouseleave", () => {
   if (Date.now() - lastTouchTime < 1000) return;
   if (recording || wantRecording) stopRecording();
+});
+
+// Replay button — plays last TTS audio
+voiceReplayBtn.addEventListener("click", () => {
+  if (lastTtsAudioData) playAudio(lastTtsAudioData);
 });
 
 // Pre-acquire mic on first user interaction anywhere
