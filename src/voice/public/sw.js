@@ -1,4 +1,4 @@
-const CACHE_NAME = "squad-voice-v4";
+const CACHE_NAME = "squad-voice-v5";
 const SHELL_FILES = [
   "/",
   "/index.html",
@@ -32,15 +32,12 @@ self.addEventListener("fetch", (e) => {
   if (e.request.url.includes("/ws") || e.request.method !== "GET") return;
 
   e.respondWith(
-    caches.match(e.request).then((cached) => {
-      const fetched = fetch(e.request).then((res) => {
-        if (res.ok) {
-          const clone = res.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(e.request, clone));
-        }
-        return res;
-      });
-      return cached || fetched;
-    })
+    fetch(e.request).then((res) => {
+      if (res.ok) {
+        const clone = res.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(e.request, clone));
+      }
+      return res;
+    }).catch(() => caches.match(e.request))
   );
 });
