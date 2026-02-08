@@ -7,10 +7,11 @@
 #   1. git pull latest code
 #   2. Copy updated source files to installed locations (/opt/squad/)
 #   3. Reinstall npm dependencies if package.json changed
-#   4. Restart ONLY the voice server process
+#   4. Restart the voice server and status daemon
 #
 # RESTARTED:
 #   - Voice server (node /opt/squad/voice/server.js)
+#   - Status daemon (node /opt/squad/voice/status-daemon.js)
 #
 # KEPT ALIVE (untouched):
 #   - cloudflared tunnel  — keeps the *.trycloudflare.com URL stable
@@ -119,6 +120,16 @@ fi
 #    pointing at localhost:3000 — it stays alive and reconnects automatically
 #    when the voice server comes back up on the same port.
 # ---------------------------------------------------------------------------
+echo "==> Killing status daemon (if running)..."
+DAEMON_PID=$(pgrep -f "node /opt/squad/voice/status-daemon.js" | head -1 || true)
+if [ -n "$DAEMON_PID" ]; then
+    kill "$DAEMON_PID" 2>/dev/null || true
+    sleep 0.5
+    echo "    Status daemon stopped (was PID $DAEMON_PID)."
+else
+    echo "    No running status daemon found."
+fi
+
 echo "==> Restarting voice server..."
 
 # Find the running voice server PID (if any)
@@ -187,6 +198,18 @@ else
     echo "    ERROR: Voice server failed to start! Check /tmp/voice-server.log:"
     tail -10 /tmp/voice-server.log 2>/dev/null || true
     exit 1
+fi
+
+# Launch status daemon in the background
+echo "==> Starting status daemon..."
+ANTHROPIC_API_KEY="${_ANT_KEY}" \
+    node /opt/squad/voice/status-daemon.js > /tmp/status-daemon.log 2>&1 &
+NEW_DAEMON_PID=$!
+sleep 1
+if kill -0 "$NEW_DAEMON_PID" 2>/dev/null; then
+    echo "    Status daemon running (PID $NEW_DAEMON_PID)."
+else
+    echo "    WARNING: Status daemon failed to start. Check /tmp/status-daemon.log"
 fi
 
 # ---------------------------------------------------------------------------
@@ -330,6 +353,7 @@ fi
 echo ""
 echo "=== Update complete ==="
 echo "  Voice server:  restarted (PID $NEW_PID)"
+echo "  Status daemon: restarted (PID $NEW_DAEMON_PID)"
 echo "  Tunnel:        kept alive"
 if [ "$CAPTAIN_RESTARTED" = true ]; then
     echo "  Captain:       RESTARTED (tmux captain:0)"
