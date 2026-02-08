@@ -34,10 +34,17 @@ function capturePaneOutputAsync() {
   });
 }
 
-function sendToCaptain(text) {
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function sendToCaptain(text) {
   execSync(`tmux send-keys -t ${TARGET} -l ${shellEscape(text)}`, {
     timeout: 5000,
   });
+  // Delay so Claude Code processes the pasted text before receiving Enter,
+  // preventing bracketed-paste from swallowing the submission.
+  await sleep(1000);
   execSync(`tmux send-keys -t ${TARGET} Enter`, { timeout: 5000 });
 }
 

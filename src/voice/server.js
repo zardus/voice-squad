@@ -202,9 +202,9 @@ wss.on("connection", (ws) => {
     }
   }
 
-  function sendCommand(text) {
+  async function sendCommand(text) {
     try {
-      sendToCaptain(text);
+      await sendToCaptain(text);
       console.log(`[cmd] sent to captain tmux`);
     } catch (err) {
       console.error(`[cmd] failed to send: ${err.message}`);
