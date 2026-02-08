@@ -23,12 +23,7 @@ function checkToken(req) {
 
 const app = express();
 
-// Token gate — all HTTP requests require valid token
-app.use((req, res, next) => {
-  if (checkToken(req)) return next();
-  res.status(401).send("Unauthorized");
-});
-
+// Static assets don't need auth — the WebSocket is the sensitive part
 app.use(express.static(path.join(__dirname, "public")));
 
 const server = http.createServer(app);
