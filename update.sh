@@ -145,7 +145,7 @@ else
     echo "    No running voice server found — starting fresh."
     # Fall back: source env file (same mechanism launch-squad.sh uses)
     # shellcheck disable=SC1091
-    [ -f /home/ubuntu/env ] && . /home/ubuntu/env || true
+    if [ -f /home/ubuntu/env ]; then set -a; . /home/ubuntu/env; set +a; fi
     _OAI_KEY="${_OPENAI_API_KEY:-${OPENAI_API_KEY:-}}"
     _ANT_KEY="${_ANTHROPIC_API_KEY:-${ANTHROPIC_API_KEY:-}}"
     _V_TOKEN="${VOICE_TOKEN:-}"

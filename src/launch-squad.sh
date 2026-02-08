@@ -24,8 +24,12 @@ cp /opt/squad/mcp-config.json /home/ubuntu/.squad-mcp.json
 mkdir -p /home/ubuntu/.codex
 cp /opt/squad/codex-mcp-config.toml /home/ubuntu/.codex/config.toml
 
-# Source ~/env for API keys (vars aren't exported, so they don't survive exec from entrypoint)
-[ -f /home/ubuntu/env ] && . /home/ubuntu/env
+# Source ~/env for API keys (set -a auto-exports all vars to child processes)
+if [ -f /home/ubuntu/env ]; then
+    set -a
+    . /home/ubuntu/env
+    set +a
+fi
 
 # Generate auth token for voice interface
 VOICE_TOKEN=$(head -c 32 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9' | head -c 32)

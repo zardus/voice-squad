@@ -20,8 +20,12 @@ fi
 # Ensure home directory is writable (volume mounts may be owned by root)
 sudo chown ubuntu:ubuntu /home/ubuntu
 
-# Source user environment if present
-[ -f /home/ubuntu/env ] && . /home/ubuntu/env
+# Source user environment if present (set -a auto-exports all vars)
+if [ -f /home/ubuntu/env ]; then
+    set -a
+    . /home/ubuntu/env
+    set +a
+fi
 
 # Launch the squad
 exec /opt/squad/launch-squad.sh "$@"
