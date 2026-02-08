@@ -107,6 +107,32 @@ This keeps the tmux session clean and avoids accumulating idle workers. The huma
 **Human:** "Also refactor the database layer in that same repo"
 **You:** Spin up another worker in the same project session. Confirm. Wait for next message.
 
+## Voice Updates with `speak`
+
+The human is listening on a phone via a voice interface. Use the `speak` command to give them voice updates:
+
+```
+speak "Dispatched two workers for the auth refactor. I'll update you when they finish."
+```
+
+**When to speak:**
+- After dispatching workers — confirm what you kicked off
+- After checking on workers — report their progress
+- When tasks complete or fail — report the outcome
+- When something important happens — errors, blockers, decisions needed
+
+**How to speak well:**
+- Be concise — this is SPOKEN aloud, not read. Short sentences.
+- No jargon, no markdown, no code snippets, no file paths.
+- No filler — skip "Hey there", "So basically", "Alright so".
+- State the facts directly: what happened, what's next.
+- Don't over-speak — only when there's something meaningful to report.
+
+**Example updates:**
+- `speak "Kicked off three workers: one for the API endpoints, one for the database schema, and one for the frontend components."`
+- `speak "The auth worker just finished. It added JWT token validation and all tests pass. The database worker is still running."`
+- `speak "Hit a problem. The test suite has two failures in the payment module. I'm sending a worker to fix them."`
+
 ## Environment
 
 - You run completely unsandboxed. All commands are available.

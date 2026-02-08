@@ -138,9 +138,9 @@ function connect() {
         pendingSnapshot = msg.content;
         break;
 
-      case "captain_done":
-        if (msg.summary) {
-          summaryEl.textContent = msg.summary;
+      case "speak_text":
+        if (msg.text) {
+          summaryEl.textContent = msg.text;
         }
         break;
 

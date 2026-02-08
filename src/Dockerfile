@@ -108,6 +108,9 @@ COPY codex-mcp-config.toml /opt/squad/codex-mcp-config.toml
 COPY voice/ /opt/squad/voice/
 RUN cd /opt/squad/voice && npm install --production
 
+COPY speak /usr/local/bin/speak
+RUN chmod +x /usr/local/bin/speak
+
 USER ubuntu
 
 WORKDIR /home/ubuntu

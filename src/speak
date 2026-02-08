@@ -1,0 +1,18 @@
+#!/bin/bash
+# speak — Send text to the voice interface for TTS playback
+# Usage: speak "Workers are finishing up the auth module"
+
+if [ -z "$1" ]; then
+  echo "Usage: speak \"text to speak\"" >&2
+  exit 1
+fi
+
+if [ -z "$VOICE_TOKEN" ]; then
+  echo "Error: VOICE_TOKEN not set" >&2
+  exit 1
+fi
+
+curl -s -X POST http://localhost:3000/api/speak \
+  -H "Content-Type: application/json" \
+  -d "{\"text\": $(printf '%s' "$1" | jq -Rs .), \"token\": \"$VOICE_TOKEN\"}" \
+  > /dev/null

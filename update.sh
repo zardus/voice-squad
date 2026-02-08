@@ -75,6 +75,10 @@ sudo cp "$REPO_DIR/src/captain-instructions.md" /opt/squad/captain/instructions.
 sudo cp "$REPO_DIR/src/mcp-config.json"         /opt/squad/mcp-config.json
 sudo cp "$REPO_DIR/src/codex-mcp-config.toml"   /opt/squad/codex-mcp-config.toml
 
+# --- speak CLI script ---
+sudo cp "$REPO_DIR/src/speak" /usr/local/bin/speak
+sudo chmod +x /usr/local/bin/speak
+
 # --- Startup scripts (take effect on next container start only) ---
 sudo cp "$REPO_DIR/src/launch-squad.sh" /opt/squad/launch-squad.sh
 sudo chmod +x /opt/squad/launch-squad.sh

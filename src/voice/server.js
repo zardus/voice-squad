@@ -6,19 +6,18 @@ const { WebSocketServer } = require("ws");
 const { sendToCaptain, capturePaneOutputAsync } = require("./tmux-bridge");
 const { transcribe } = require("./stt");
 const { synthesize } = require("./tts");
-const { summarize } = require("./summarize");
 
 const PORT = process.env.VOICE_PORT || 3000;
 const CAPTAIN = process.env.SQUAD_CAPTAIN || "claude";
 const TOKEN = process.env.VOICE_TOKEN;
 
-const REQUIRED_ENV = { VOICE_TOKEN: TOKEN, OPENAI_API_KEY: process.env.OPENAI_API_KEY, ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY };
+const REQUIRED_ENV = { VOICE_TOKEN: TOKEN, OPENAI_API_KEY: process.env.OPENAI_API_KEY };
 const missing = Object.entries(REQUIRED_ENV).filter(([, v]) => !v).map(([k]) => k);
 if (missing.length) {
   console.error(`[voice] Missing env vars: ${missing.join(", ")}`);
   process.exit(1);
 }
-console.log("[voice] env OK: VOICE_TOKEN, OPENAI_API_KEY, ANTHROPIC_API_KEY all set");
+console.log("[voice] env OK: VOICE_TOKEN, OPENAI_API_KEY all set");
 
 function checkToken(req) {
   const url = new URL(req.url, `http://${req.headers.host}`);
@@ -29,6 +28,7 @@ const STATUS_FILE = "/tmp/squad-status.json";
 
 const app = express();
 
+app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
 app.get("/api/status", (req, res) => {
@@ -41,6 +41,32 @@ app.get("/api/status", (req, res) => {
     res.json(JSON.parse(data));
   } catch {
     res.json({ timestamp: null, summary: "Status daemon not running yet.", paneCount: 0, sessions: [] });
+  }
+});
+
+app.post("/api/speak", async (req, res) => {
+  const { text, token } = req.body || {};
+  if (token !== TOKEN) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  if (!text || typeof text !== "string" || !text.trim()) {
+    return res.status(400).json({ error: "Missing or empty 'text' field" });
+  }
+  try {
+    const trimmed = text.trim();
+    console.log(`[speak] "${trimmed.slice(0, 100)}${trimmed.length > 100 ? "..." : ""}"`);
+    const audio = await synthesize(trimmed);
+    console.log(`[speak] synthesized ${audio.length} bytes`);
+    for (const client of wss.clients) {
+      if (client.readyState === 1) {
+        client.send(JSON.stringify({ type: "speak_text", text: trimmed }));
+        client.send(audio);
+      }
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("[speak] error:", err.message);
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -59,8 +85,6 @@ server.on("upgrade", (req, socket, head) => {
   });
 });
 
-const SUMMARY_STABLE_MS = 5000;
-
 wss.on("connection", (ws) => {
   console.log("[ws] client connected");
 
@@ -69,50 +93,16 @@ wss.on("connection", (ws) => {
 
   ws.send(JSON.stringify({ type: "connected", captain: CAPTAIN }));
 
-  // Snapshot + auto-summary state
   let lastSnapshot = "";
-  let lastSnapshotChangeTime = Date.now();
-  let lastSummarizedContent = null;
-  let lastSummary = "";
-  let summarizing = false;
 
   const snapshotTimer = setInterval(async () => {
     if (ws.readyState !== ws.OPEN) return;
-    // Skip if the send buffer is backed up (slow connection)
     if (ws.bufferedAmount > 65536) return;
     const content = await capturePaneOutputAsync();
 
     if (content !== lastSnapshot) {
       lastSnapshot = content;
-      lastSnapshotChangeTime = Date.now();
       ws.send(JSON.stringify({ type: "tmux_snapshot", content }));
-      return;
-    }
-
-    const stableFor = Date.now() - lastSnapshotChangeTime;
-    if (stableFor >= SUMMARY_STABLE_MS && content !== lastSummarizedContent && !summarizing) {
-      summarizing = true;
-      lastSummarizedContent = content;
-      const contentLen = content.length;
-      console.log(`[summary] terminal stable for ${(stableFor / 1000).toFixed(1)}s, content ${contentLen} chars — summarizing`);
-      try {
-        const t0 = Date.now();
-        const summary = await summarize(content, lastSummary);
-        console.log(`[summary] summarize done in ${Date.now() - t0}ms: "${summary.slice(0, 100)}${summary.length > 100 ? "..." : ""}"`);
-        lastSummary = summary;
-        if (ws.readyState === ws.OPEN) {
-          ws.send(JSON.stringify({ type: "captain_done", summary }));
-
-          const t1 = Date.now();
-          const audio = await synthesize(summary);
-          console.log(`[tts] synthesized ${audio.length} bytes in ${Date.now() - t1}ms`);
-          ws.send(audio);
-          console.log("[tts] audio sent to client");
-        }
-      } catch (err) {
-        console.error("[summary] error:", err.message);
-      }
-      summarizing = false;
     }
   }, 1000);
 
