@@ -378,12 +378,13 @@ voiceMicBtn.addEventListener("mouseleave", () => {
 
 // Replay button — plays last TTS audio
 voiceReplayBtn.addEventListener("click", () => {
+  audioUnlocked = true; // prevent document click handler from overwriting src
   if (lastTtsAudioData) playAudio(lastTtsAudioData);
 });
 
 // Voice status button — ask captain for a task status update
 voiceStatusBtn.addEventListener("click", () => {
-  unlockAudio();
+  audioUnlocked = true; // prevent document click handler from overwriting src
   playChime();
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
   ws.send(JSON.stringify({ type: "text_command", text: "Give me a status update on all the tasks" }));
