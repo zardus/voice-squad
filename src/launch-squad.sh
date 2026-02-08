@@ -36,39 +36,46 @@ else
     tmux send-keys -t captain "codex --dangerously-bypass-approvals-and-sandbox $*" Enter
 fi
 
+# Create a second window for the voice server
+tmux new-window -t captain -n voice
+
+# Write a startup script that the voice window will run
+cat > /tmp/start-voice.sh << 'SCRIPT'
+#!/bin/bash
+export VOICE_TOKEN="$1"
+
 # Start voice server
-echo "Starting voice server..."
-node /opt/squad/voice/server.js &
-VOICE_PID=$!
+VOICE_TOKEN="$1" node /opt/squad/voice/server.js &
 
 # Start cloudflared tunnel
-echo "Starting cloudflared tunnel..."
 cloudflared tunnel --url http://localhost:3000 > /tmp/cloudflared.log 2>&1 &
-TUNNEL_PID=$!
 
-# Wait for tunnel URL to appear (up to 15s)
+# Wait for tunnel URL (up to 15s)
 echo "Waiting for tunnel URL..."
 for i in $(seq 1 30); do
     TUNNEL_URL=$(grep -oP 'https://[a-z0-9-]+\.trycloudflare\.com' /tmp/cloudflared.log 2>/dev/null | head -1)
-    if [ -n "$TUNNEL_URL" ]; then
-        break
-    fi
+    if [ -n "$TUNNEL_URL" ]; then break; fi
     sleep 0.5
 done
 
-VOICE_URL=""
 if [ -n "$TUNNEL_URL" ]; then
-    VOICE_URL="${TUNNEL_URL}?token=${VOICE_TOKEN}"
+    VOICE_URL="${TUNNEL_URL}?token=${1}"
 else
     echo "Warning: Could not detect tunnel URL. Check /tmp/cloudflared.log"
-    VOICE_URL="http://localhost:3000?token=${VOICE_TOKEN}"
+    VOICE_URL="http://localhost:3000?token=${1}"
 fi
 
-# Show QR code for easy phone scanning
+echo "$VOICE_URL" > /tmp/voice-url.txt
 node /opt/squad/voice/show-qr.js "$VOICE_URL"
 
-# Save URL to file for later retrieval
-echo "$VOICE_URL" > /tmp/voice-url.txt
+# Keep window alive
+wait
+SCRIPT
+chmod +x /tmp/start-voice.sh
 
-# Attach to captain session (terminal still works normally)
+# Launch the voice startup in the voice window
+tmux send-keys -t captain:voice "/tmp/start-voice.sh ${VOICE_TOKEN}" Enter
+
+# Select the captain window (window 0) and attach
+tmux select-window -t captain:0
 exec tmux attach -t captain
