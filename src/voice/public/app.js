@@ -9,6 +9,7 @@ const updateBtn = document.getElementById("update-btn");
 const autoreadCb = document.getElementById("autoread-cb");
 const voiceMicBtn = document.getElementById("voice-mic-btn");
 const voiceReplayBtn = document.getElementById("voice-replay-btn");
+const voiceStatusBtn = document.getElementById("voice-status-btn");
 const controlsEl = document.getElementById("controls");
 let lastTtsAudioData = null;
 
@@ -323,6 +324,13 @@ voiceMicBtn.addEventListener("mouseleave", () => {
 // Replay button — plays last TTS audio
 voiceReplayBtn.addEventListener("click", () => {
   if (lastTtsAudioData) playAudio(lastTtsAudioData);
+});
+
+// Voice status button — ask captain for a task status update
+voiceStatusBtn.addEventListener("click", () => {
+  unlockAudio();
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  ws.send(JSON.stringify({ type: "text_command", text: "Give me a status update on all the tasks" }));
 });
 
 // Pre-acquire mic on first user interaction anywhere
