@@ -1,6 +1,6 @@
 const { execSync } = require("child_process");
 
-const SESSION = "captain";
+const TARGET = "captain:0";
 const POLL_INTERVAL = 500;
 const STABLE_THRESHOLD = 3000; // 3s of no change = done
 const HARD_TIMEOUT = 120000; // 120s max wait
@@ -8,7 +8,7 @@ const PROMPT_RE = /[❯>$#]\s*$/;
 
 function capturePaneOutput() {
   try {
-    return execSync(`tmux capture-pane -t ${SESSION} -p -S -500`, {
+    return execSync(`tmux capture-pane -t ${TARGET} -p -S -500`, {
       encoding: "utf-8",
       timeout: 5000,
     });
@@ -19,11 +19,11 @@ function capturePaneOutput() {
 
 function sendToCaptain(text) {
   // Use -l for literal text (no metacharacter interpretation)
-  execSync(`tmux send-keys -t ${SESSION} -l ${shellEscape(text)}`, {
+  execSync(`tmux send-keys -t ${TARGET} -l ${shellEscape(text)}`, {
     timeout: 5000,
   });
   // Send Enter separately
-  execSync(`tmux send-keys -t ${SESSION} Enter`, { timeout: 5000 });
+  execSync(`tmux send-keys -t ${TARGET} Enter`, { timeout: 5000 });
 }
 
 function shellEscape(str) {
