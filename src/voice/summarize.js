@@ -14,7 +14,7 @@ async function summarize(rawOutput, previousSummary) {
   if (!trimmed) return "Nothing happened yet.";
   if (trimmed.length < SHORT_THRESHOLD && !previousSummary) return trimmed;
 
-  let prompt = `You are a voice assistant for someone managing AI coding agents. They can't see the terminal right now — you're their ears. Read this terminal output and tell them what's going on in 1-3 short sentences. Talk directly to them like a teammate giving a quick status update. Be casual and specific. No markdown, no code blocks, no formatting — this will be spoken aloud.`;
+  let prompt = `Summarize this terminal output as a voice status update. Be direct and concise — state what is happening, skip conversational filler. No greetings, no "it looks like", no markdown. Just the facts. Can be multiple sentences if needed, but every word should carry information.`;
 
   if (previousSummary) {
     prompt += `\n\nYou last told them: "${previousSummary}"\nOnly mention what's new. If nothing meaningful changed, just say so.`;
