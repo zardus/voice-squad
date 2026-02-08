@@ -13,8 +13,16 @@ RUN apt-get update && apt-get install -y \
     lsb-release \
     sudo \
     jq \
+    locales \
     nix-bin \
     && rm -rf /var/lib/apt/lists/*
+
+# Generate UTF-8 locale (required for Unicode in tmux / Claude Code UI)
+RUN locale-gen en_US.UTF-8
+
+ENV LANG=en_US.UTF-8 \
+    LC_ALL=en_US.UTF-8 \
+    TERM=xterm-256color
 
 # Configure nix for single-user mode (no daemon, no systemd in Docker)
 RUN chown -R ubuntu:ubuntu /nix \
