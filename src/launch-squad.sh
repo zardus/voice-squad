@@ -20,13 +20,8 @@ cp /opt/squad/mcp-config.json /home/ubuntu/.squad-mcp.json
 mkdir -p /home/ubuntu/.codex
 cp /opt/squad/codex-mcp-config.toml /home/ubuntu/.codex/config.toml
 
-# Source ~/env (vars aren't exported, so they don't survive exec from entrypoint)
+# Source ~/env for API keys (vars aren't exported, so they don't survive exec from entrypoint)
 [ -f /home/ubuntu/env ] && . /home/ubuntu/env
-
-# Expose API keys for the voice server (~/env prefixes them with _ to
-# prevent the captain CLIs from using API mode)
-[ -n "$_OPENAI_API_KEY" ] && export OPENAI_API_KEY="$_OPENAI_API_KEY"
-[ -n "$_ANTHROPIC_API_KEY" ] && export ANTHROPIC_API_KEY="$_ANTHROPIC_API_KEY"
 
 # Generate auth token for voice interface
 VOICE_TOKEN=$(head -c 32 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9' | head -c 32)
@@ -44,8 +39,9 @@ else
     tmux send-keys -t captain "codex --dangerously-bypass-approvals-and-sandbox $*" Enter
 fi
 
-# Start voice server and cloudflared directly (so they inherit env vars)
-node /opt/squad/voice/server.js > /tmp/voice-server.log 2>&1 &
+# Start voice server with API keys inline (not exported, so captain CLIs don't see them)
+OPENAI_API_KEY="$_OPENAI_API_KEY" ANTHROPIC_API_KEY="$_ANTHROPIC_API_KEY" \
+    node /opt/squad/voice/server.js > /tmp/voice-server.log 2>&1 &
 cloudflared tunnel --url http://localhost:3000 > /tmp/cloudflared.log 2>&1 &
 
 # Wait for tunnel URL (up to 15s)
