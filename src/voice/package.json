@@ -1,0 +1,12 @@
+{
+  "name": "squad-voice",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Voice interface for Squad captain",
+  "main": "server.js",
+  "dependencies": {
+    "express": "^4.21.0",
+    "qrcode-terminal": "^0.12.0",
+    "ws": "^8.18.0"
+  }
+}

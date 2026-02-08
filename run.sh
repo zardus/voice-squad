@@ -22,6 +22,7 @@ if [ -n "$SSH_AUTH_SOCK" ]; then
 fi
 
 exec docker run -it --rm --privileged \
+    -p 3000:3000 \
     -v "$(pwd)/home:/home/ubuntu" \
     -v "${HOME}/.claude:/home/ubuntu/.claude" \
     -v "${HOME}/.claude.json:/home/ubuntu/.claude.json" \

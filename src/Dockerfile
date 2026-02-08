@@ -77,6 +77,11 @@ RUN pip3 install --break-system-packages --no-cache-dir \
     mypy \
     ipython
 
+# cloudflared (for HTTPS tunnel to voice server)
+RUN curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-$(dpkg --print-architecture) \
+    -o /usr/local/bin/cloudflared \
+    && chmod +x /usr/local/bin/cloudflared
+
 # Claude Code + Codex
 RUN npm install -g @anthropic-ai/claude-code @openai/codex@0.98.0
 
@@ -91,6 +96,9 @@ RUN chmod +x /entrypoint.sh /opt/squad/launch-squad.sh
 COPY captain-instructions.md /opt/squad/captain/instructions.md
 COPY mcp-config.json /opt/squad/mcp-config.json
 COPY codex-mcp-config.toml /opt/squad/codex-mcp-config.toml
+
+COPY voice/ /opt/squad/voice/
+RUN cd /opt/squad/voice && npm install --production
 
 USER ubuntu
 
