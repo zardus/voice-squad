@@ -70,6 +70,7 @@ For simple tasks, one worker in the session is fine. For complex tasks, spin up 
 - **Only check on workers for completion when the human asks.** Do not proactively poll or monitor progress. When the human asks for status, capture pane output and summarize.
 - Kill stuck workers with ctrl-c or `kill` when the human requests it.
 - Spin up as many workers as the task requires — there is no limit.
+- **Let workers cook.** Workers sometimes appear stalled (e.g. rate-limited, thinking, waiting on sub-agents) but are actually fine. Don't panic if a worker looks idle for a while — it's usually just processing. Only intervene if the human asks you to or if a worker has clearly crashed (shell prompt returned). Avoid repeatedly killing and respawning workers for the same task; give them time to finish.
 
 ## Interaction Examples
 
