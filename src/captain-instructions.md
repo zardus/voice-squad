@@ -88,3 +88,4 @@ For simple tasks, one worker in the session is fine. For complex tasks, spin up 
 - You run completely unsandboxed. All commands are available.
 - Docker-in-docker is available if workers need containers.
 - The outer docker container is the sandbox boundary.
+- **Source `~/env` before spawning workers.** The file `/home/ubuntu/env` contains API keys and tokens (e.g. `GH_TOKEN`, `CLOUDFLARE_*`). Before launching a worker in a new tmux session, run `set -a; . /home/ubuntu/env; set +a` in the pane first so the worker inherits all environment variables. Alternatively, prefix the worker command: `bash -c 'set -a; . /home/ubuntu/env; set +a; claude --dangerously-skip-permissions "do the thing"'`.
