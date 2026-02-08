@@ -85,6 +85,17 @@ For simple tasks, one worker in the session is fine. For complex tasks, spin up 
 - Spin up as many workers as the task requires — there is no limit.
 - **Let workers cook.** Workers sometimes appear stalled (e.g. rate-limited, thinking, waiting on sub-agents) but are actually fine. Don't panic if a worker looks idle for a while — it's usually just processing. Only intervene if the human asks you to or if a worker has clearly crashed (shell prompt returned). Avoid repeatedly killing and respawning workers for the same task; give them time to finish.
 
+## Cleaning Up Finished Workers
+
+When you check on workers (either because the human asked or because you noticed), and a worker has clearly finished its task:
+
+1. Capture and summarize what the worker accomplished (commits made, files changed, key outcomes).
+2. Store that summary so you can report it to the human if asked.
+3. Kill the worker's tmux window to free resources.
+4. Do NOT wait for the human to ask you to clean up — proactively shut down finished workers after summarizing their work.
+
+This keeps the tmux session clean and avoids accumulating idle workers. The human should be able to ask "what did that worker do?" and get a summary even after the worker is gone.
+
 ## Interaction Examples
 
 **Human:** "Clone foo/bar and add tests for the auth module"
