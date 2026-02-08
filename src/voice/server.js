@@ -26,15 +26,14 @@ function checkToken(req) {
 
 const app = express();
 
-// Static assets don't need auth — the WebSocket is the sensitive part
 app.use(express.static(path.join(__dirname, "public")));
 
 const server = http.createServer(app);
 const wss = new WebSocketServer({ noServer: true });
 
-// Token gate on WebSocket upgrade
 server.on("upgrade", (req, socket, head) => {
   if (!checkToken(req)) {
+    console.log("[ws] rejected upgrade — bad token");
     socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
     socket.destroy();
     return;
@@ -47,7 +46,7 @@ server.on("upgrade", (req, socket, head) => {
 const SUMMARY_STABLE_MS = 5000;
 
 wss.on("connection", (ws) => {
-  console.log("[voice] client connected");
+  console.log("[ws] client connected");
 
   let audioChunks = [];
   let audioMimeType = "audio/webm";
@@ -65,7 +64,6 @@ wss.on("connection", (ws) => {
     if (ws.readyState !== ws.OPEN) return;
     const content = capturePaneOutput();
 
-    // Send snapshot to client if content changed
     if (content !== lastSnapshot) {
       lastSnapshot = content;
       lastSnapshotChangeTime = Date.now();
@@ -73,24 +71,30 @@ wss.on("connection", (ws) => {
       return;
     }
 
-    // When content is stable for 5s and differs from last summary, generate one
     const stableFor = Date.now() - lastSnapshotChangeTime;
     if (stableFor >= SUMMARY_STABLE_MS && content !== lastSummarizedContent && !summarizing) {
       summarizing = true;
       lastSummarizedContent = content;
+      const contentLen = content.length;
+      console.log(`[summary] terminal stable for ${(stableFor / 1000).toFixed(1)}s, content ${contentLen} chars — summarizing`);
       try {
+        const t0 = Date.now();
         const summary = await summarize(content, lastSummary);
+        console.log(`[summary] summarize done in ${Date.now() - t0}ms: "${summary.slice(0, 100)}${summary.length > 100 ? "..." : ""}"`);
         lastSummary = summary;
         if (ws.readyState === ws.OPEN) {
           ws.send(JSON.stringify({ type: "captain_done", summary }));
 
+          const t1 = Date.now();
           const mp3 = await synthesize(summary);
+          console.log(`[tts] synthesized ${mp3.length} bytes in ${Date.now() - t1}ms`);
           ws.send(JSON.stringify({ type: "audio_summary_start" }));
           ws.send(mp3);
           ws.send(JSON.stringify({ type: "audio_summary_end" }));
+          console.log("[tts] audio sent to client");
         }
       } catch (err) {
-        console.error("[voice] summary/TTS error:", err.message);
+        console.error("[summary] error:", err.message);
       }
       summarizing = false;
     }
@@ -114,20 +118,26 @@ wss.on("connection", (ws) => {
       case "audio_start":
         audioChunks = [];
         audioMimeType = msg.mimeType || "audio/webm";
+        console.log(`[audio] recording started, mimeType=${audioMimeType}`);
         break;
 
-      case "audio_end":
-        handleAudioCommand(Buffer.concat(audioChunks), audioMimeType);
+      case "audio_end": {
+        const buf = Buffer.concat(audioChunks);
+        console.log(`[audio] recording ended, ${audioChunks.length} chunks, ${buf.length} bytes`);
+        handleAudioCommand(buf, audioMimeType);
         audioChunks = [];
         break;
+      }
 
       case "text_command":
         if (msg.text && msg.text.trim()) {
+          console.log(`[cmd] text: "${msg.text.trim()}"`);
           sendCommand(msg.text.trim());
         }
         break;
 
       default:
+        console.log(`[ws] unknown message type: ${msg.type}`);
         ws.send(
           JSON.stringify({ type: "error", message: `Unknown type: ${msg.type}` })
         );
@@ -135,17 +145,19 @@ wss.on("connection", (ws) => {
   });
 
   ws.on("close", () => {
-    console.log("[voice] client disconnected");
+    console.log("[ws] client disconnected");
     clearInterval(snapshotTimer);
   });
 
   async function handleAudioCommand(audioBuffer, mimeType) {
     try {
+      const t0 = Date.now();
       const text = await transcribe(audioBuffer, mimeType);
+      console.log(`[stt] transcribed in ${Date.now() - t0}ms: "${text}"`);
       ws.send(JSON.stringify({ type: "transcription", text }));
       sendCommand(text);
     } catch (err) {
-      console.error("[voice] STT error:", err.message);
+      console.error("[stt] error:", err.message);
       ws.send(
         JSON.stringify({ type: "error", message: "Transcription failed: " + err.message })
       );
@@ -155,7 +167,9 @@ wss.on("connection", (ws) => {
   function sendCommand(text) {
     try {
       sendToCaptain(text);
+      console.log(`[cmd] sent to captain tmux`);
     } catch (err) {
+      console.error(`[cmd] failed to send: ${err.message}`);
       ws.send(
         JSON.stringify({ type: "error", message: "Failed to send to captain: " + err.message })
       );
