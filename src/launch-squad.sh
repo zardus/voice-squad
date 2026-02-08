@@ -20,6 +20,9 @@ cp /opt/squad/mcp-config.json /home/ubuntu/.squad-mcp.json
 mkdir -p /home/ubuntu/.codex
 cp /opt/squad/codex-mcp-config.toml /home/ubuntu/.codex/config.toml
 
+# Source ~/env (vars aren't exported, so they don't survive exec from entrypoint)
+[ -f /home/ubuntu/env ] && . /home/ubuntu/env
+
 # Expose API keys for the voice server (~/env prefixes them with _ to
 # prevent the captain CLIs from using API mode)
 [ -n "$_OPENAI_API_KEY" ] && export OPENAI_API_KEY="$_OPENAI_API_KEY"
