@@ -13,6 +13,7 @@ const voiceStatusBtn = document.getElementById("voice-status-btn");
 const controlsEl = document.getElementById("controls");
 let lastTtsAudioData = null;
 let speakAudioQueue = []; // TTS audio received while mic is held down
+let speakPending = false; // true after speak_text arrives, forces next audio to play
 
 // Auto-read toggle: OFF by default, persisted in localStorage
 let autoreadBeforeVoice = null; // saved state when entering Voice tab
@@ -101,6 +102,8 @@ function playAudio(data) {
   const url = URL.createObjectURL(blob);
   if (ttsAudio.src) URL.revokeObjectURL(ttsAudio.src);
   ttsAudio.src = url;
+  // Resume AudioContext if suspended (mobile browsers suspend on background)
+  if (audioCtx && audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
   ttsAudio.play().catch((err) => console.warn("TTS play blocked:", err.message));
 }
 
@@ -142,11 +145,15 @@ function connect() {
   };
 
   ws.onmessage = (evt) => {
-    // Any binary frame from server = TTS audio, store for replay and play if auto-read is on
+    // Any binary frame from server = TTS audio, store for replay and play
     if (evt.data instanceof ArrayBuffer) {
       lastTtsAudioData = evt.data;
       voiceReplayBtn.disabled = false;
-      if (autoreadCb.checked) {
+      // Always play if this follows a speak_text (explicit captain speak command),
+      // otherwise respect the autoread toggle
+      const shouldPlay = speakPending || autoreadCb.checked;
+      speakPending = false;
+      if (shouldPlay) {
         if (recording || wantRecording) {
           // Mic is active — hold audio until recording stops
           speakAudioQueue.push(evt.data);
@@ -170,6 +177,7 @@ function connect() {
         break;
 
       case "speak_text":
+        speakPending = true; // next binary frame is from explicit speak — always play
         if (msg.text) {
           summaryEl.textContent = msg.text;
         }
@@ -198,6 +206,9 @@ function connect() {
   ws.onclose = () => {
     statusEl.textContent = "disconnected";
     statusEl.className = "disconnected";
+    // Reset audio unlock so next user gesture re-primes the Audio element
+    audioUnlocked = false;
+    speakPending = false;
     setTimeout(connect, 2000);
   };
 
@@ -296,10 +307,11 @@ function stopRecording() {
 
   // Play the most recent speak audio that arrived while recording.
   // Only the latest is played to avoid a cascade of stale messages.
+  // Audio in the queue already passed the shouldPlay check when it was queued.
   if (speakAudioQueue.length > 0) {
     const latest = speakAudioQueue[speakAudioQueue.length - 1];
     speakAudioQueue = [];
-    if (autoreadCb.checked) playAudio(latest);
+    playAudio(latest);
   }
 }
 
@@ -377,9 +389,19 @@ voiceStatusBtn.addEventListener("click", () => {
   ws.send(JSON.stringify({ type: "text_command", text: "Give me a status update on all the tasks" }));
 });
 
-// Pre-acquire mic on first user interaction anywhere
-document.addEventListener("touchstart", () => ensureMicStream().catch(() => {}), { once: true });
-document.addEventListener("click", () => ensureMicStream().catch(() => {}), { once: true });
+// Unlock audio + acquire mic on user interaction.
+// Not once-only: after WS reconnect audioUnlocked resets, so we need subsequent
+// gestures to re-prime the Audio element for autoplay.
+let micStreamAcquired = false;
+function onUserGesture() {
+  if (!audioUnlocked) unlockAudio();
+  if (audioCtx && audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
+  if (!micStreamAcquired) {
+    ensureMicStream().then(() => { micStreamAcquired = true; }).catch(() => {});
+  }
+}
+document.addEventListener("touchstart", onUserGesture, { passive: true });
+document.addEventListener("click", onUserGesture);
 
 // Status button — ask captain for a task status update
 updateBtn.addEventListener("click", () => {

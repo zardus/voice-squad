@@ -58,13 +58,16 @@ app.post("/api/speak", async (req, res) => {
     console.log(`[speak] "${trimmed.slice(0, 100)}${trimmed.length > 100 ? "..." : ""}"`);
     const audio = await synthesize(trimmed);
     console.log(`[speak] synthesized ${audio.length} bytes`);
+    let sent = 0;
     for (const client of wss.clients) {
       if (client.readyState === 1) {
         client.send(JSON.stringify({ type: "speak_text", text: trimmed }));
         client.send(audio);
+        sent++;
       }
     }
-    res.json({ ok: true });
+    console.log(`[speak] sent to ${sent}/${wss.clients.size} client(s)`);
+    res.json({ ok: true, clients: sent });
   } catch (err) {
     console.error("[speak] error:", err.message);
     res.status(500).json({ error: err.message });
