@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Project Is
 
-Squad is a multi-agent AI orchestration system. It runs inside a privileged Docker container and uses a **captain/workers** pattern: a captain agent (Claude or Codex) manages worker agents that run in tmux panes, communicating via a tmux MCP server.
+Squad is a multi-agent AI orchestration system. It runs inside a privileged Docker container and uses a **captain/workers** pattern: a captain agent (Claude or Codex) manages worker agents that run in tmux panes, communicating via a tmux MCP server. It includes a voice interface (PWA) for controlling the captain from a phone.
 
 ## Build & Run
 
@@ -18,7 +18,7 @@ Squad is a multi-agent AI orchestration system. It runs inside a privileged Dock
 
 Requires `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` environment variables on the host. SSH agent is forwarded automatically if `SSH_AUTH_SOCK` is set.
 
-The Docker image is built from `src/Dockerfile` (Ubuntu 22.04 + Docker-in-Docker + Node.js 20 + Claude Code CLI + Codex CLI).
+The Docker image is built from `src/Dockerfile` (Ubuntu 24.04 + Docker-in-Docker + Node.js 20 + Claude Code CLI + Codex CLI + cloudflared).
 
 ## Project Structure
 
@@ -26,17 +26,29 @@ All build/runtime files live in `src/`:
 
 - `Dockerfile` — Container image definition
 - `entrypoint.sh` — Starts dockerd, fixes permissions, calls launch-squad.sh
-- `launch-squad.sh` — Configures captain type, creates tmux worker session, starts captain CLI.
+- `launch-squad.sh` — Creates captain tmux session (window 0: captain CLI, window 1: voice server + cloudflared), generates auth token, displays QR code
 - `captain-instructions.md` — Injected as CLAUDE.md/AGENTS.md for the captain agent at runtime
 - `mcp-config.json` — Gives the captain access to tmux via the `tmux-mcp` npm package
 
-`run.sh` at the root is the host-side entry point.
+`src/voice/` — Voice interface server and PWA:
+
+- `server.js` — Express HTTP + WebSocket server, orchestrates the voice pipeline
+- `tmux-bridge.js` — Sends commands to captain via `tmux send-keys`, polls output via `capture-pane` with done detection (3s stable + prompt pattern, 120s hard timeout)
+- `stt.js` — OpenAI Whisper API (audio buffer -> text)
+- `tts.js` — OpenAI TTS API (text -> mp3)
+- `summarize.js` — Claude API (raw terminal output -> voice-friendly 1-3 sentence summary)
+- `show-qr.js` — Renders voice URL as terminal QR code for phone scanning
+- `public/` — PWA frontend (HTML, JS, CSS, manifest, service worker, icons)
+
+`run.sh` at the root is the host-side entry point. Exposes port 3000 for LAN access.
 
 `home/` is the shared persistent volume mounted into the container at `/home/ubuntu`. It is gitignored.
 
 ## Key Architecture Details
 
 - **Inside the container**, files are installed to `/opt/squad/`. `launch-squad.sh` copies instruction files to `/home/ubuntu/` with the correct filename (CLAUDE.md for claude captains, AGENTS.md for codex captains).
-- **Environment variables control behavior**: `SQUAD_CAPTAIN` (claude|codex).
+- **Captain runs in tmux**: The captain CLI runs in window 0 of a tmux session called `captain`. The voice server and cloudflared tunnel run in window 1 (`voice`). Switch between them with `Ctrl-b n`.
+- **Voice interface**: A phone PWA connects via WebSocket through a cloudflared quick tunnel (`*.trycloudflare.com`). Auth is via a random token embedded in the URL (shown as a QR code at startup in the voice tmux window). The pipeline: STT (Whisper) -> send to captain via tmux -> poll output -> summarize (Claude Sonnet) -> TTS (OpenAI) -> play on phone.
+- **Environment variables**: `SQUAD_CAPTAIN` (claude|codex), `VOICE_TOKEN` (auto-generated).
 - The container runs `--privileged` for Docker-in-Docker support. The Docker container itself is the sandbox boundary.
 - There is no formal test suite. Manual testing is done by launching a squad and verifying agent behavior.
