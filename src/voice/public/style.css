@@ -108,6 +108,39 @@ body {
   font-style: italic;
 }
 
+/* Transcription panel — between summary and controls */
+#transcription-panel {
+  flex-shrink: 0;
+  border-bottom: 1px solid #0f3460;
+  background: #16213e;
+}
+
+#transcription-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #4ecca3;
+  font-weight: 600;
+  padding: 6px 12px 0;
+}
+
+#transcription {
+  padding: 6px 12px 10px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #e0e0e0;
+}
+
+#transcription:empty::after {
+  content: "Waiting for voice input...";
+  color: #555;
+  font-style: italic;
+}
+
+#transcription.error {
+  color: #e94560;
+}
+
 /* Controls — bottom bar */
 #controls {
   display: flex;
@@ -162,6 +195,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
+  touch-action: none;
 }
 
 #mic-btn:active,

@@ -155,11 +155,11 @@ wss.on("connection", (ws) => {
       const text = await transcribe(audioBuffer, mimeType);
       console.log(`[stt] transcribed in ${Date.now() - t0}ms: "${text}"`);
       ws.send(JSON.stringify({ type: "transcription", text }));
-      sendCommand(text);
+      sendCommand("INPUT FROM SPEECH-TO-TEXT (might have transcription errors): " + text);
     } catch (err) {
       console.error("[stt] error:", err.message);
       ws.send(
-        JSON.stringify({ type: "error", message: "Transcription failed: " + err.message })
+        JSON.stringify({ type: "stt_error", message: err.message })
       );
     }
   }

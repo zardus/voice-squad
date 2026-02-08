@@ -4,6 +4,7 @@ if ("serviceWorker" in navigator) {
 
 const terminalEl = document.getElementById("terminal");
 const summaryEl = document.getElementById("summary");
+const transcriptionEl = document.getElementById("transcription");
 const statusEl = document.getElementById("status");
 const micBtn = document.getElementById("mic-btn");
 const textInput = document.getElementById("text-input");
@@ -12,6 +13,7 @@ const sendBtn = document.getElementById("send-btn");
 let ws = null;
 let mediaRecorder = null;
 let recording = false;
+let wantRecording = false; // true while user is holding the mic button
 let recordingStartTime = 0;
 let micStream = null;
 let autoScroll = true;
@@ -92,6 +94,16 @@ function connect() {
         }
         break;
 
+      case "transcription":
+        transcriptionEl.textContent = msg.text;
+        transcriptionEl.className = "";
+        break;
+
+      case "stt_error":
+        transcriptionEl.textContent = msg.message;
+        transcriptionEl.className = "error";
+        break;
+
       case "error":
         summaryEl.textContent = "Error: " + msg.message;
         break;
@@ -131,12 +143,18 @@ textInput.addEventListener("keydown", (e) => {
 function startRecording() {
   unlockAudio();
   if (!micStream) {
-    // First time — acquire stream then start
-    ensureMicStream().then(() => startRecording()).catch((err) => {
-      summaryEl.textContent = "Mic access denied: " + err.message;
+    // First time — acquire stream, then start only if user is still holding
+    ensureMicStream().then(() => {
+      if (wantRecording) startRecording();
+    }).catch((err) => {
+      transcriptionEl.textContent = "Mic access denied: " + err.message;
+      transcriptionEl.className = "error";
     });
     return;
   }
+
+  // Don't create a new recorder if one is already active
+  if (mediaRecorder && mediaRecorder.state !== "inactive") return;
 
   const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
     ? "audio/webm;codecs=opus"
@@ -153,6 +171,11 @@ function startRecording() {
     const held = Date.now() - recordingStartTime;
     if (ws.readyState !== WebSocket.OPEN || recordedChunks.length === 0 || held < 300) return;
 
+    // Check total size client-side — don't send tiny phantom recordings
+    let totalSize = 0;
+    for (const chunk of recordedChunks) totalSize += chunk.size;
+    if (totalSize < 1000) return;
+
     ws.send(JSON.stringify({ type: "audio_start", mimeType }));
     for (const chunk of recordedChunks) {
       const buf = await chunk.arrayBuffer();
@@ -168,6 +191,7 @@ function startRecording() {
 }
 
 function stopRecording() {
+  wantRecording = false;
   if (mediaRecorder && mediaRecorder.state !== "inactive") {
     mediaRecorder.stop();
   }
@@ -175,25 +199,15 @@ function stopRecording() {
   micBtn.classList.remove("recording");
 }
 
-micBtn.addEventListener("mousedown", (e) => {
+micBtn.addEventListener("pointerdown", (e) => {
   e.preventDefault();
+  micBtn.setPointerCapture(e.pointerId);
+  wantRecording = true;
   startRecording();
 });
-micBtn.addEventListener("mouseup", stopRecording);
-micBtn.addEventListener("mouseleave", () => {
-  if (recording) stopRecording();
-});
-
-micBtn.addEventListener("touchstart", (e) => {
-  e.preventDefault();
-  startRecording();
-});
-micBtn.addEventListener("touchend", (e) => {
-  e.preventDefault();
-  stopRecording();
-});
-micBtn.addEventListener("touchcancel", () => {
-  if (recording) stopRecording();
+micBtn.addEventListener("pointerup", stopRecording);
+micBtn.addEventListener("pointercancel", () => {
+  if (recording || wantRecording) stopRecording();
 });
 
 // Pre-acquire mic on first user interaction anywhere

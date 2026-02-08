@@ -1,13 +1,22 @@
 const { execSync, execFile } = require("child_process");
 
 const TARGET = "captain:0";
+// Claude Code's input box separator — strip this and everything below it
+const INPUT_BOX_RE = /^[─]{20,}/m;
+
+function stripInputBox(output) {
+  const match = output.match(INPUT_BOX_RE);
+  if (!match) return output;
+  return output.slice(0, match.index).trimEnd();
+}
 
 function capturePaneOutput() {
   try {
-    return execSync(`tmux capture-pane -t ${TARGET} -p -S -500`, {
+    const raw = execSync(`tmux capture-pane -t ${TARGET} -p -S -500`, {
       encoding: "utf-8",
       timeout: 5000,
     });
+    return stripInputBox(raw);
   } catch {
     return "";
   }
@@ -19,7 +28,7 @@ function capturePaneOutputAsync() {
       encoding: "utf-8",
       timeout: 5000,
     }, (err, stdout) => {
-      resolve(err ? "" : stdout);
+      resolve(err ? "" : stripInputBox(stdout));
     });
   });
 }
