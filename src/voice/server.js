@@ -1,6 +1,7 @@
 const express = require("express");
 const http = require("http");
 const path = require("path");
+const fs = require("fs");
 const { WebSocketServer } = require("ws");
 const { sendToCaptain, capturePaneOutputAsync } = require("./tmux-bridge");
 const { transcribe } = require("./stt");
@@ -24,9 +25,24 @@ function checkToken(req) {
   return url.searchParams.get("token") === TOKEN;
 }
 
+const STATUS_FILE = "/tmp/squad-status.json";
+
 const app = express();
 
 app.use(express.static(path.join(__dirname, "public")));
+
+app.get("/api/status", (req, res) => {
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  if (url.searchParams.get("token") !== TOKEN) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  try {
+    const data = fs.readFileSync(STATUS_FILE, "utf8");
+    res.json(JSON.parse(data));
+  } catch {
+    res.json({ timestamp: null, summary: "Status daemon not running yet.", paneCount: 0, sessions: [] });
+  }
+});
 
 const server = http.createServer(app);
 const wss = new WebSocketServer({ noServer: true });
