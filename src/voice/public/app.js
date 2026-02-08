@@ -10,6 +10,7 @@ const autoreadCb = document.getElementById("autoread-cb");
 const voiceMicBtn = document.getElementById("voice-mic-btn");
 const voiceReplayBtn = document.getElementById("voice-replay-btn");
 const voiceStatusBtn = document.getElementById("voice-status-btn");
+const voiceTranscriptionEl = document.getElementById("voice-transcription");
 const controlsEl = document.getElementById("controls");
 let lastTtsAudioData = null;
 let speakAudioQueue = []; // TTS audio received while mic is held down
@@ -186,16 +187,22 @@ function connect() {
       case "transcription":
         transcriptionEl.textContent = msg.text;
         transcriptionEl.className = "";
+        voiceTranscriptionEl.textContent = msg.text;
+        voiceTranscriptionEl.className = "voice-transcription";
         break;
 
       case "transcribing":
         transcriptionEl.textContent = "Transcribing...";
         transcriptionEl.className = "transcribing";
+        voiceTranscriptionEl.textContent = "Transcribing...";
+        voiceTranscriptionEl.className = "voice-transcription transcribing";
         break;
 
       case "stt_error":
         transcriptionEl.textContent = msg.message;
         transcriptionEl.className = "error";
+        voiceTranscriptionEl.textContent = msg.message;
+        voiceTranscriptionEl.className = "voice-transcription error";
         playDing(false);
         break;
 

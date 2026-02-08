@@ -606,6 +606,27 @@ body {
   color: #555;
 }
 
+.voice-transcription {
+  font-size: 14px;
+  color: #999;
+  font-style: italic;
+  text-align: center;
+  padding: 0 20px;
+  min-height: 20px;
+}
+
+.voice-transcription:empty {
+  display: none;
+}
+
+.voice-transcription.transcribing {
+  animation: pulse-opacity 1.2s ease-in-out infinite;
+}
+
+.voice-transcription.error {
+  color: #e94560;
+}
+
 #controls.hidden {
   display: none;
 }
