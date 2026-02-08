@@ -46,6 +46,10 @@ function detectFormat(buf) {
  * @returns {Promise<string>} Transcribed text
  */
 async function transcribe(audioBuffer, mimeType) {
+  if (audioBuffer.length < 1000) {
+    throw new Error(`Audio too short (${audioBuffer.length} bytes), skipping`);
+  }
+
   const detected = detectFormat(audioBuffer);
   console.log(`[stt] ${audioBuffer.length} bytes, client says: ${mimeType}, detected: ${detected.ext} (${detected.mime})`);
 

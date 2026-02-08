@@ -50,6 +50,7 @@ wss.on("connection", (ws) => {
   let audioChunks = [];
   let audioMimeType = "audio/webm";
   let cancelPoll = null;
+  let lastSummary = "";
 
   ws.send(JSON.stringify({ type: "connected", captain: CAPTAIN }));
 
@@ -165,7 +166,8 @@ wss.on("connection", (ws) => {
         if (ws.readyState !== ws.OPEN) return;
 
         try {
-          const summary = await summarize(fullOutput);
+          const summary = await summarize(fullOutput, lastSummary);
+          lastSummary = summary;
           ws.send(
             JSON.stringify({ type: "captain_done", fullOutput, summary })
           );

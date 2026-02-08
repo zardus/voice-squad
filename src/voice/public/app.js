@@ -12,8 +12,20 @@ const sendBtn = document.getElementById("send-btn");
 let ws = null;
 let mediaRecorder = null;
 let recording = false;
+let recordingStartTime = 0;
 let audioChunks = [];
 let autoScroll = true;
+
+// Persistent audio element — unlocked on first user gesture so TTS can play later
+const ttsAudio = new Audio();
+let audioUnlocked = false;
+
+function unlockAudio() {
+  if (audioUnlocked) return;
+  // Play a tiny silent WAV to unlock the audio element for future programmatic plays
+  ttsAudio.src = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=";
+  ttsAudio.play().then(() => { audioUnlocked = true; }).catch(() => {});
+}
 
 const urlParams = new URLSearchParams(location.search);
 const token = urlParams.get("token") || "";
@@ -89,13 +101,14 @@ function playAudio(chunks) {
   if (!chunks.length) return;
   const blob = new Blob(chunks, { type: "audio/mpeg" });
   const url = URL.createObjectURL(blob);
-  const audio = new Audio(url);
-  audio.play().catch(() => {});
-  audio.onended = () => URL.revokeObjectURL(url);
+  if (ttsAudio.src) URL.revokeObjectURL(ttsAudio.src);
+  ttsAudio.src = url;
+  ttsAudio.play().catch((err) => console.warn("TTS play blocked:", err.message));
 }
 
 // Text command
 function sendText() {
+  unlockAudio();
   const text = textInput.value.trim();
   if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
   ws.send(JSON.stringify({ type: "text_command", text }));
@@ -109,6 +122,7 @@ textInput.addEventListener("keydown", (e) => {
 
 // Mic recording
 async function startRecording() {
+  unlockAudio();
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
@@ -124,7 +138,8 @@ async function startRecording() {
 
     mediaRecorder.onstop = async () => {
       stream.getTracks().forEach((t) => t.stop());
-      if (ws.readyState !== WebSocket.OPEN || recordedChunks.length === 0) return;
+      const held = Date.now() - recordingStartTime;
+      if (ws.readyState !== WebSocket.OPEN || recordedChunks.length === 0 || held < 300) return;
 
       ws.send(JSON.stringify({ type: "audio_start", mimeType }));
       for (const chunk of recordedChunks) {
@@ -136,6 +151,7 @@ async function startRecording() {
 
     mediaRecorder.start(250);
     recording = true;
+    recordingStartTime = Date.now();
     micBtn.classList.add("recording");
   } catch (err) {
     summaryEl.textContent = "Mic access denied: " + err.message;
