@@ -64,7 +64,7 @@ async function transcribe(audioBuffer, mimeType) {
   const modelField = [
     `\r\n--${boundary}\r\n`,
     `Content-Disposition: form-data; name="model"\r\n\r\n`,
-    `whisper-1`,
+    `gpt-4o-mini-transcribe`,
   ].join("");
 
   const tail = `\r\n--${boundary}--\r\n`;
