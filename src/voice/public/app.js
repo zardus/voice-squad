@@ -151,23 +151,26 @@ async function startRecording() {
       : "audio/mp4";
 
     mediaRecorder = new MediaRecorder(stream, { mimeType });
-
-    ws.send(JSON.stringify({ type: "audio_start", mimeType }));
+    const recordedChunks = [];
 
     mediaRecorder.ondataavailable = (e) => {
-      if (e.data.size > 0 && ws.readyState === WebSocket.OPEN) {
-        e.data.arrayBuffer().then((buf) => ws.send(buf));
-      }
+      if (e.data.size > 0) recordedChunks.push(e.data);
     };
 
-    mediaRecorder.onstop = () => {
+    mediaRecorder.onstop = async () => {
       stream.getTracks().forEach((t) => t.stop());
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: "audio_end" }));
+      if (ws.readyState !== WebSocket.OPEN || recordedChunks.length === 0) return;
+
+      // Send all audio in one go after recording stops
+      ws.send(JSON.stringify({ type: "audio_start", mimeType }));
+      for (const chunk of recordedChunks) {
+        const buf = await chunk.arrayBuffer();
+        ws.send(buf);
       }
+      ws.send(JSON.stringify({ type: "audio_end" }));
     };
 
-    mediaRecorder.start(250); // chunk every 250ms
+    mediaRecorder.start(250);
     recording = true;
     micBtn.classList.add("recording");
   } catch (err) {
