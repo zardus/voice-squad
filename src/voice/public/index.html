@@ -17,6 +17,7 @@
     <div id="tab-bar">
       <button class="tab active" data-tab="terminal">Terminal</button>
       <button class="tab" data-tab="status">Status</button>
+      <button class="tab" data-tab="voice">Voice</button>
     </div>
 
     <div id="terminal-view" class="tab-content active">
@@ -51,6 +52,17 @@
       <div id="status-body">
         <div id="status-summary">Loading status...</div>
         <div id="status-panes"></div>
+      </div>
+    </div>
+
+    <div id="voice-view" class="tab-content">
+      <div id="voice-center">
+        <button id="voice-mic-btn" title="Hold to speak">
+          <svg viewBox="0 0 24 24" width="64" height="64" fill="currentColor">
+            <path d="M12 14a3 3 0 003-3V5a3 3 0 00-6 0v6a3 3 0 003 3zm-1-9a1 1 0 012 0v6a1 1 0 01-2 0V5zm6 6a5 5 0 01-10 0H5a7 7 0 0014 0h-2zm-5 9a1 1 0 01-1-1v-2h2v2a1 1 0 01-1 1z"/>
+          </svg>
+        </button>
+        <span id="voice-hint">Hold to speak</span>
       </div>
     </div>
 

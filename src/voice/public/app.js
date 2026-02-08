@@ -11,8 +11,11 @@ const textInput = document.getElementById("text-input");
 const sendBtn = document.getElementById("send-btn");
 const updateBtn = document.getElementById("update-btn");
 const autoreadCb = document.getElementById("autoread-cb");
+const voiceMicBtn = document.getElementById("voice-mic-btn");
+const controlsEl = document.getElementById("controls");
 
 // Auto-read toggle: OFF by default, persisted in localStorage
+let autoreadBeforeVoice = null; // saved state when entering Voice tab
 autoreadCb.checked = localStorage.getItem("autoread") === "true";
 autoreadCb.addEventListener("change", () => {
   localStorage.setItem("autoread", autoreadCb.checked);
@@ -243,6 +246,7 @@ function startRecording() {
   recording = true;
   recordingStartTime = Date.now();
   micBtn.classList.add("recording");
+  voiceMicBtn.classList.add("recording");
 }
 
 function stopRecording() {
@@ -252,6 +256,7 @@ function stopRecording() {
   }
   recording = false;
   micBtn.classList.remove("recording");
+  voiceMicBtn.classList.remove("recording");
 }
 
 // Track last touch time to ignore synthesized mouse events on mobile
@@ -286,6 +291,35 @@ micBtn.addEventListener("mouseleave", () => {
   if (recording || wantRecording) stopRecording();
 });
 
+// Voice tab mic button — mirrors main mic button behavior
+voiceMicBtn.addEventListener("touchstart", (e) => {
+  e.preventDefault();
+  lastTouchTime = Date.now();
+  wantRecording = true;
+  startRecording();
+});
+voiceMicBtn.addEventListener("touchend", (e) => {
+  e.preventDefault();
+  stopRecording();
+});
+voiceMicBtn.addEventListener("touchcancel", () => {
+  if (recording || wantRecording) stopRecording();
+});
+voiceMicBtn.addEventListener("mousedown", (e) => {
+  e.preventDefault();
+  if (Date.now() - lastTouchTime < 1000) return;
+  wantRecording = true;
+  startRecording();
+});
+voiceMicBtn.addEventListener("mouseup", () => {
+  if (Date.now() - lastTouchTime < 1000) return;
+  stopRecording();
+});
+voiceMicBtn.addEventListener("mouseleave", () => {
+  if (Date.now() - lastTouchTime < 1000) return;
+  if (recording || wantRecording) stopRecording();
+});
+
 // Pre-acquire mic on first user interaction anywhere
 document.addEventListener("touchstart", () => ensureMicStream().catch(() => {}), { once: true });
 document.addEventListener("click", () => ensureMicStream().catch(() => {}), { once: true });
@@ -303,12 +337,25 @@ const tabContents = document.querySelectorAll(".tab-content");
 tabs.forEach((tab) => {
   tab.addEventListener("click", () => {
     const target = tab.dataset.tab;
+    const wasVoice = document.getElementById("voice-view").classList.contains("active");
     tabs.forEach((t) => t.classList.toggle("active", t === tab));
     tabContents.forEach((c) => {
       c.classList.toggle("active", c.id === target + "-view");
     });
     // Fetch status immediately when switching to status tab
     if (target === "status") fetchStatus();
+    // Voice tab: force auto-read on, hide controls
+    if (target === "voice") {
+      autoreadBeforeVoice = autoreadCb.checked;
+      autoreadCb.checked = true;
+      controlsEl.classList.add("hidden");
+    } else {
+      controlsEl.classList.remove("hidden");
+      if (wasVoice && autoreadBeforeVoice !== null) {
+        autoreadCb.checked = autoreadBeforeVoice;
+        autoreadBeforeVoice = null;
+      }
+    }
   });
 });
 
