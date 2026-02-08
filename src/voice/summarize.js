@@ -17,7 +17,7 @@ async function summarize(rawOutput, previousSummary) {
   let system = `Summarize this terminal output as a voice status update. Be direct and concise — state what is happening, skip conversational filler. No greetings, no "it looks like", no markdown. Just the facts. Can be multiple sentences if needed, but every word should carry information.`;
 
   if (previousSummary) {
-    system += `\n\nFor context, your previous update to the user was: "${previousSummary}". Always give a fresh summary of the current state — focus on NEW activity and progress since that last update, but don't just say "no changes." Even if progress is incremental, describe what is currently happening. Avoid repeating the same details verbatim, but it's fine to reference ongoing work.`;
+    system += `\n\nYour previous update was: "${previousSummary}" — the user already heard this. Do NOT repeat, summarize, or paraphrase any of it. ONLY describe what has changed or progressed since then. Jump straight into the new information. If truly nothing changed, say so in one short sentence but still mention what is actively running.`;
   }
 
   const body = JSON.stringify({
