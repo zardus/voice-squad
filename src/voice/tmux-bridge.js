@@ -46,6 +46,8 @@ async function sendToCaptain(text) {
   // preventing bracketed-paste from swallowing the submission.
   await sleep(1000);
   execSync(`tmux send-keys -t ${TARGET} Enter`, { timeout: 5000 });
+  await sleep(1000);
+  execSync(`tmux send-keys -t ${TARGET} Enter`, { timeout: 5000 });
 }
 
 function shellEscape(str) {

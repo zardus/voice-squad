@@ -192,9 +192,15 @@ wss.on("connection", (ws) => {
 
   async function handleAudioCommand(audioBuffer, mimeType) {
     try {
+      ws.send(JSON.stringify({ type: "transcribing" }));
       const t0 = Date.now();
       const text = await transcribe(audioBuffer, mimeType);
       console.log(`[stt] transcribed in ${Date.now() - t0}ms: "${text}"`);
+      if (!text || !text.trim()) {
+        console.log("[stt] blank transcription, skipping");
+        ws.send(JSON.stringify({ type: "stt_error", message: "No speech detected" }));
+        return;
+      }
       ws.send(JSON.stringify({ type: "transcription", text }));
       sendCommand("INPUT FROM SPEECH-TO-TEXT (might have transcription errors): " + text);
     } catch (err) {

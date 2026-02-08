@@ -218,6 +218,17 @@ body {
   color: #e94560;
 }
 
+#transcription.transcribing {
+  color: #a0a0a0;
+  font-style: italic;
+  animation: pulse-opacity 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse-opacity {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
 /* Status view */
 #status-header {
   display: flex;

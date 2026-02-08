@@ -188,9 +188,15 @@ function connect() {
         transcriptionEl.className = "";
         break;
 
+      case "transcribing":
+        transcriptionEl.textContent = "Transcribing...";
+        transcriptionEl.className = "transcribing";
+        break;
+
       case "stt_error":
         transcriptionEl.textContent = msg.message;
         transcriptionEl.className = "error";
+        playDing(false);
         break;
 
       case "status_update":
