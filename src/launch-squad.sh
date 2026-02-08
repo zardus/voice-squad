@@ -40,6 +40,12 @@ echo "Starting $CAPTAIN as captain..."
 # Create a tmux session for the captain (starts in ~/captain/ where its instructions live)
 tmux new-session -d -s captain -c /home/ubuntu/captain
 
+# Start the heartbeat monitor only after tmux has created the initial pane (%0).
+# (It relies on tmux being up and the pane existing.)
+if ! pgrep -f "/opt/squad/heartbeat.sh" >/dev/null 2>&1; then
+    nohup /opt/squad/heartbeat.sh >>/tmp/heartbeat.log 2>&1 &
+fi
+
 # Launch captain inside the tmux session
 if [ "$CAPTAIN" = "claude" ]; then
     tmux send-keys -t captain "claude --dangerously-skip-permissions --mcp-config /home/ubuntu/.squad-mcp.json $*" Enter
