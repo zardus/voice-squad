@@ -39,13 +39,21 @@ fi
 # Create a second window for the voice server
 tmux new-window -t captain -n voice
 
+# Save env vars for the voice server (tmux windows don't inherit env)
+cat > /tmp/voice-env.sh << ENVEOF
+export OPENAI_API_KEY="${OPENAI_API_KEY}"
+export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY}"
+export VOICE_TOKEN="${VOICE_TOKEN}"
+export SQUAD_CAPTAIN="${CAPTAIN}"
+ENVEOF
+
 # Write a startup script that the voice window will run
 cat > /tmp/start-voice.sh << 'SCRIPT'
 #!/bin/bash
-export VOICE_TOKEN="$1"
+source /tmp/voice-env.sh
 
 # Start voice server
-VOICE_TOKEN="$1" node /opt/squad/voice/server.js &
+node /opt/squad/voice/server.js &
 
 # Start cloudflared tunnel
 cloudflared tunnel --url http://localhost:3000 > /tmp/cloudflared.log 2>&1 &
@@ -59,10 +67,10 @@ for i in $(seq 1 30); do
 done
 
 if [ -n "$TUNNEL_URL" ]; then
-    VOICE_URL="${TUNNEL_URL}?token=${1}"
+    VOICE_URL="${TUNNEL_URL}?token=${VOICE_TOKEN}"
 else
     echo "Warning: Could not detect tunnel URL. Check /tmp/cloudflared.log"
-    VOICE_URL="http://localhost:3000?token=${1}"
+    VOICE_URL="http://localhost:3000?token=${VOICE_TOKEN}"
 fi
 
 echo "$VOICE_URL" > /tmp/voice-url.txt
@@ -74,7 +82,7 @@ SCRIPT
 chmod +x /tmp/start-voice.sh
 
 # Launch the voice startup in the voice window
-tmux send-keys -t captain:voice "/tmp/start-voice.sh ${VOICE_TOKEN}" Enter
+tmux send-keys -t captain:voice "/tmp/start-voice.sh" Enter
 
 # Select the captain window (window 0) and attach
 tmux select-window -t captain:0
