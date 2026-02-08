@@ -36,26 +36,8 @@ else
     tmux send-keys -t captain "codex --dangerously-bypass-approvals-and-sandbox $*" Enter
 fi
 
-# Create a second window for the voice server
-tmux new-window -t captain -n voice
-
-# Save env vars for the voice server (tmux windows don't inherit env)
-cat > /tmp/voice-env.sh << ENVEOF
-export OPENAI_API_KEY="${OPENAI_API_KEY}"
-export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY}"
-export VOICE_TOKEN="${VOICE_TOKEN}"
-export SQUAD_CAPTAIN="${CAPTAIN}"
-ENVEOF
-
-# Write a startup script that the voice window will run
-cat > /tmp/start-voice.sh << 'SCRIPT'
-#!/bin/bash
-source /tmp/voice-env.sh
-
-# Start voice server
-node /opt/squad/voice/server.js &
-
-# Start cloudflared tunnel
+# Start voice server and cloudflared directly (so they inherit env vars)
+node /opt/squad/voice/server.js > /tmp/voice-server.log 2>&1 &
 cloudflared tunnel --url http://localhost:3000 > /tmp/cloudflared.log 2>&1 &
 
 # Wait for tunnel URL (up to 15s)
@@ -74,15 +56,10 @@ else
 fi
 
 echo "$VOICE_URL" > /tmp/voice-url.txt
-node /opt/squad/voice/show-qr.js "$VOICE_URL"
 
-# Keep window alive
-wait
-SCRIPT
-chmod +x /tmp/start-voice.sh
-
-# Launch the voice startup in the voice window
-tmux send-keys -t captain:voice "/tmp/start-voice.sh" Enter
+# Show QR code in a second tmux window
+tmux new-window -t captain -n voice
+tmux send-keys -t captain:voice "node /opt/squad/voice/show-qr.js '${VOICE_URL}' && echo 'Voice server log: /tmp/voice-server.log' && tail -f /tmp/voice-server.log" Enter
 
 # Select the captain window (window 0) and attach
 tmux select-window -t captain:0
