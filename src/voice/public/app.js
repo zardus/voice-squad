@@ -385,7 +385,7 @@ voiceReplayBtn.addEventListener("click", () => {
 // Voice status button — ask captain for a task status update
 voiceStatusBtn.addEventListener("click", () => {
   audioUnlocked = true; // prevent document click handler from overwriting src
-  playChime();
+  playDing(true);
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
   ws.send(JSON.stringify({ type: "text_command", text: "Give me a status update on all the tasks" }));
 });
