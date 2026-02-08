@@ -12,6 +12,7 @@ const voiceReplayBtn = document.getElementById("voice-replay-btn");
 const voiceStatusBtn = document.getElementById("voice-status-btn");
 const controlsEl = document.getElementById("controls");
 let lastTtsAudioData = null;
+let speakAudioQueue = []; // TTS audio received while mic is held down
 
 // Auto-read toggle: OFF by default, persisted in localStorage
 let autoreadBeforeVoice = null; // saved state when entering Voice tab
@@ -126,7 +127,14 @@ function connect() {
     if (evt.data instanceof ArrayBuffer) {
       lastTtsAudioData = evt.data;
       voiceReplayBtn.disabled = false;
-      if (autoreadCb.checked) playAudio(evt.data);
+      if (autoreadCb.checked) {
+        if (recording || wantRecording) {
+          // Mic is active — hold audio until recording stops
+          speakAudioQueue.push(evt.data);
+        } else {
+          playAudio(evt.data);
+        }
+      }
       return;
     }
 
@@ -266,6 +274,14 @@ function stopRecording() {
   recording = false;
   micBtn.classList.remove("recording");
   voiceMicBtn.classList.remove("recording");
+
+  // Play the most recent speak audio that arrived while recording.
+  // Only the latest is played to avoid a cascade of stale messages.
+  if (speakAudioQueue.length > 0) {
+    const latest = speakAudioQueue[speakAudioQueue.length - 1];
+    speakAudioQueue = [];
+    if (autoreadCb.checked) playAudio(latest);
+  }
 }
 
 // Track last touch time to ignore synthesized mouse events on mobile

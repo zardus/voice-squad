@@ -38,6 +38,10 @@ function sendToCaptain(text) {
   execSync(`tmux send-keys -t ${TARGET} -l ${shellEscape(text)}`, {
     timeout: 5000,
   });
+  // Send Enter twice: long text triggers bracketed-paste mode in the terminal,
+  // and Claude Code requires one Enter to close the paste buffer plus another
+  // to actually submit. An extra Enter on an empty line is harmless.
+  execSync(`tmux send-keys -t ${TARGET} Enter`, { timeout: 5000 });
   execSync(`tmux send-keys -t ${TARGET} Enter`, { timeout: 5000 });
 }
 
