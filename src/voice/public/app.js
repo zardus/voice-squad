@@ -21,11 +21,49 @@ let autoScroll = true;
 // Persistent audio element — unlocked on first user gesture so TTS can play later
 const ttsAudio = new Audio();
 let audioUnlocked = false;
+let audioCtx = null;
+
+function getAudioContext() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === "suspended") audioCtx.resume();
+  return audioCtx;
+}
+
+function playDing(success) {
+  try {
+    const ctx = getAudioContext();
+    const now = ctx.currentTime;
+    if (success) {
+      [660, 880].forEach((freq, i) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.2, now + i * 0.08);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.08 + 0.12);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now + i * 0.08);
+        osc.stop(now + i * 0.08 + 0.12);
+      });
+    } else {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.frequency.value = 280;
+      gain.gain.setValueAtTime(0.2, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.15);
+    }
+  } catch (e) {}
+}
 
 function unlockAudio() {
   if (audioUnlocked) return;
   ttsAudio.src = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=";
   ttsAudio.play().then(() => { audioUnlocked = true; }).catch(() => {});
+  getAudioContext(); // warm up AudioContext during user gesture
 }
 
 function playAudio(data) {
@@ -170,13 +208,21 @@ function startRecording() {
 
   mediaRecorder.onstop = async () => {
     const held = Date.now() - recordingStartTime;
-    if (ws.readyState !== WebSocket.OPEN || recordedChunks.length === 0 || held < 300) return;
+    if (held < 300) return; // accidental tap — no sound
+    if (ws.readyState !== WebSocket.OPEN || recordedChunks.length === 0) {
+      playDing(false);
+      return;
+    }
 
     // Check total size client-side — don't send tiny phantom recordings
     let totalSize = 0;
     for (const chunk of recordedChunks) totalSize += chunk.size;
-    if (totalSize < 1000) return;
+    if (totalSize < 1000) {
+      playDing(false);
+      return;
+    }
 
+    playDing(true);
     ws.send(JSON.stringify({ type: "audio_start", mimeType }));
     for (const chunk of recordedChunks) {
       const buf = await chunk.arrayBuffer();
