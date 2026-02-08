@@ -376,6 +376,30 @@ voiceMicBtn.addEventListener("mouseleave", () => {
   if (recording || wantRecording) stopRecording();
 });
 
+// Spacebar hold-to-record (Voice tab only, not when typing in text input)
+let spacebarHeld = false;
+
+document.addEventListener("keydown", (e) => {
+  if (e.code !== "Space") return;
+  if (!document.getElementById("voice-view").classList.contains("active")) return;
+  const tag = document.activeElement && document.activeElement.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+  if (document.activeElement && document.activeElement.isContentEditable) return;
+  e.preventDefault();
+  if (spacebarHeld) return; // guard against key repeat
+  spacebarHeld = true;
+  wantRecording = true;
+  startRecording();
+});
+
+document.addEventListener("keyup", (e) => {
+  if (e.code !== "Space") return;
+  if (!spacebarHeld) return;
+  e.preventDefault();
+  spacebarHeld = false;
+  stopRecording();
+});
+
 // Replay button — plays last TTS audio
 voiceReplayBtn.addEventListener("click", () => {
   audioUnlocked = true; // prevent document click handler from overwriting src
