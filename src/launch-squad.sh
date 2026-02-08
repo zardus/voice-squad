@@ -50,6 +50,24 @@ fi
 # Start voice server with API keys inline (not exported, so captain CLIs don't see them)
 OPENAI_API_KEY="$_OPENAI_API_KEY" ANTHROPIC_API_KEY="$_ANTHROPIC_API_KEY" \
     node /opt/squad/voice/server.js > /tmp/voice-server.log 2>&1 &
+VOICE_PID=$!
+
+# Wait for voice server to be listening before starting the tunnel
+echo "Waiting for voice server on :3000..."
+for i in $(seq 1 20); do
+    if ! kill -0 "$VOICE_PID" 2>/dev/null; then
+        echo "ERROR: Voice server crashed! Check /tmp/voice-server.log:"
+        tail -10 /tmp/voice-server.log 2>/dev/null || true
+        exit 1
+    fi
+    if ss -tln | grep -q ':3000 '; then break; fi
+    sleep 0.5
+done
+
+if ! ss -tln | grep -q ':3000 '; then
+    echo "WARNING: Voice server not listening after 10s — starting tunnel anyway"
+fi
+
 cloudflared tunnel --url http://localhost:3000 > /tmp/cloudflared.log 2>&1 &
 
 # Wait for tunnel URL (up to 15s)
