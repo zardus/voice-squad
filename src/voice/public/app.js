@@ -334,10 +334,47 @@ function updateRelativeTime() {
   }
 }
 
+function mdToHtml(md) {
+  if (!md) return "";
+  const esc = md.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const lines = esc.split("\n");
+  const out = [];
+  let inUl = false;
+  for (const line of lines) {
+    const headerMatch = line.match(/^(#{1,3})\s+(.+)$/);
+    if (headerMatch) {
+      if (inUl) { out.push("</ul>"); inUl = false; }
+      const tag = "h" + Math.min(headerMatch[1].length + 1, 4); // ## -> h3, ### -> h4
+      out.push(`<${tag}>${inline(headerMatch[2])}</${tag}>`);
+      continue;
+    }
+    const liMatch = line.match(/^[-*]\s+(.+)$/);
+    if (liMatch) {
+      if (!inUl) { out.push("<ul>"); inUl = true; }
+      out.push(`<li>${inline(liMatch[1])}</li>`);
+      continue;
+    }
+    if (inUl) { out.push("</ul>"); inUl = false; }
+    if (line.trim() === "") {
+      out.push("<br>");
+    } else {
+      out.push(`<p>${inline(line)}</p>`);
+    }
+  }
+  if (inUl) out.push("</ul>");
+  return out.join("");
+
+  function inline(s) {
+    return s
+      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+      .replace(/`([^`]+)`/g, "<code>$1</code>");
+  }
+}
+
 function renderStatus(data) {
   lastStatusTimestamp = data.timestamp;
   statusTimeEl.textContent = data.timestamp ? relativeTime(data.timestamp) : "waiting...";
-  statusSummaryEl.textContent = data.summary;
+  statusSummaryEl.innerHTML = mdToHtml(data.summary);
 
   statusPanesEl.innerHTML = "";
   if (data.sessions && data.sessions.length) {

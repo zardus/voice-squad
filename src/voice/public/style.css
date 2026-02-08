@@ -253,8 +253,69 @@ body {
   font-size: 14px;
   line-height: 1.6;
   color: #e0e0e0;
-  white-space: pre-wrap;
   margin-bottom: 16px;
+}
+
+#status-summary h2,
+#status-summary h3,
+#status-summary h4 {
+  color: #a78bfa;
+  font-weight: 600;
+  margin: 12px 0 6px;
+}
+
+#status-summary h2:first-child,
+#status-summary h3:first-child,
+#status-summary h4:first-child {
+  margin-top: 0;
+}
+
+#status-summary h3 { font-size: 15px; }
+#status-summary h4 { font-size: 14px; }
+
+#status-summary p {
+  margin: 2px 0;
+}
+
+#status-summary br {
+  display: block;
+  content: "";
+  margin: 4px 0;
+}
+
+#status-summary ul {
+  list-style: none;
+  padding-left: 12px;
+  margin: 4px 0 8px;
+}
+
+#status-summary li {
+  position: relative;
+  padding-left: 14px;
+  margin: 4px 0;
+}
+
+#status-summary li::before {
+  content: "\2022";
+  position: absolute;
+  left: 0;
+  color: #4ecca3;
+  font-weight: bold;
+}
+
+#status-summary strong {
+  color: #fff;
+  font-weight: 600;
+}
+
+#status-summary code {
+  font-family: "SF Mono", "Cascadia Code", "Fira Code", Consolas, monospace;
+  font-size: 12px;
+  background: rgba(78, 204, 163, 0.1);
+  border: 1px solid #0f3460;
+  border-radius: 3px;
+  padding: 1px 5px;
+  color: #4ecca3;
 }
 
 .pane-details {
