@@ -40,6 +40,25 @@ function getAudioContext() {
   return audioCtx;
 }
 
+function playChime() {
+  try {
+    const ctx = getAudioContext();
+    const now = ctx.currentTime;
+    // Pleasant bell: a short sine at 830 Hz with a gentle decay
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(830, now);
+    osc.frequency.exponentialRampToValueAtTime(790, now + 0.3);
+    gain.gain.setValueAtTime(0.25, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.3);
+  } catch (e) {}
+}
+
 function playDing(success) {
   try {
     const ctx = getAudioContext();
@@ -353,6 +372,7 @@ voiceReplayBtn.addEventListener("click", () => {
 // Voice status button — ask captain for a task status update
 voiceStatusBtn.addEventListener("click", () => {
   unlockAudio();
+  playChime();
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
   ws.send(JSON.stringify({ type: "text_command", text: "Give me a status update on all the tasks" }));
 });
