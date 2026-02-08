@@ -142,8 +142,9 @@ textInput.addEventListener("keydown", (e) => {
 // Mic recording — uses pre-acquired stream for instant start
 function startRecording() {
   unlockAudio();
-  if (!micStream) {
-    // First time — acquire stream, then start only if user is still holding
+  if (!micStream || !micStream.getTracks().some((t) => t.readyState === "live")) {
+    // Stream missing or dead — (re)acquire, then start only if user is still holding
+    micStream = null;
     ensureMicStream().then(() => {
       if (wantRecording) startRecording();
     }).catch((err) => {
