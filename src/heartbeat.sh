@@ -40,11 +40,13 @@ while true; do
 
     prev_hash="$current_hash"
 
-    if [[ $stale_count -ge $STALE_THRESHOLD ]]; then
-        log "ALERT: $STALE_THRESHOLD consecutive stale checks ($((STALE_THRESHOLD * SLEEP_INTERVAL))s). Injecting heartbeat message."
-        tmux send-keys -t "$PANE" 'HEARTBEAT MESSAGE: please do a check of the current tasks and nudge them along or clean them up if reasonable.' Enter
-        log "Heartbeat message injected. Resetting counter."
-        stale_count=0
-        prev_hash=""
-    fi
+	if [[ $stale_count -ge $STALE_THRESHOLD ]]; then
+	        log "ALERT: $STALE_THRESHOLD consecutive stale checks ($((STALE_THRESHOLD * SLEEP_INTERVAL))s). Injecting heartbeat message."
+	        tmux send-keys -t "$PANE" 'HEARTBEAT MESSAGE: please do a check of the current tasks and nudge them along or clean them up if reasonable.'
+	        sleep 1
+	        tmux send-keys -t "$PANE" Enter
+	        log "Heartbeat message injected. Resetting counter."
+	        stale_count=0
+	        prev_hash=""
+	fi
 done
