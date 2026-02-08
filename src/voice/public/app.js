@@ -1,7 +1,3 @@
-if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("sw.js").catch(() => {});
-}
-
 const terminalEl = document.getElementById("terminal");
 const summaryEl = document.getElementById("summary");
 const transcriptionEl = document.getElementById("transcription");
