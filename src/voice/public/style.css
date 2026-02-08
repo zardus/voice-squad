@@ -157,6 +157,7 @@ body {
   border-bottom: 1px solid #0f3460;
   background: #16213e;
   max-height: 30%;
+  overflow: hidden;
 }
 
 #summary-label {
