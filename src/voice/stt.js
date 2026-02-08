@@ -7,13 +7,17 @@ const https = require("https");
  * @returns {Promise<string>} Transcribed text
  */
 async function transcribe(audioBuffer, mimeType) {
-  const ext = mimeType.includes("mp4") ? "mp4" : "webm";
+  // Strip codec params (e.g. "audio/webm;codecs=opus" -> "audio/webm")
+  const baseMime = mimeType.split(";")[0].trim();
+  // Map to a file extension Whisper accepts
+  const extMap = { "audio/webm": "webm", "audio/mp4": "mp4", "audio/ogg": "ogg", "audio/mpeg": "mp3", "audio/wav": "wav" };
+  const ext = extMap[baseMime] || "webm";
   const boundary = "----VoiceBoundary" + Date.now();
 
   const fileField = [
     `--${boundary}\r\n`,
     `Content-Disposition: form-data; name="file"; filename="audio.${ext}"\r\n`,
-    `Content-Type: ${mimeType}\r\n\r\n`,
+    `Content-Type: ${baseMime}\r\n\r\n`,
   ].join("");
 
   const modelField = [
