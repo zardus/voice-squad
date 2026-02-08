@@ -14,21 +14,20 @@ async function summarize(rawOutput, previousSummary) {
   if (!trimmed) return "Nothing happened yet.";
   if (trimmed.length < SHORT_THRESHOLD && !previousSummary) return trimmed;
 
-  let prompt = `Summarize this terminal output as a voice status update. Be direct and concise — state what is happening, skip conversational filler. No greetings, no "it looks like", no markdown. Just the facts. Can be multiple sentences if needed, but every word should carry information.`;
+  let system = `Summarize this terminal output as a voice status update. Be direct and concise — state what is happening, skip conversational filler. No greetings, no "it looks like", no markdown. Just the facts. Can be multiple sentences if needed, but every word should carry information.`;
 
   if (previousSummary) {
-    prompt += `\n\nYou last told them: "${previousSummary}"\nOnly mention what's new. If nothing meaningful changed, just say so.`;
+    system += `\n\nIMPORTANT: You already told them the following in your last update: "${previousSummary}". Do NOT repeat any of this information. ONLY say what has changed since then. If nothing meaningful has changed, respond with exactly: "No changes." — nothing else. Be extremely strict about not repeating yourself.`;
   }
-
-  prompt += `\n\n${trimmed}`;
 
   const body = JSON.stringify({
     model: "claude-sonnet-4-5-20250929",
     max_tokens: 256,
+    system,
     messages: [
       {
         role: "user",
-        content: prompt,
+        content: trimmed,
       },
     ],
   });
