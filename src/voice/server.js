@@ -2,7 +2,7 @@ const express = require("express");
 const http = require("http");
 const path = require("path");
 const { WebSocketServer } = require("ws");
-const { sendToCaptain, capturePaneOutput } = require("./tmux-bridge");
+const { sendToCaptain, capturePaneOutputAsync } = require("./tmux-bridge");
 const { transcribe } = require("./stt");
 const { synthesize } = require("./tts");
 const { summarize } = require("./summarize");
@@ -62,7 +62,9 @@ wss.on("connection", (ws) => {
 
   const snapshotTimer = setInterval(async () => {
     if (ws.readyState !== ws.OPEN) return;
-    const content = capturePaneOutput();
+    // Skip if the send buffer is backed up (slow connection)
+    if (ws.bufferedAmount > 65536) return;
+    const content = await capturePaneOutputAsync();
 
     if (content !== lastSnapshot) {
       lastSnapshot = content;

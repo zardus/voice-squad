@@ -27,10 +27,24 @@ function unlockAudio() {
   ttsAudio.play().then(() => { audioUnlocked = true; }).catch(() => {});
 }
 
+// Decouple snapshot rendering from WebSocket to keep main thread free for mic callbacks
+let pendingSnapshot = null;
+
+function renderLoop() {
+  if (pendingSnapshot !== null) {
+    terminalEl.textContent = pendingSnapshot;
+    pendingSnapshot = null;
+    if (autoScroll) {
+      terminalEl.scrollTop = terminalEl.scrollHeight;
+    }
+  }
+  requestAnimationFrame(renderLoop);
+}
+requestAnimationFrame(renderLoop);
+
 const urlParams = new URLSearchParams(location.search);
 const token = urlParams.get("token") || "";
 
-// Track whether user has scrolled up in the terminal
 terminalEl.addEventListener("scroll", () => {
   const { scrollTop, scrollHeight, clientHeight } = terminalEl;
   autoScroll = scrollHeight - scrollTop - clientHeight < 40;
@@ -61,10 +75,7 @@ function connect() {
         break;
 
       case "tmux_snapshot":
-        terminalEl.textContent = msg.content;
-        if (autoScroll) {
-          terminalEl.scrollTop = terminalEl.scrollHeight;
-        }
+        pendingSnapshot = msg.content;
         break;
 
       case "captain_done":
