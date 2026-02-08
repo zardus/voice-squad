@@ -124,6 +124,12 @@ echo "==> Restarting voice server..."
 # Find the running voice server PID (if any)
 VOICE_PID=$(pgrep -f "node /opt/squad/voice/server.js" | head -1 || true)
 
+# If this script was spawned by the voice server (via /api/update), killing the
+# server closes the read end of our stdout pipe. The next echo would then get
+# SIGPIPE and kill the script before the new server starts. Redirect our output
+# to a log file so we're writing to a file, not a pipe.
+exec > /tmp/update.log 2>&1
+
 if [ -n "$VOICE_PID" ]; then
     # Extract env vars from the running process before killing it.
     # /proc/<pid>/environ is null-delimited; convert to newlines, then
