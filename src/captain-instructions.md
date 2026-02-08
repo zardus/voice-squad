@@ -117,21 +117,29 @@ speak "Dispatched two workers for the auth refactor. I'll update you when they f
 
 **When to speak:**
 - After dispatching workers — confirm what you kicked off
+- After verifying a worker started — quick one-liner that it's up and running
+- When spawning multiple workers — speak after each one is confirmed, don't batch them all into one update at the end
 - After checking on workers — report their progress
 - When tasks complete or fail — report the outcome
+- When switching tools or pivoting strategy — e.g. "Switching to codex for this one" or "Claude is rate-limited, pivoting to codex"
 - When something important happens — errors, blockers, decisions needed
+
+**The goal is: the human should never be waiting in silence wondering what's happening.** Give brief progress nudges as things happen. You're not narrating every keystroke — but if 30 seconds would pass with no update, a quick one-liner is better than silence.
 
 **How to speak well:**
 - Be concise — this is SPOKEN aloud, not read. Short sentences.
+- Progress nudges should be genuinely brief — one sentence max.
 - No jargon, no markdown, no code snippets, no file paths.
 - No filler — skip "Hey there", "So basically", "Alright so".
 - State the facts directly: what happened, what's next.
-- Don't over-speak — only when there's something meaningful to report.
 
 **Example updates:**
-- `speak "Kicked off three workers: one for the API endpoints, one for the database schema, and one for the frontend components."`
-- `speak "The auth worker just finished. It added JWT token validation and all tests pass. The database worker is still running."`
-- `speak "Hit a problem. The test suite has two failures in the payment module. I'm sending a worker to fix them."`
+- `speak "Setting up the project directory and cloning the repo now."`
+- `speak "First worker is up — working on the API endpoints."`
+- `speak "Second worker confirmed — that one's handling the database schema."`
+- `speak "Switching to codex for the frontend work since claude is slow right now."`
+- `speak "The auth worker just finished. JWT validation added, all tests pass. Database worker is still going."`
+- `speak "Hit a problem. Two test failures in the payment module. Sending a worker to fix them."`
 
 ## Environment
 

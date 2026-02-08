@@ -5,9 +5,10 @@ const TARGET = "captain:0";
 const INPUT_BOX_RE = /^[─]{20,}/m;
 
 function stripInputBox(output) {
-  const match = output.match(INPUT_BOX_RE);
-  if (!match) return output;
-  return output.slice(0, match.index).trimEnd();
+  const matches = [...output.matchAll(new RegExp(INPUT_BOX_RE.source, "gm"))];
+  if (matches.length === 0) return output;
+  const cutMatch = matches.length >= 2 ? matches[matches.length - 2] : matches[0];
+  return output.slice(0, cutMatch.index).trimEnd();
 }
 
 function capturePaneOutput() {

@@ -115,6 +115,10 @@ function connect() {
   ws.onopen = () => {
     statusEl.textContent = "connecting...";
     statusEl.className = "disconnected";
+    // Re-send status tab state on reconnect
+    if (statusTabActive) {
+      ws.send(JSON.stringify({ type: "status_tab_active" }));
+    }
   };
 
   ws.onmessage = (evt) => {
@@ -152,6 +156,10 @@ function connect() {
       case "stt_error":
         transcriptionEl.textContent = msg.message;
         transcriptionEl.className = "error";
+        break;
+
+      case "status_update":
+        renderStatus(msg);
         break;
 
       case "error":
@@ -347,16 +355,27 @@ updateBtn.addEventListener("click", () => {
 const tabs = document.querySelectorAll("#tab-bar .tab");
 const tabContents = document.querySelectorAll(".tab-content");
 
+let statusTabActive = false;
+
+function sendStatusTabState(active) {
+  statusTabActive = active;
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: active ? "status_tab_active" : "status_tab_inactive" }));
+  }
+}
+
 tabs.forEach((tab) => {
   tab.addEventListener("click", () => {
     const target = tab.dataset.tab;
     const wasVoice = document.getElementById("voice-view").classList.contains("active");
+    const wasStatus = document.getElementById("status-view").classList.contains("active");
     tabs.forEach((t) => t.classList.toggle("active", t === tab));
     tabContents.forEach((c) => {
       c.classList.toggle("active", c.id === target + "-view");
     });
-    // Fetch status immediately when switching to status tab
-    if (target === "status") fetchStatus();
+    // Notify server about status tab activation/deactivation
+    if (target === "status" && !wasStatus) sendStatusTabState(true);
+    if (target !== "status" && wasStatus) sendStatusTabState(false);
     // Voice tab: force auto-read on, hide controls
     if (target === "voice") {
       autoreadBeforeVoice = autoreadCb.checked;
@@ -470,8 +489,6 @@ async function fetchStatus() {
   }
 }
 
-// Poll status every 15 seconds
-setInterval(fetchStatus, 15000);
 // Update relative time every second
 setInterval(updateRelativeTime, 1000);
 

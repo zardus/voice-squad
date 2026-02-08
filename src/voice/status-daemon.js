@@ -65,9 +65,9 @@ function callHaiku(dump) {
         method: "POST",
         headers: {
           "x-api-key": process.env.ANTHROPIC_API_KEY,
-          "anthropic-version": "2023-06-01",
           "Content-Type": "application/json",
           "Content-Length": Buffer.byteLength(body),
+          "anthropic-version": "2023-06-01",
         },
       },
       (res) => {
@@ -93,17 +93,27 @@ function callHaiku(dump) {
   });
 }
 
-async function tick() {
+// --- On-demand lifecycle ---
+
+let timer = null;
+let running = false;
+let generation = 0; // monotonic counter to detect stale callbacks after stop/start
+
+async function tick(broadcast, gen) {
   try {
     const { dump, paneCount, sessions } = collectPanes();
     if (!dump.trim()) {
-      console.log("[status-daemon] no tmux sessions found, skipping");
+      console.log("[status] no tmux sessions found, skipping");
       return;
     }
 
-    console.log(`[status-daemon] captured ${paneCount} panes across ${sessions.length} sessions, ${dump.length} chars`);
+    console.log(`[status] captured ${paneCount} panes across ${sessions.length} sessions, ${dump.length} chars`);
     const summary = await callHaiku(dump);
-    console.log(`[status-daemon] summary: ${summary.slice(0, 100)}...`);
+
+    // If stop() was called (or stop+start) while the LLM call was in flight, discard
+    if (!running || gen !== generation) return;
+
+    console.log(`[status] summary: ${summary.slice(0, 100)}...`);
 
     const result = {
       timestamp: new Date().toISOString(),
@@ -113,22 +123,46 @@ async function tick() {
     };
 
     fs.writeFileSync(STATUS_FILE, JSON.stringify(result, null, 2));
+    broadcast(result);
   } catch (err) {
-    console.error("[status-daemon] error:", err.message);
+    console.error("[status] error:", err.message);
   }
 }
 
-async function main() {
-  if (!process.env.ANTHROPIC_API_KEY) {
-    console.error("[status-daemon] ANTHROPIC_API_KEY not set");
-    process.exit(1);
-  }
-  console.log("[status-daemon] starting, interval=30s");
-
-  while (true) {
-    await tick();
-    await new Promise((r) => setTimeout(r, INTERVAL_MS));
-  }
+function runCycle(broadcast, gen) {
+  tick(broadcast, gen).then(() => {
+    if (running && gen === generation) {
+      timer = setTimeout(() => {
+        if (running && gen === generation) {
+          runCycle(broadcast, gen);
+        }
+      }, INTERVAL_MS);
+    }
+  });
 }
 
-main();
+function start(broadcast) {
+  if (running) return;
+  running = true;
+  generation++;
+  const gen = generation;
+  console.log("[status] started on-demand refresh, interval=30s");
+  runCycle(broadcast, gen);
+}
+
+function stop() {
+  if (!running) return;
+  running = false;
+  generation++;
+  if (timer) {
+    clearTimeout(timer);
+    timer = null;
+  }
+  console.log("[status] stopped on-demand refresh");
+}
+
+function isRunning() {
+  return running;
+}
+
+module.exports = { start, stop, isRunning };

@@ -52,10 +52,6 @@ OPENAI_API_KEY="$_OPENAI_API_KEY" ANTHROPIC_API_KEY="$_ANTHROPIC_API_KEY" \
     node /opt/squad/voice/server.js > /tmp/voice-server.log 2>&1 &
 VOICE_PID=$!
 
-# Start status daemon in background
-ANTHROPIC_API_KEY="$_ANTHROPIC_API_KEY" \
-    node /opt/squad/voice/status-daemon.js > /tmp/status-daemon.log 2>&1 &
-
 # Wait for voice server to be listening before starting the tunnel
 echo "Waiting for voice server on :3000..."
 for i in $(seq 1 20); do

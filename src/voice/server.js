@@ -6,6 +6,7 @@ const { WebSocketServer } = require("ws");
 const { sendToCaptain, capturePaneOutputAsync } = require("./tmux-bridge");
 const { transcribe } = require("./stt");
 const { synthesize } = require("./tts");
+const statusDaemon = require("./status-daemon");
 
 const PORT = process.env.VOICE_PORT || 3000;
 const CAPTAIN = process.env.SQUAD_CAPTAIN || "claude";
@@ -72,6 +73,18 @@ app.post("/api/speak", async (req, res) => {
 
 const server = http.createServer(app);
 const wss = new WebSocketServer({ noServer: true });
+
+// Track clients with the status tab active
+const statusClients = new Set();
+
+function broadcastStatus(data) {
+  const msg = JSON.stringify({ type: "status_update", ...data });
+  for (const client of statusClients) {
+    if (client.readyState === 1) {
+      client.send(msg);
+    }
+  }
+}
 
 server.on("upgrade", (req, socket, head) => {
   if (!checkToken(req)) {
@@ -142,6 +155,22 @@ wss.on("connection", (ws) => {
         }
         break;
 
+      case "status_tab_active":
+        statusClients.add(ws);
+        console.log(`[status] client activated status tab (${statusClients.size} watching)`);
+        if (!statusDaemon.isRunning()) {
+          statusDaemon.start(broadcastStatus);
+        }
+        break;
+
+      case "status_tab_inactive":
+        statusClients.delete(ws);
+        console.log(`[status] client deactivated status tab (${statusClients.size} watching)`);
+        if (statusClients.size === 0 && statusDaemon.isRunning()) {
+          statusDaemon.stop();
+        }
+        break;
+
       default:
         console.log(`[ws] unknown message type: ${msg.type}`);
         ws.send(
@@ -153,6 +182,9 @@ wss.on("connection", (ws) => {
   ws.on("close", () => {
     console.log("[ws] client disconnected");
     clearInterval(snapshotTimer);
+    if (statusClients.delete(ws) && statusClients.size === 0 && statusDaemon.isRunning()) {
+      statusDaemon.stop();
+    }
   });
 
   async function handleAudioCommand(audioBuffer, mimeType) {
