@@ -10,7 +10,8 @@ async function synthesize(text) {
     model: "tts-1",
     input: text,
     voice: "alloy",
-    response_format: "mp3",
+    response_format: "opus",
+    speed: 1.1,
   });
 
   return new Promise((resolve, reject) => {

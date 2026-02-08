@@ -13,7 +13,7 @@ let ws = null;
 let mediaRecorder = null;
 let recording = false;
 let recordingStartTime = 0;
-let audioChunks = [];
+let micStream = null;
 let autoScroll = true;
 
 // Persistent audio element — unlocked on first user gesture so TTS can play later
@@ -22,12 +22,19 @@ let audioUnlocked = false;
 
 function unlockAudio() {
   if (audioUnlocked) return;
-  // Play a tiny silent WAV to unlock the audio element for future programmatic plays
   ttsAudio.src = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=";
   ttsAudio.play().then(() => { audioUnlocked = true; }).catch(() => {});
 }
 
-// Decouple snapshot rendering from WebSocket to keep main thread free for mic callbacks
+function playAudio(data) {
+  const blob = new Blob([data], { type: "audio/ogg" });
+  const url = URL.createObjectURL(blob);
+  if (ttsAudio.src) URL.revokeObjectURL(ttsAudio.src);
+  ttsAudio.src = url;
+  ttsAudio.play().catch((err) => console.warn("TTS play blocked:", err.message));
+}
+
+// Decouple snapshot rendering from WebSocket to keep main thread free
 let pendingSnapshot = null;
 
 function renderLoop() {
@@ -61,8 +68,9 @@ function connect() {
   };
 
   ws.onmessage = (evt) => {
+    // Any binary frame from server = TTS audio, play immediately
     if (evt.data instanceof ArrayBuffer) {
-      audioChunks.push(evt.data);
+      playAudio(evt.data);
       return;
     }
 
@@ -84,15 +92,6 @@ function connect() {
         }
         break;
 
-      case "audio_summary_start":
-        audioChunks = [];
-        break;
-
-      case "audio_summary_end":
-        playAudio(audioChunks);
-        audioChunks = [];
-        break;
-
       case "error":
         summaryEl.textContent = "Error: " + msg.message;
         break;
@@ -108,13 +107,10 @@ function connect() {
   ws.onerror = () => ws.close();
 }
 
-function playAudio(chunks) {
-  if (!chunks.length) return;
-  const blob = new Blob(chunks, { type: "audio/mpeg" });
-  const url = URL.createObjectURL(blob);
-  if (ttsAudio.src) URL.revokeObjectURL(ttsAudio.src);
-  ttsAudio.src = url;
-  ttsAudio.play().catch((err) => console.warn("TTS play blocked:", err.message));
+// Pre-acquire mic stream so recording starts instantly on press
+async function ensureMicStream() {
+  if (micStream && micStream.getTracks().some((t) => t.readyState === "live")) return;
+  micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
 }
 
 // Text command
@@ -131,42 +127,44 @@ textInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") sendText();
 });
 
-// Mic recording
-async function startRecording() {
+// Mic recording — uses pre-acquired stream for instant start
+function startRecording() {
   unlockAudio();
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
-      ? "audio/webm;codecs=opus"
-      : "audio/mp4";
-
-    mediaRecorder = new MediaRecorder(stream, { mimeType });
-    const recordedChunks = [];
-
-    mediaRecorder.ondataavailable = (e) => {
-      if (e.data.size > 0) recordedChunks.push(e.data);
-    };
-
-    mediaRecorder.onstop = async () => {
-      stream.getTracks().forEach((t) => t.stop());
-      const held = Date.now() - recordingStartTime;
-      if (ws.readyState !== WebSocket.OPEN || recordedChunks.length === 0 || held < 300) return;
-
-      ws.send(JSON.stringify({ type: "audio_start", mimeType }));
-      for (const chunk of recordedChunks) {
-        const buf = await chunk.arrayBuffer();
-        ws.send(buf);
-      }
-      ws.send(JSON.stringify({ type: "audio_end" }));
-    };
-
-    mediaRecorder.start(250);
-    recording = true;
-    recordingStartTime = Date.now();
-    micBtn.classList.add("recording");
-  } catch (err) {
-    summaryEl.textContent = "Mic access denied: " + err.message;
+  if (!micStream) {
+    // First time — acquire stream then start
+    ensureMicStream().then(() => startRecording()).catch((err) => {
+      summaryEl.textContent = "Mic access denied: " + err.message;
+    });
+    return;
   }
+
+  const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+    ? "audio/webm;codecs=opus"
+    : "audio/mp4";
+
+  mediaRecorder = new MediaRecorder(micStream, { mimeType });
+  const recordedChunks = [];
+
+  mediaRecorder.ondataavailable = (e) => {
+    if (e.data.size > 0) recordedChunks.push(e.data);
+  };
+
+  mediaRecorder.onstop = async () => {
+    const held = Date.now() - recordingStartTime;
+    if (ws.readyState !== WebSocket.OPEN || recordedChunks.length === 0 || held < 300) return;
+
+    ws.send(JSON.stringify({ type: "audio_start", mimeType }));
+    for (const chunk of recordedChunks) {
+      const buf = await chunk.arrayBuffer();
+      ws.send(buf);
+    }
+    ws.send(JSON.stringify({ type: "audio_end" }));
+  };
+
+  mediaRecorder.start(250);
+  recording = true;
+  recordingStartTime = Date.now();
+  micBtn.classList.add("recording");
 }
 
 function stopRecording() {
@@ -197,5 +195,9 @@ micBtn.addEventListener("touchend", (e) => {
 micBtn.addEventListener("touchcancel", () => {
   if (recording) stopRecording();
 });
+
+// Pre-acquire mic on first user interaction anywhere
+document.addEventListener("touchstart", () => ensureMicStream().catch(() => {}), { once: true });
+document.addEventListener("click", () => ensureMicStream().catch(() => {}), { once: true });
 
 connect();

@@ -88,11 +88,9 @@ wss.on("connection", (ws) => {
           ws.send(JSON.stringify({ type: "captain_done", summary }));
 
           const t1 = Date.now();
-          const mp3 = await synthesize(summary);
-          console.log(`[tts] synthesized ${mp3.length} bytes in ${Date.now() - t1}ms`);
-          ws.send(JSON.stringify({ type: "audio_summary_start" }));
-          ws.send(mp3);
-          ws.send(JSON.stringify({ type: "audio_summary_end" }));
+          const audio = await synthesize(summary);
+          console.log(`[tts] synthesized ${audio.length} bytes in ${Date.now() - t1}ms`);
+          ws.send(audio);
           console.log("[tts] audio sent to client");
         }
       } catch (err) {
