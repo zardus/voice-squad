@@ -8,7 +8,10 @@ if [ "$CAPTAIN" != "claude" ] && [ "$CAPTAIN" != "codex" ]; then
     exit 1
 fi
 
-# Captain lives in ~/captain/ so workers (siblings) don't inherit its instructions
+# Clean up any old captain instructions from home dir (persistent volume)
+rm -f /home/ubuntu/CLAUDE.md /home/ubuntu/AGENTS.md
+
+# Captain instructions in ~/captain/ — workers in ~/project/ never walk into here
 mkdir -p /home/ubuntu/captain
 if [ "$CAPTAIN" = "claude" ]; then
     cp /opt/squad/captain/instructions.md /home/ubuntu/captain/CLAUDE.md

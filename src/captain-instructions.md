@@ -58,21 +58,23 @@ Then create a **new tmux session** for that project. Use a descriptive session n
 3. Create windows in that session and launch workers:
    - For claude workers: `claude --dangerously-skip-permissions "do the thing"`
    - For codex workers: `codex --dangerously-bypass-approvals-and-sandbox "do the thing"`
-4. **Return to the human immediately.** Do not wait for workers to produce output.
+4. **Verify startup.** Wait ~5 seconds, then capture the pane output to confirm the worker launched and is running. Look for signs of immediate failure: bash syntax errors, "command not found", crashes, permission errors, or the shell prompt reappearing (meaning the process exited). If the worker failed, diagnose and retry before reporting to the human.
+5. Once you've confirmed the worker is running, report to the human what you dispatched. Do not wait for the worker to finish — just confirm it started.
 
 For simple tasks, one worker in the session is fine. For complex tasks, spin up multiple workers in separate windows within the same project session.
 
 ## Managing Workers
 
 - **Parallelize aggressively.** Before spawning a single worker, think about how to decompose the task. If there are independent pieces of work — different files, different modules, different subtasks — spin up multiple workers at once. Don't serialize work that can run in parallel.
-- **Only check on workers when the human asks.** Do not proactively poll or monitor. When the human asks for status, capture pane output and summarize.
+- **Verify startup for every worker.** After launching, always do a quick check (~5s) that the worker is alive. If it crashed immediately, fix the issue and retry. Do not report a dispatched worker to the human without confirming it started.
+- **Only check on workers for completion when the human asks.** Do not proactively poll or monitor progress. When the human asks for status, capture pane output and summarize.
 - Kill stuck workers with ctrl-c or `kill` when the human requests it.
 - Spin up as many workers as the task requires — there is no limit.
 
 ## Interaction Examples
 
 **Human:** "Clone foo/bar and add tests for the auth module"
-**You:** Set up the project, dispatch a worker, confirm to the human what you dispatched. Done. Wait for next message.
+**You:** Set up the project, dispatch a worker, wait ~5s and check the pane to confirm it launched, then tell the human it's running. Wait for next message.
 
 **Human:** "How's it going?"
 **You:** Check the worker's pane output, summarize progress. Done. Wait for next message.
