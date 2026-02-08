@@ -14,15 +14,26 @@
 #
 # KEPT ALIVE (untouched):
 #   - cloudflared tunnel  — keeps the *.trycloudflare.com URL stable
-#   - Captain agent       — claude/codex CLI in tmux session captain:0
 #   - Docker daemon       — dockerd (for Docker-in-Docker)
 #   - tmux session        — all windows/panes preserved
+#   - Captain agent       — unless --restart-captain is passed
 #
 # Usage:
-#   ./update.sh              # from the repo root
-#   /path/to/update.sh       # from anywhere (locates repo via its own path)
+#   ./update.sh                      # update code + restart voice server only
+#   ./update.sh --restart-captain    # also restart the captain agent (LAST step)
 
 set -euo pipefail
+
+# ---------------------------------------------------------------------------
+# Parse flags
+# ---------------------------------------------------------------------------
+RESTART_CAPTAIN=false
+for arg in "$@"; do
+    case "$arg" in
+        --restart-captain) RESTART_CAPTAIN=true ;;
+        *) echo "Unknown flag: $arg"; exit 1 ;;
+    esac
+done
 
 # ---------------------------------------------------------------------------
 # Locate the repo root (the directory this script lives in)
@@ -188,12 +199,88 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# 6. Restart captain (only if --restart-captain was passed)
+#
+#    THIS IS THE LAST STEP. Everything above must succeed first.
+#    The captain is the orchestrator — if this fails, manual recovery is needed.
+#    We kill the old captain process and launch a new one in the same tmux window.
+# ---------------------------------------------------------------------------
+if [ "$RESTART_CAPTAIN" = true ]; then
+    echo "==> Restarting captain agent (--restart-captain requested)..."
+
+    # Safety check 1: tmux session must exist
+    if ! tmux has-session -t captain 2>/dev/null; then
+        echo "    ERROR: tmux session 'captain' not found! Cannot restart captain."
+        echo "    Manual intervention required."
+        exit 1
+    fi
+    echo "    [check] tmux session 'captain' exists."
+
+    # Safety check 2: captain instructions must be in place
+    CAPTAIN="${SQUAD_CAPTAIN:-claude}"
+    if [ "$CAPTAIN" = "claude" ]; then
+        INSTRUCTIONS_FILE="/home/ubuntu/captain/CLAUDE.md"
+    else
+        INSTRUCTIONS_FILE="/home/ubuntu/captain/AGENTS.md"
+    fi
+    if [ ! -f "$INSTRUCTIONS_FILE" ]; then
+        echo "    ERROR: Captain instructions not found at $INSTRUCTIONS_FILE!"
+        echo "    Files were not copied correctly. Aborting captain restart."
+        exit 1
+    fi
+    echo "    [check] Captain instructions in place ($INSTRUCTIONS_FILE)."
+
+    # Safety check 3: MCP config must be in place
+    if [ ! -f /home/ubuntu/.squad-mcp.json ]; then
+        echo "    ERROR: MCP config not found at /home/ubuntu/.squad-mcp.json!"
+        exit 1
+    fi
+    echo "    [check] MCP config in place."
+
+    # Safety check 4: voice server must be running (we just restarted it above)
+    if ! kill -0 "$NEW_PID" 2>/dev/null; then
+        echo "    ERROR: Voice server (PID $NEW_PID) is not running!"
+        echo "    Refusing to restart captain without a healthy voice server."
+        exit 1
+    fi
+    echo "    [check] Voice server healthy (PID $NEW_PID)."
+
+    # All checks passed — kill the old captain and start a new one.
+    # Send Ctrl-C then 'exit' to gracefully stop the current captain process.
+    echo "    Stopping old captain..."
+    tmux send-keys -t captain:0 C-c
+    sleep 1
+    tmux send-keys -t captain:0 C-c
+    sleep 1
+    # Send 'exit' in case the CLI dropped to a prompt
+    tmux send-keys -t captain:0 "exit" Enter
+    sleep 2
+
+    # Launch new captain in the same window (mirrors launch-squad.sh)
+    echo "    Launching new captain ($CAPTAIN)..."
+    if [ "$CAPTAIN" = "claude" ]; then
+        tmux send-keys -t captain:0 "claude --dangerously-skip-permissions --mcp-config /home/ubuntu/.squad-mcp.json" Enter
+    else
+        tmux send-keys -t captain:0 "codex --dangerously-bypass-approvals-and-sandbox" Enter
+    fi
+
+    echo "    Captain restart command sent. New captain should be initializing."
+    CAPTAIN_RESTARTED=true
+else
+    CAPTAIN_RESTARTED=false
+fi
+
+# ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
 echo ""
 echo "=== Update complete ==="
 echo "  Voice server:  restarted (PID $NEW_PID)"
 echo "  Tunnel:        kept alive"
-echo "  Captain:       kept alive (tmux captain:0)"
+if [ "$CAPTAIN_RESTARTED" = true ]; then
+    echo "  Captain:       RESTARTED (tmux captain:0)"
+else
+    echo "  Captain:       kept alive (tmux captain:0)"
+fi
 echo "  Voice URL:     $(cat /tmp/voice-url.txt 2>/dev/null || echo 'unknown')"
 echo "  Voice log:     /tmp/voice-server.log"
