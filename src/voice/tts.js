@@ -11,7 +11,7 @@ async function synthesize(text) {
     input: text,
     voice: "alloy",
     response_format: "opus",
-    speed: 1.25,
+    speed: 1.15,
   });
 
   return new Promise((resolve, reject) => {
