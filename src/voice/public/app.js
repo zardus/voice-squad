@@ -199,14 +199,35 @@ function stopRecording() {
   micBtn.classList.remove("recording");
 }
 
-micBtn.addEventListener("pointerdown", (e) => {
+// Track last touch time to ignore synthesized mouse events on mobile
+let lastTouchTime = 0;
+
+micBtn.addEventListener("touchstart", (e) => {
   e.preventDefault();
-  micBtn.setPointerCapture(e.pointerId);
+  lastTouchTime = Date.now();
   wantRecording = true;
   startRecording();
 });
-micBtn.addEventListener("pointerup", stopRecording);
-micBtn.addEventListener("pointercancel", () => {
+micBtn.addEventListener("touchend", (e) => {
+  e.preventDefault();
+  stopRecording();
+});
+micBtn.addEventListener("touchcancel", () => {
+  if (recording || wantRecording) stopRecording();
+});
+
+micBtn.addEventListener("mousedown", (e) => {
+  e.preventDefault();
+  if (Date.now() - lastTouchTime < 1000) return; // ignore synthesized mouse event
+  wantRecording = true;
+  startRecording();
+});
+micBtn.addEventListener("mouseup", () => {
+  if (Date.now() - lastTouchTime < 1000) return;
+  stopRecording();
+});
+micBtn.addEventListener("mouseleave", () => {
+  if (Date.now() - lastTouchTime < 1000) return;
   if (recording || wantRecording) stopRecording();
 });
 

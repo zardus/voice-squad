@@ -196,6 +196,9 @@ body {
   align-items: center;
   justify-content: center;
   touch-action: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 #mic-btn:active,
