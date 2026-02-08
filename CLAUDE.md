@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Project Is
 
-Squad is a multi-agent AI orchestration system. It runs inside a privileged Docker container and uses a **captain/workers** pattern: a captain agent (Claude or Codex) manages worker agents that run in tmux panes, communicating via a tmux MCP server. Captains can also launch recursive **sub-squads** (a sub-captain with its own worker session) for complex tasks.
+Squad is a multi-agent AI orchestration system. It runs inside a privileged Docker container and uses a **captain/workers** pattern: a captain agent (Claude or Codex) manages worker agents that run in tmux panes, communicating via a tmux MCP server.
 
 ## Build & Run
 
@@ -26,7 +26,7 @@ All build/runtime files live in `src/`:
 
 - `Dockerfile` — Container image definition
 - `entrypoint.sh` — Starts dockerd, fixes permissions, calls launch-squad.sh
-- `launch-squad.sh` — Configures captain type, creates tmux worker session, starts captain CLI. Also used to launch sub-squads from within a running squad.
+- `launch-squad.sh` — Configures captain type, creates tmux worker session, starts captain CLI.
 - `captain-instructions.md` — Injected as CLAUDE.md/AGENTS.md for the captain agent at runtime
 - `mcp-config.json` — Gives the captain access to tmux via the `tmux-mcp` npm package
 
@@ -37,7 +37,6 @@ All build/runtime files live in `src/`:
 ## Key Architecture Details
 
 - **Inside the container**, files are installed to `/opt/squad/`. `launch-squad.sh` copies instruction files to `/home/ubuntu/` with the correct filename (CLAUDE.md for claude captains, AGENTS.md for codex captains).
-- **Sub-squad captains must be codex** — two concurrent `claude` processes hit CLI lock conflicts in the same container.
-- **Environment variables control behavior**: `SQUAD_CAPTAIN` (claude|codex), `SQUAD_SESSION` (tmux session name for workers, default: "agents").
+- **Environment variables control behavior**: `SQUAD_CAPTAIN` (claude|codex).
 - The container runs `--privileged` for Docker-in-Docker support. The Docker container itself is the sandbox boundary.
 - There is no formal test suite. Manual testing is done by launching a squad and verifying agent behavior.

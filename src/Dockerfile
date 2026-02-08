@@ -1,18 +1,28 @@
-FROM ubuntu:22.04
+FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Core tools
+# Core tools + Nix
 RUN apt-get update && apt-get install -y \
     curl \
     git \
+    gh \
     tmux \
     ca-certificates \
     gnupg \
     lsb-release \
     sudo \
     jq \
+    nix-bin \
     && rm -rf /var/lib/apt/lists/*
+
+# Configure nix for single-user mode (no daemon, no systemd in Docker)
+RUN chown -R ubuntu:ubuntu /nix \
+    && mkdir -p /etc/nix \
+    && printf 'sandbox = false\n' > /etc/nix/nix.conf
+
+ENV NIX_REMOTE="" \
+    NIX_PATH="nixpkgs=channel:nixpkgs-unstable"
 
 # Docker-in-docker
 RUN install -m 0755 -d /etc/apt/keyrings \
@@ -31,11 +41,47 @@ RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
 
+# Python + pip
+RUN apt-get update && apt-get install -y \
+    python3 \
+    python3-pip \
+    python3-venv \
+    && ln -sf /usr/bin/python3 /usr/bin/python \
+    && rm -rf /var/lib/apt/lists/*
+
+# uv (fast Python package manager)
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh \
+    && mv /root/.local/bin/uv /usr/local/bin/uv \
+    && mv /root/.local/bin/uvx /usr/local/bin/uvx
+
+# Useful Python packages
+RUN pip3 install --break-system-packages --no-cache-dir \
+    requests \
+    httpx \
+    beautifulsoup4 \
+    lxml \
+    pyyaml \
+    toml \
+    python-dotenv \
+    click \
+    rich \
+    pydantic \
+    numpy \
+    pandas \
+    scipy \
+    matplotlib \
+    jinja2 \
+    pytest \
+    black \
+    ruff \
+    mypy \
+    ipython
+
 # Claude Code + Codex
 RUN npm install -g @anthropic-ai/claude-code @openai/codex@0.98.0
 
-# Set up ubuntu user
-RUN useradd -m -s /bin/bash -G docker ubuntu \
+# Set up ubuntu user (already exists in 24.04 base image)
+RUN usermod -aG docker ubuntu \
     && echo "ubuntu ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
 COPY entrypoint.sh /entrypoint.sh
@@ -47,6 +93,7 @@ COPY mcp-config.json /opt/squad/mcp-config.json
 COPY codex-mcp-config.toml /opt/squad/codex-mcp-config.toml
 
 USER ubuntu
+
 WORKDIR /home/ubuntu
 
 ENTRYPOINT ["/entrypoint.sh"]
