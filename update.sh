@@ -335,7 +335,6 @@ fi
 echo ""
 echo "=== Update complete ==="
 echo "  Voice server:  restarted (PID $NEW_PID)"
-echo "  Status daemon: restarted (PID $NEW_DAEMON_PID)"
 echo "  Tunnel:        kept alive"
 if [ "$CAPTAIN_RESTARTED" = true ]; then
     echo "  Captain:       RESTARTED (tmux captain:0)"
