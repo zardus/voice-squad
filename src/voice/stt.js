@@ -1,23 +1,60 @@
 const https = require("https");
 
 /**
+ * Detect audio format from file magic bytes, ignoring what the client claims.
+ */
+function detectFormat(buf) {
+  if (buf.length < 12) return { ext: "wav", mime: "audio/wav" };
+
+  // WebM/MKV: EBML header
+  if (buf[0] === 0x1a && buf[1] === 0x45 && buf[2] === 0xdf && buf[3] === 0xa3) {
+    return { ext: "webm", mime: "audio/webm" };
+  }
+  // OGG: "OggS"
+  if (buf.slice(0, 4).toString() === "OggS") {
+    return { ext: "ogg", mime: "audio/ogg" };
+  }
+  // RIFF/WAV: "RIFF"
+  if (buf.slice(0, 4).toString() === "RIFF") {
+    return { ext: "wav", mime: "audio/wav" };
+  }
+  // FLAC: "fLaC"
+  if (buf.slice(0, 4).toString() === "fLaC") {
+    return { ext: "flac", mime: "audio/flac" };
+  }
+  // MP3: ID3 tag or sync word
+  if (buf.slice(0, 3).toString() === "ID3" || (buf[0] === 0xff && (buf[1] & 0xe0) === 0xe0)) {
+    return { ext: "mp3", mime: "audio/mpeg" };
+  }
+  // MP4/M4A: "ftyp" at offset 4
+  if (buf.slice(4, 8).toString() === "ftyp") {
+    return { ext: "m4a", mime: "audio/mp4" };
+  }
+  // CAF (Apple): "caff"
+  if (buf.slice(0, 4).toString() === "caff") {
+    return { ext: "m4a", mime: "audio/mp4" };
+  }
+
+  // Fallback: try m4a since iOS Safari often produces unlabeled mp4
+  return { ext: "m4a", mime: "audio/mp4" };
+}
+
+/**
  * Transcribe audio using OpenAI Whisper API.
  * @param {Buffer} audioBuffer - Raw audio data
- * @param {string} mimeType - e.g. "audio/webm;codecs=opus" or "audio/mp4"
+ * @param {string} mimeType - reported by client (used as fallback only)
  * @returns {Promise<string>} Transcribed text
  */
 async function transcribe(audioBuffer, mimeType) {
-  // Strip codec params (e.g. "audio/webm;codecs=opus" -> "audio/webm")
-  const baseMime = mimeType.split(";")[0].trim();
-  // Map to a file extension Whisper accepts
-  const extMap = { "audio/webm": "webm", "audio/mp4": "mp4", "audio/ogg": "ogg", "audio/mpeg": "mp3", "audio/wav": "wav" };
-  const ext = extMap[baseMime] || "webm";
+  const detected = detectFormat(audioBuffer);
+  console.log(`[stt] ${audioBuffer.length} bytes, client says: ${mimeType}, detected: ${detected.ext} (${detected.mime})`);
+
   const boundary = "----VoiceBoundary" + Date.now();
 
   const fileField = [
     `--${boundary}\r\n`,
-    `Content-Disposition: form-data; name="file"; filename="audio.${ext}"\r\n`,
-    `Content-Type: ${baseMime}\r\n\r\n`,
+    `Content-Disposition: form-data; name="file"; filename="audio.${detected.ext}"\r\n`,
+    `Content-Type: ${detected.mime}\r\n\r\n`,
   ].join("");
 
   const modelField = [
