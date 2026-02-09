@@ -4,7 +4,13 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "npx playwright test",
+    "test:all": "TEST_INTEGRATION=1 npx playwright test",
+    "test:docker": "npx playwright test docker.spec.js",
+    "test:api": "npx playwright test api.spec.js",
+    "test:ws": "npx playwright test websocket.spec.js",
+    "test:ui": "npx playwright test ui.spec.js",
+    "test:integration": "TEST_INTEGRATION=1 npx playwright test integration.spec.js"
   },
   "repository": {
     "type": "git",
