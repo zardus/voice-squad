@@ -198,7 +198,7 @@ function connect() {
       case "transcription":
         transcriptionEl.textContent = msg.text;
         transcriptionEl.className = "";
-        voiceTranscriptionEl.textContent = msg.text;
+        voiceTranscriptionEl.textContent = "Sent";
         voiceTranscriptionEl.className = "voice-transcription";
         break;
 
@@ -212,7 +212,7 @@ function connect() {
       case "stt_error":
         transcriptionEl.textContent = msg.message;
         transcriptionEl.className = "error";
-        voiceTranscriptionEl.textContent = msg.message;
+        voiceTranscriptionEl.textContent = "Error";
         voiceTranscriptionEl.className = "voice-transcription error";
         playDing(false);
         break;

@@ -253,6 +253,9 @@ body {
   font-size: 14px;
   line-height: 1.5;
   color: #e0e0e0;
+  max-height: 4.5em;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 #transcription:empty::after {
