@@ -558,6 +558,11 @@ body {
   gap: 24px;
 }
 
+#voice-top-row {
+  display: flex;
+  gap: 24px;
+}
+
 #voice-status-btn {
   width: 140px;
   height: 140px;

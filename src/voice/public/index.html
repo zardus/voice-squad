@@ -70,14 +70,16 @@
 
     <div id="voice-view" class="tab-content">
       <div id="voice-center">
-        <button id="voice-status-btn" title="Ask for status update">
-          <span style="font-size:64px;font-weight:bold;line-height:1">?</span>
-        </button>
-        <button id="voice-interrupt-btn" title="Send Ctrl+C to captain">
-          <svg viewBox="0 0 24 24" width="64" height="64" fill="currentColor">
-            <rect x="4" y="4" width="16" height="16" rx="2"/>
-          </svg>
-        </button>
+        <div id="voice-top-row">
+          <button id="voice-status-btn" title="Ask for status update">
+            <span style="font-size:64px;font-weight:bold;line-height:1">?</span>
+          </button>
+          <button id="voice-interrupt-btn" title="Send Ctrl+C to captain">
+            <svg viewBox="0 0 24 24" width="64" height="64" fill="currentColor">
+              <rect x="4" y="4" width="16" height="16" rx="2"/>
+            </svg>
+          </button>
+        </div>
         <button id="voice-replay-btn" title="Replay last response" disabled>
           <svg viewBox="0 0 24 24" width="64" height="64" fill="currentColor">
             <polygon points="8,5 19,12 8,19"/>
