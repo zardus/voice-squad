@@ -99,6 +99,20 @@ For simple tasks, one worker in the session is fine. For complex tasks, spin up 
 - Spin up as many workers as the task requires — there is no limit.
 - **Let workers cook.** Workers sometimes appear stalled (e.g. rate-limited, thinking, waiting on sub-agents) but are actually fine. Don't panic if a worker looks idle for a while — it's usually just processing. Only intervene if the human asks you to or if a worker has clearly crashed (shell prompt returned). Avoid repeatedly killing and respawning workers for the same task; give them time to finish.
 
+### Reading Worker Panes
+
+When you capture a worker's pane output, be aware that **Claude Code shows an autosuggest prompt at the bottom of the pane**. Text appearing after the last prompt marker (the `❯` character) in the input area is **NOT** a command the worker is processing — it is autocomplete suggestion text that has not been submitted. Only text in the conversation area above the prompt (showing tool calls, results, and assistant messages) represents actual work.
+
+**Signs a worker is genuinely stalled:**
+- The conversation area has not changed between checks
+- There is no active spinner or status indicator
+
+**Signs a worker is fine:**
+- There is a spinner (like "Thinking", "Booping", etc.)
+- New tool calls or results have appeared since your last check
+
+**Do NOT kill workers just because you see unsubmitted text in their input prompt.** That text is an autosuggest/autocomplete ghost — the worker never typed it and is not waiting on it. Judge worker state solely by the conversation area above the prompt line.
+
 ## Cleaning Up Finished Workers
 
 When you check on workers (either because the human asked or because you noticed), and a worker has clearly finished its task:
