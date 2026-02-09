@@ -1,0 +1,51 @@
+# Lightweight test image for running the full test suite (including integration tests)
+# inside an isolated Docker container — no AI agents, API keys, or tunnels needed.
+
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y \
+    curl \
+    tmux \
+    ca-certificates \
+    gnupg \
+    procps \
+    && rm -rf /var/lib/apt/lists/*
+
+# Node.js 20
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set up ubuntu user
+RUN usermod -aG sudo ubuntu \
+    && echo "ubuntu ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+
+# ── Voice server (the system under test) ─────────────────────
+COPY src/voice/ /opt/squad/voice/
+RUN cd /opt/squad/voice && npm install --production
+
+# ── Test suite ───────────────────────────────────────────────
+COPY package.json playwright.config.js /opt/tests/
+COPY tests/ /opt/tests/tests/
+
+WORKDIR /opt/tests
+
+# Store Playwright browsers in a shared path accessible to all users
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers
+
+RUN npm install \
+    && npx playwright install --with-deps chromium
+
+# Make test dir + browser cache writable by ubuntu
+RUN chown -R ubuntu:ubuntu /opt/tests /opt/pw-browsers
+
+# ── Test entrypoint ──────────────────────────────────────────
+COPY test-entrypoint.sh /test-entrypoint.sh
+RUN chmod +x /test-entrypoint.sh
+
+USER ubuntu
+WORKDIR /home/ubuntu
+
+ENTRYPOINT ["/test-entrypoint.sh"]

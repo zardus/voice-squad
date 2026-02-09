@@ -48,9 +48,9 @@ test.describe("Integration", () => {
     expect(newContent).not.toBe(initialContent);
   });
 
-  test("captain creates a file when asked", async ({ page }) => {
+  test("command sent via UI creates a file in the captain pane", async ({ page }) => {
     test.skip(!INTEGRATION, "Set TEST_INTEGRATION=1 to run integration tests");
-    test.setTimeout(120000);
+    test.setTimeout(30000);
 
     // Clean up any leftover test file
     try { fs.unlinkSync(TEST_FILE); } catch {}
@@ -58,16 +58,18 @@ test.describe("Integration", () => {
     await page.goto(pageUrl());
     await expect(page.locator("#status")).toHaveClass(/connected/, { timeout: 5000 });
 
-    // Send command to create a file
+    // Send a shell command via the UI text input.
+    // The captain pane runs a shell, so this exercises the full pipeline:
+    // UI -> WebSocket text_command -> tmux send-keys -> shell execution -> file created.
     await page.fill(
       "#text-input",
-      `Create a file at ${TEST_FILE} containing exactly "hello from e2e test". Just create the file, nothing else.`,
+      `echo "hello from e2e test" > ${TEST_FILE}`,
     );
     await page.click("#send-btn");
 
-    // Poll for file creation (captain may take a while)
+    // Poll for file creation (tmux send-keys + shell execution)
     let found = false;
-    const deadline = Date.now() + 90000;
+    const deadline = Date.now() + 15000;
     while (Date.now() < deadline) {
       try {
         const content = fs.readFileSync(TEST_FILE, "utf8");
@@ -76,7 +78,7 @@ test.describe("Integration", () => {
           break;
         }
       } catch {}
-      await new Promise((r) => setTimeout(r, 3000));
+      await new Promise((r) => setTimeout(r, 1000));
     }
 
     expect(found).toBe(true);
