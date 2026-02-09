@@ -13,11 +13,8 @@ rm -f /home/ubuntu/CLAUDE.md /home/ubuntu/AGENTS.md
 
 # Captain instructions in ~/captain/ — workers in ~/project/ never walk into here
 mkdir -p /home/ubuntu/captain
-if [ "$CAPTAIN" = "claude" ]; then
-    cp /opt/squad/captain/instructions.md /home/ubuntu/captain/CLAUDE.md
-else
-    cp /opt/squad/captain/instructions.md /home/ubuntu/captain/AGENTS.md
-fi
+cp /opt/squad/captain/instructions.md /home/ubuntu/captain/CLAUDE.md
+cp /opt/squad/captain/instructions.md /home/ubuntu/captain/AGENTS.md
 
 # Install MCP config for the captain (tmux access)
 cp /opt/squad/mcp-config.json /home/ubuntu/.squad-mcp.json
