@@ -2,7 +2,7 @@
 
 LOGFILE="/tmp/heartbeat.log"
 PANE="%0"
-STALE_THRESHOLD=10
+STALE_THRESHOLD=20
 SLEEP_INTERVAL=30
 
 prev_hash=""
