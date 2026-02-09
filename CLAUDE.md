@@ -44,6 +44,26 @@ All build/runtime files live in `src/`:
 
 `home/` is the shared persistent volume mounted into the container at `/home/ubuntu`. It is gitignored.
 
+## Deploying Changes
+
+After editing source files, you **must** run the deploy script to apply changes to the live server:
+
+```bash
+./update.sh                   # hot-update code + restart voice server
+./update.sh --restart-captain # also restart the captain agent
+```
+
+This pulls latest git, copies `src/` files to `/opt/squad/` (the installed location), and restarts the voice server. The cloudflared tunnel and captain agent are kept alive (unless `--restart-captain` is passed).
+
+**Key paths:**
+- Source: `src/voice/` — server code; `src/voice/public/` — frontend (index.html, app.js, style.css)
+- Installed (live): `/opt/squad/voice/` — the voice server runs from here, not from `src/`
+- Heartbeat: `src/heartbeat.sh` → installed to `/opt/squad/heartbeat.sh`
+
+**Logs:**
+- Deploy output: `/tmp/update.log`
+- Voice server: `/tmp/voice-server.log`
+
 ## Key Architecture Details
 
 - **Inside the container**, files are installed to `/opt/squad/`. `launch-squad.sh` copies instruction files to `/home/ubuntu/` with the correct filename (CLAUDE.md for claude captains, AGENTS.md for codex captains).
