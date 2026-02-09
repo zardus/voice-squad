@@ -31,6 +31,19 @@
 
       <div id="update-bar">
         <button id="update-btn" title="Ask captain for a status update">Status</button>
+        <button id="interrupt-btn" title="Send Ctrl+C to captain">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+            <rect x="4" y="4" width="16" height="16" rx="2"/>
+          </svg>
+          Stop
+        </button>
+        <div id="captain-switch">
+          <select id="captain-tool-select">
+            <option value="claude">Claude</option>
+            <option value="codex">Codex</option>
+          </select>
+          <button id="restart-captain-btn" title="Restart captain with selected tool">Restart</button>
+        </div>
       </div>
 
       <div id="summary-panel">
@@ -60,6 +73,11 @@
         <button id="voice-status-btn" title="Ask for status update">
           <span style="font-size:64px;font-weight:bold;line-height:1">?</span>
         </button>
+        <button id="voice-interrupt-btn" title="Send Ctrl+C to captain">
+          <svg viewBox="0 0 24 24" width="64" height="64" fill="currentColor">
+            <rect x="4" y="4" width="16" height="16" rx="2"/>
+          </svg>
+        </button>
         <button id="voice-replay-btn" title="Replay last response" disabled>
           <svg viewBox="0 0 24 24" width="64" height="64" fill="currentColor">
             <polygon points="8,5 19,12 8,19"/>
@@ -72,6 +90,13 @@
         </button>
         <span id="voice-hint">Hold mic or spacebar to speak</span>
         <div id="voice-transcription" class="voice-transcription"></div>
+        <div id="voice-captain-switch">
+          <select id="voice-captain-tool-select">
+            <option value="claude">Claude</option>
+            <option value="codex">Codex</option>
+          </select>
+          <button id="voice-restart-captain-btn" title="Restart captain with selected tool">Restart Captain</button>
+        </div>
       </div>
     </div>
 

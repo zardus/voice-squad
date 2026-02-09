@@ -11,7 +11,13 @@ const voiceMicBtn = document.getElementById("voice-mic-btn");
 const voiceReplayBtn = document.getElementById("voice-replay-btn");
 const voiceStatusBtn = document.getElementById("voice-status-btn");
 const voiceTranscriptionEl = document.getElementById("voice-transcription");
+const voiceInterruptBtn = document.getElementById("voice-interrupt-btn");
+const interruptBtn = document.getElementById("interrupt-btn");
 const controlsEl = document.getElementById("controls");
+const captainToolSelect = document.getElementById("captain-tool-select");
+const restartCaptainBtn = document.getElementById("restart-captain-btn");
+const voiceCaptainToolSelect = document.getElementById("voice-captain-tool-select");
+const voiceRestartCaptainBtn = document.getElementById("voice-restart-captain-btn");
 let lastTtsAudioData = null;
 let speakAudioQueue = []; // TTS audio received while mic is held down
 let speakPending = false; // true after speak_text arrives, forces next audio to play
@@ -171,6 +177,11 @@ function connect() {
       case "connected":
         statusEl.textContent = msg.captain;
         statusEl.className = "connected";
+        if (msg.captain === "claude" || msg.captain === "codex") {
+          captainToolSelect.value = msg.captain;
+          voiceCaptainToolSelect.value = msg.captain;
+          updateSelectColors();
+        }
         break;
 
       case "tmux_snapshot":
@@ -446,6 +457,74 @@ updateBtn.addEventListener("click", () => {
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
   ws.send(JSON.stringify({ type: "text_command", text: "Give me a status update on all the tasks" }));
 });
+
+// Interrupt — send Ctrl+C to captain
+async function sendInterrupt() {
+  try {
+    const resp = await fetch("/api/interrupt", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token }),
+    });
+    if (resp.ok) {
+      playDing(true);
+    } else {
+      playDing(false);
+    }
+  } catch {
+    playDing(false);
+  }
+}
+
+interruptBtn.addEventListener("click", sendInterrupt);
+voiceInterruptBtn.addEventListener("click", sendInterrupt);
+
+// Restart captain — switch between Claude and Codex
+function syncCaptainSelects(source) {
+  const val = source.value;
+  captainToolSelect.value = val;
+  voiceCaptainToolSelect.value = val;
+  updateSelectColors();
+}
+
+function updateSelectColors() {
+  [captainToolSelect, voiceCaptainToolSelect].forEach((sel) => {
+    sel.classList.toggle("claude-selected", sel.value === "claude");
+    sel.classList.toggle("codex-selected", sel.value === "codex");
+  });
+}
+
+captainToolSelect.addEventListener("change", () => syncCaptainSelects(captainToolSelect));
+voiceCaptainToolSelect.addEventListener("change", () => syncCaptainSelects(voiceCaptainToolSelect));
+updateSelectColors();
+
+async function restartCaptain() {
+  const tool = captainToolSelect.value;
+  const btns = [restartCaptainBtn, voiceRestartCaptainBtn];
+  btns.forEach((b) => { b.disabled = true; b.textContent = "Restarting..."; });
+  try {
+    const resp = await fetch("/api/restart-captain", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token, tool }),
+    });
+    if (resp.ok) {
+      playDing(true);
+      statusEl.textContent = tool;
+    } else {
+      playDing(false);
+    }
+  } catch {
+    playDing(false);
+  } finally {
+    restartCaptainBtn.textContent = "Restart";
+    voiceRestartCaptainBtn.textContent = "Restart Captain";
+    btns.forEach((b) => { b.disabled = false; });
+  }
+}
+
+restartCaptainBtn.addEventListener("click", restartCaptain);
+voiceRestartCaptainBtn.addEventListener("click", restartCaptain);
 
 // --- Tab switching ---
 const tabs = document.querySelectorAll("#tab-bar .tab");

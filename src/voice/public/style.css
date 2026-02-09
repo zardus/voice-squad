@@ -150,6 +150,53 @@ body {
   color: #1a1a2e;
 }
 
+#interrupt-btn {
+  padding: 6px 16px;
+  border: 1px solid #e94560;
+  border-radius: 8px;
+  background: #1a1a2e;
+  color: #e94560;
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+#interrupt-btn:active {
+  background: #e94560;
+  color: #fff;
+}
+
+/* Voice tab interrupt button */
+#voice-interrupt-btn {
+  width: 140px;
+  height: 140px;
+  border: 3px solid #e94560;
+  border-radius: 50%;
+  background: #1a1a2e;
+  color: #e94560;
+  cursor: pointer;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+#voice-interrupt-btn:active {
+  background: #e94560;
+  border-color: #e94560;
+  color: #fff;
+  transform: scale(1.08);
+}
 
 /* Summary panel — middle */
 #summary-panel {
@@ -625,6 +672,96 @@ body {
 
 .voice-transcription.error {
   color: #e94560;
+}
+
+/* Captain switch — terminal tab */
+#captain-switch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+#captain-tool-select,
+#voice-captain-tool-select {
+  padding: 5px 8px;
+  border: 1px solid #0f3460;
+  border-radius: 6px;
+  background: #1a1a2e;
+  color: #e0e0e0;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+#captain-tool-select.claude-selected,
+#voice-captain-tool-select.claude-selected {
+  border-color: #a78bfa;
+  color: #a78bfa;
+}
+
+#captain-tool-select.codex-selected,
+#voice-captain-tool-select.codex-selected {
+  border-color: #4ecca3;
+  color: #4ecca3;
+}
+
+#restart-captain-btn {
+  padding: 5px 12px;
+  border: 1px solid #f0a500;
+  border-radius: 6px;
+  background: #1a1a2e;
+  color: #f0a500;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+#restart-captain-btn:active {
+  background: #f0a500;
+  color: #1a1a2e;
+}
+
+#restart-captain-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Captain switch — voice tab */
+#voice-captain-switch {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+#voice-restart-captain-btn {
+  padding: 8px 18px;
+  border: 2px solid #f0a500;
+  border-radius: 24px;
+  background: #1a1a2e;
+  color: #f0a500;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+#voice-restart-captain-btn:active {
+  background: #f0a500;
+  color: #1a1a2e;
+}
+
+#voice-restart-captain-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 #controls.hidden {

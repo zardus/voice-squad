@@ -74,6 +74,54 @@ app.post("/api/speak", async (req, res) => {
   }
 });
 
+app.post("/api/interrupt", (req, res) => {
+  const { token } = req.body || {};
+  if (token !== TOKEN) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  try {
+    require("child_process").execSync("tmux send-keys -t %0 C-c", { timeout: 5000 });
+    console.log("[interrupt] sent Ctrl+C to captain pane %0");
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("[interrupt] error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/restart-captain", async (req, res) => {
+  const { token, tool } = req.body || {};
+  if (token !== TOKEN) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  if (tool !== "claude" && tool !== "codex") {
+    return res.status(400).json({ error: "tool must be 'claude' or 'codex'" });
+  }
+
+  const { execSync } = require("child_process");
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  try {
+    // Kill current captain process with double Ctrl+C
+    execSync("tmux send-keys -t %0 C-c", { timeout: 5000 });
+    await sleep(500);
+    execSync("tmux send-keys -t %0 C-c", { timeout: 5000 });
+    await sleep(1000);
+
+    // Start the new captain with env sourcing
+    const cmd = tool === "claude"
+      ? "set -a; . ~/env; set +a && claude --dangerously-skip-permissions"
+      : "set -a; . ~/env; set +a && codex --dangerously-bypass-approvals-and-sandbox";
+    execSync(`tmux send-keys -t %0 '${cmd}' Enter`, { timeout: 5000 });
+
+    console.log(`[restart] captain restarted as ${tool}`);
+    res.json({ ok: true, tool });
+  } catch (err) {
+    console.error("[restart] error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 const server = http.createServer(app);
 const wss = new WebSocketServer({ noServer: true });
 
