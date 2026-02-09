@@ -113,7 +113,8 @@ COPY squad-pane-mcp/ /opt/squad/squad-pane-mcp/
 RUN cd /opt/squad/squad-pane-mcp && npm install --production
 
 COPY speak /usr/local/bin/speak
-RUN chmod +x /usr/local/bin/speak
+COPY switch-account.sh /usr/local/bin/switch-account.sh
+RUN chmod +x /usr/local/bin/speak /usr/local/bin/switch-account.sh
 
 USER ubuntu
 

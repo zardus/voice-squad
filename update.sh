@@ -82,6 +82,10 @@ sudo chmod +x /opt/squad/heartbeat.sh
 sudo cp "$REPO_DIR/src/speak" /usr/local/bin/speak
 sudo chmod +x /usr/local/bin/speak
 
+# --- switch-account CLI script ---
+sudo cp "$REPO_DIR/src/switch-account.sh" /usr/local/bin/switch-account.sh
+sudo chmod +x /usr/local/bin/switch-account.sh
+
 # --- Startup scripts (take effect on next container start only) ---
 sudo cp "$REPO_DIR/src/launch-squad.sh" /opt/squad/launch-squad.sh
 sudo chmod +x /opt/squad/launch-squad.sh

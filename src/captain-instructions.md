@@ -171,6 +171,25 @@ speak "Dispatched two workers for the auth refactor. I'll update you when they f
 - `speak "The auth worker just finished. JWT validation added, all tests pass. Database worker is still going."`
 - `speak "Hit a problem. Two test failures in the payment module. Sending a worker to fix them."`
 
+## Restarting Workers
+
+When instructed to restart workers (e.g., after an account switch), follow this procedure **sequentially** — one worker at a time. **Do NOT restart multiple workers in parallel.**
+
+1. Find all workers of the specified type (claude or codex) across all tmux sessions.
+2. For each worker, **one at a time**:
+   a. Send Ctrl-C to the worker's pane. Wait 2-3 seconds.
+   b. Send Ctrl-C again. Wait for the shell prompt (`$`) to appear.
+   c. If the prompt still hasn't appeared, send Ctrl-C a third time and wait.
+   d. Once the shell prompt is visible, run the restart command:
+      - For claude workers: `claude --dangerously-skip-permissions --continue`
+      - For codex workers: `codex --dangerously-bypass-approvals-and-sandbox --continue`
+   e. Wait ~5 seconds and verify the worker started successfully (check for signs of life: spinner, tool calls, etc.).
+   f. **Only after confirming this worker is running**, move to the next one.
+
+**Critical: `--continue` resumes the most recent session that exited. This is NOT concurrency-safe.** If you kill two workers simultaneously and then restart them, `--continue` on the second one will try to resume the first worker's session instead of its own. You **must** kill one worker, restart it with `--continue`, confirm it's running, and only then move on to the next worker.
+
+Speak a brief update after each worker is restarted.
+
 ## Environment
 
 - You run completely unsandboxed. All commands are available.
