@@ -98,23 +98,20 @@ app.post("/api/restart-captain", async (req, res) => {
     return res.status(400).json({ error: "tool must be 'claude' or 'codex'" });
   }
 
-  const { execSync } = require("child_process");
-  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const { exec } = require("child_process");
 
   try {
-    // Kill current captain process with double Ctrl+C
-    execSync("tmux send-keys -t %0 C-c", { timeout: 5000 });
-    await sleep(500);
-    execSync("tmux send-keys -t %0 C-c", { timeout: 5000 });
-    await sleep(1000);
+    // Delegate to the unified restart script (runs async — takes ~10s)
+    console.log(`[restart] launching restart-captain.sh ${tool}...`);
+    exec(`/opt/squad/restart-captain.sh ${tool} >> /tmp/restart-captain.log 2>&1`, (err) => {
+      if (err) {
+        console.error(`[restart] restart-captain.sh failed: ${err.message}`);
+      } else {
+        console.log(`[restart] restart-captain.sh completed for ${tool}`);
+      }
+    });
 
-    // Start the new captain with env sourcing
-    const cmd = tool === "claude"
-      ? "set -a; . ~/env; set +a && claude --dangerously-skip-permissions"
-      : "set -a; . ~/env; set +a && codex --dangerously-bypass-approvals-and-sandbox";
-    execSync(`tmux send-keys -t %0 '${cmd}' Enter`, { timeout: 5000 });
-
-    console.log(`[restart] captain restarted as ${tool}`);
+    // Return immediately — the script runs in the background
     res.json({ ok: true, tool });
   } catch (err) {
     console.error("[restart] error:", err.message);

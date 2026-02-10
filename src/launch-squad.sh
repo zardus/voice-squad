@@ -16,11 +16,6 @@ mkdir -p /home/ubuntu/captain
 cp /opt/squad/captain/instructions.md /home/ubuntu/captain/CLAUDE.md
 cp /opt/squad/captain/instructions.md /home/ubuntu/captain/AGENTS.md
 
-# Install MCP config for the captain (squad MCP: tmux + worker management)
-cp /opt/squad/mcp-config.json /home/ubuntu/.squad-mcp.json
-mkdir -p /home/ubuntu/.codex
-cp /opt/squad/codex-mcp-config.toml /home/ubuntu/.codex/config.toml
-
 # Source ~/env for API keys (set -a auto-exports all vars to child processes)
 if [ -f /home/ubuntu/env ]; then
     set -a
@@ -43,15 +38,9 @@ if ! pgrep -f "/opt/squad/heartbeat.sh" >/dev/null 2>&1; then
     nohup /opt/squad/heartbeat.sh >>/tmp/heartbeat.log 2>&1 &
 fi
 
-# Initial prompt: tell captain to run startup recovery (check for surviving workers)
-STARTUP_PROMPT="Run startup recovery: use list-workers to check for surviving workers from a previous session. For each one, capture its output and report status. Then say you are ready for instructions."
-
-# Launch captain inside the tmux session
-if [ "$CAPTAIN" = "claude" ]; then
-    tmux send-keys -t captain "claude --dangerously-skip-permissions --mcp-config /home/ubuntu/.squad-mcp.json -p \"$STARTUP_PROMPT\" $*" Enter
-else
-    tmux send-keys -t captain "codex --dangerously-bypass-approvals-and-sandbox \"$STARTUP_PROMPT\" $*" Enter
-fi
+# Launch captain inside the tmux session using the unified restart script.
+# --fresh skips --continue/resume since this is the initial boot.
+/opt/squad/restart-captain.sh "$CAPTAIN" --fresh
 
 # Start voice server with API keys inline (not exported, so captain CLIs don't see them)
 OPENAI_API_KEY="$_OPENAI_API_KEY" ANTHROPIC_API_KEY="$_ANTHROPIC_API_KEY" \

@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "squad": {
-      "command": "node",
-      "args": ["/opt/squad/squad-mcp/server.js"]
-    }
-  }
-}

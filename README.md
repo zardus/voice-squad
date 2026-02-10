@@ -24,7 +24,7 @@ Voice Squad runs inside a privileged Docker container using a **captain/workers*
 - **Workers**: AI agents spawned by the captain in tmux windows. Each worker handles a specific task (writing code, running tests, debugging, etc.) independently.
 - **Voice Interface**: A phone-friendly PWA that lets you talk to the captain hands-free. Your speech is transcribed, sent to the captain, and the captain's responses are summarized and read back to you.
 
-The captain communicates with workers via the squad MCP server — it can manage tmux sessions/windows/panes, send commands, and read output from any pane.
+The captain communicates with workers via raw tmux commands — it can manage tmux sessions/windows/panes, send commands, and read output from any pane.
 
 ### Architecture
 
@@ -190,8 +190,6 @@ voice-squad/
 │   ├── entrypoint.sh            # Container init — starts dockerd, sources env, launches squad
 │   ├── launch-squad.sh          # Creates tmux session, starts captain + voice server + tunnel
 │   ├── captain-instructions.md  # Injected as CLAUDE.md/AGENTS.md for the captain agent
-│   ├── mcp-config.json          # Captain MCP config (squad MCP server)
-│   ├── codex-mcp-config.toml    # Codex version of MCP config
 │   ├── speak                    # CLI script for captain to send voice updates
 │   └── voice/                   # Voice interface
 │       ├── server.js            # Express HTTP + WebSocket server

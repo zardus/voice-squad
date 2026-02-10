@@ -113,7 +113,7 @@ RESTART_MSG="The $TOOL account was just switched to $EMAIL. Restart all $TOOL wo
 # Launch new captain with the restart instruction as its initial prompt
 echo "    Launching new captain ($CAPTAIN) with worker restart instructions..."
 if [ "$CAPTAIN" = "claude" ]; then
-    tmux send-keys -t captain:0 "claude --dangerously-skip-permissions --mcp-config /home/ubuntu/.squad-mcp.json '$RESTART_MSG'" Enter
+    tmux send-keys -t captain:0 "claude --dangerously-skip-permissions '$RESTART_MSG'" Enter
 else
     tmux send-keys -t captain:0 "codex --dangerously-bypass-approvals-and-sandbox '$RESTART_MSG'" Enter
 fi

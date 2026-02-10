@@ -99,18 +99,14 @@ RUN usermod -aG docker ubuntu \
 
 COPY entrypoint.sh /entrypoint.sh
 COPY launch-squad.sh /opt/squad/launch-squad.sh
+COPY restart-captain.sh /opt/squad/restart-captain.sh
 COPY heartbeat.sh /opt/squad/heartbeat.sh
-RUN chmod +x /entrypoint.sh /opt/squad/launch-squad.sh /opt/squad/heartbeat.sh
+RUN chmod +x /entrypoint.sh /opt/squad/launch-squad.sh /opt/squad/restart-captain.sh /opt/squad/heartbeat.sh
 
 COPY captain-instructions.md /opt/squad/captain/instructions.md
-COPY mcp-config.json /opt/squad/mcp-config.json
-COPY codex-mcp-config.toml /opt/squad/codex-mcp-config.toml
 
 COPY voice/ /opt/squad/voice/
 RUN cd /opt/squad/voice && npm install --production
-
-COPY squad-mcp/ /opt/squad/squad-mcp/
-RUN cd /opt/squad/squad-mcp && npm install --production
 
 COPY speak /usr/local/bin/speak
 COPY switch-account.sh /usr/local/bin/switch-account.sh
