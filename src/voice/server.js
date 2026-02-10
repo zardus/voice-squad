@@ -9,7 +9,7 @@ const { synthesize } = require("./tts");
 const statusDaemon = require("./status-daemon");
 
 const PORT = process.env.VOICE_PORT || 3000;
-const CAPTAIN = process.env.SQUAD_CAPTAIN || "claude";
+let CAPTAIN = process.env.SQUAD_CAPTAIN || "claude";
 const TOKEN = process.env.VOICE_TOKEN;
 
 const REQUIRED_ENV = { VOICE_TOKEN: TOKEN, OPENAI_API_KEY: process.env.OPENAI_API_KEY };
@@ -94,21 +94,28 @@ app.post("/api/restart-captain", async (req, res) => {
 
   const { exec } = require("child_process");
 
+  console.log(`[restart] launching restart-captain.sh ${tool}...`);
   try {
-    // Delegate to the unified restart script (runs async — takes ~10s)
-    console.log(`[restart] launching restart-captain.sh ${tool}...`);
-    exec(`/opt/squad/restart-captain.sh ${tool} >> /tmp/restart-captain.log 2>&1`, (err) => {
-      if (err) {
-        console.error(`[restart] restart-captain.sh failed: ${err.message}`);
-      } else {
-        console.log(`[restart] restart-captain.sh completed for ${tool}`);
-      }
+    // Wait for the restart script to finish so we can report real success/failure
+    const output = await new Promise((resolve, reject) => {
+      exec(
+        `/opt/squad/restart-captain.sh ${tool}`,
+        { timeout: 60000 },
+        (err, stdout, stderr) => {
+          const combined = (stdout + stderr).trim();
+          if (err) {
+            reject(new Error(combined || err.message));
+          } else {
+            resolve(combined);
+          }
+        }
+      );
     });
-
-    // Return immediately — the script runs in the background
+    console.log(`[restart] restart-captain.sh completed for ${tool}`);
+    CAPTAIN = tool;
     res.json({ ok: true, tool });
   } catch (err) {
-    console.error("[restart] error:", err.message);
+    console.error(`[restart] restart-captain.sh failed: ${err.message}`);
     res.status(500).json({ error: err.message });
   }
 });
