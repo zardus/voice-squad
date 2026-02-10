@@ -275,33 +275,6 @@ server.tool(
   }
 );
 
-server.tool(
-  "tmux-new-session",
-  "Create a new tmux session (detached by default).",
-  {
-    sessionName: z.string().min(1),
-    cwd: z.string().optional(),
-    killIfExists: z.boolean().default(false),
-  },
-  async ({ sessionName, cwd, killIfExists }) => {
-    if (killIfExists) await tmux(["kill-session", "-t", sessionName]).catch(() => {});
-    const args = ["new-session", "-d", "-s", sessionName, "-P", "-F", "#{session_name}\t#{session_id}\t#{window_id}\t#{pane_id}"];
-    if (cwd) args.splice(5, 0, "-c", cwd);
-    const out = await tmux(args);
-    const [name, id, windowId, paneId] = out.trim().split("\t");
-    return { content: [{ type: "text", text: JSON.stringify({ name, id, windowId, paneId }, null, 2) }] };
-  }
-);
-
-server.tool(
-  "tmux-kill-session",
-  "Kill a tmux session.",
-  { sessionName: z.string().min(1) },
-  async ({ sessionName }) => {
-    await tmux(["kill-session", "-t", sessionName]);
-    return { content: [{ type: "text", text: "ok" }] };
-  }
-);
 
 server.tool(
   "tmux-list-windows",
@@ -323,52 +296,6 @@ server.tool(
   }
 );
 
-server.tool(
-  "tmux-new-window",
-  "Create a new tmux window in a session.",
-  {
-    session: z.string().min(1),
-    windowName: z.string().min(1),
-    cwd: z.string().optional(),
-  },
-  async ({ session, windowName, cwd }) => {
-    const args = ["new-window", "-t", session, "-n", windowName, "-P", "-F", "#{window_id}\t#{window_index}\t#{window_name}\t#{pane_id}"];
-    if (cwd) args.splice(5, 0, "-c", cwd);
-    const out = await tmux(args);
-    const [windowId, windowIndex, name, paneId] = out.trim().split("\t");
-    return {
-      content: [{ type: "text", text: JSON.stringify({ windowId, windowIndex: Number(windowIndex), name, paneId }, null, 2) }],
-    };
-  }
-);
-
-server.tool(
-  "tmux-kill-window",
-  "Kill a tmux window.",
-  { target: z.string().min(1) },
-  async ({ target }) => {
-    await tmux(["kill-window", "-t", target]);
-    return { content: [{ type: "text", text: "ok" }] };
-  }
-);
-
-server.tool(
-  "tmux-split-pane",
-  "Split a tmux pane (creates a new pane).",
-  {
-    target: z.string().min(1),
-    direction: z.enum(["horizontal", "vertical"]).default("vertical"),
-    sizePercent: z.number().int().min(10).max(90).optional(),
-    cwd: z.string().optional(),
-  },
-  async ({ target, direction, sizePercent, cwd }) => {
-    const args = ["split-window", "-t", target, direction === "horizontal" ? "-h" : "-v", "-P", "-F", "#{pane_id}"];
-    if (typeof sizePercent === "number") args.splice(4, 0, "-p", String(sizePercent));
-    if (cwd) args.splice(4, 0, "-c", cwd);
-    const out = await tmux(args);
-    return { content: [{ type: "text", text: JSON.stringify({ paneId: out.trim() }, null, 2) }] };
-  }
-);
 
 server.tool(
   "tmux-list-panes",
@@ -424,35 +351,146 @@ server.tool(
   }
 );
 
+
+// ---------------------------------------------------------------------------
+// Worker interaction (safe abstractions — no raw text sending)
+// ---------------------------------------------------------------------------
+
 server.tool(
-  "tmux-send-keys",
-  "Send keys to a tmux target. Prefer tmux-send-command for typical command submission.",
+  "send-worker-command",
+  "Send a command to a worker pane. Double-Enter with delays ensures submission even with bracketed paste mode.",
   {
-    target: z.string().min(1),
-    keys: z.array(z.string().min(1)).min(1),
+    target: z.string().min(1).describe("tmux pane ID or target (e.g. '%3' or 'myproject:worker1')"),
+    command: z.string().min(1).describe("The command string to send"),
   },
-  async ({ target, keys }) => {
-    await tmux(["send-keys", "-t", target, ...keys]);
-    return { content: [{ type: "text", text: "ok" }] };
+  async ({ target, command }) => {
+    await tmux(["send-keys", "-t", target, "-l", command]);
+    await sleep(500);
+    await tmux(["send-keys", "-t", target, "Enter"]);
+    await sleep(500);
+    await tmux(["send-keys", "-t", target, "Enter"]);
+    return { content: [{ type: "text", text: JSON.stringify({ ok: true, target, command }, null, 2) }] };
   }
 );
 
 server.tool(
-  "tmux-send-command",
-  "Send a literal command line to a tmux target and press Enter (optionally multiple times). Includes a small delay before Enter to avoid bracketed-paste swallowing the submission in some CLIs.",
+  "send-worker-key",
+  "Send a SINGLE key to a worker pane. Used for interacting with menus, confirmations, and control sequences. Only one key per call.",
   {
-    target: z.string().min(1),
-    command: z.string(),
-    enterCount: z.number().int().min(0).max(3).default(1),
-    delayBeforeEnterMs: z.number().int().min(0).max(5000).default(400),
+    target: z.string().min(1).describe("tmux pane ID or target (e.g. '%3' or 'myproject:worker1')"),
+    key: z.string().min(1).describe("A single tmux key (e.g. 'C-c', 'Enter', 'y', 'n', 'Up', 'Down', 'q')"),
   },
-  async ({ target, command, enterCount, delayBeforeEnterMs }) => {
-    await tmux(["send-keys", "-t", target, "-l", command]);
-    if (enterCount > 0) await sleep(delayBeforeEnterMs);
-    for (let i = 0; i < enterCount; i++) await tmux(["send-keys", "-t", target, "Enter"]);
-    return { content: [{ type: "text", text: "ok" }] };
+  async ({ target, key }) => {
+    await tmux(["send-keys", "-t", target, key]);
+    return { content: [{ type: "text", text: JSON.stringify({ ok: true, target, key }, null, 2) }] };
   }
 );
+
+server.tool(
+  "kill-worker",
+  "Kill a worker's tmux window.",
+  {
+    target: z.string().min(1).describe("tmux pane ID or session:window target (e.g. '%3' or 'myproject:worker1')"),
+  },
+  async ({ target }) => {
+    await tmux(["kill-window", "-t", target]);
+    return { content: [{ type: "text", text: JSON.stringify({ ok: true, target }, null, 2) }] };
+  }
+);
+
+server.tool(
+  "start-worker",
+  "Start a new worker agent in a project session. Creates a new tmux window and launches a Claude or Codex agent with the given prompt.",
+  {
+    project_name: z.string().min(1).describe("tmux session name (must already exist — use create-project-session first)"),
+    task_name: z.string().min(1).describe("Window name for this worker (used as tmux window name)"),
+    tool: z.enum(["claude", "codex"]).describe("Which agent CLI to launch"),
+    prompt: z.string().min(1).describe("The task description / prompt to give the agent"),
+  },
+  async ({ project_name, task_name, tool, prompt }) => {
+    // Verify session exists
+    if (!(await tmuxOk(["has-session", "-t", project_name]))) {
+      return {
+        content: [{ type: "text", text: `Error: tmux session '${project_name}' does not exist. Use create-project-session first.` }],
+        isError: true,
+      };
+    }
+
+    // Create a new window in the session
+    const winOut = await tmux([
+      "new-window", "-t", project_name, "-n", task_name,
+      "-P", "-F", "#{window_id}\t#{pane_id}",
+    ]);
+    const [windowId, paneId] = winOut.trim().split("\t");
+
+    // Build the launch command
+    const agentCmd = tool === "claude"
+      ? `claude --dangerously-skip-permissions`
+      : `codex --dangerously-bypass-approvals-and-sandbox`;
+
+    // Escape single quotes in prompt for shell safety
+    const escapedPrompt = prompt.replace(/'/g, "'\\''");
+    const fullCmd = `set -a; [ -f /home/ubuntu/env ] && . /home/ubuntu/env; set +a; ${agentCmd} '${escapedPrompt}'`;
+
+    // Send the command with double-Enter for bracketed paste safety
+    await tmux(["send-keys", "-t", paneId, "-l", fullCmd]);
+    await sleep(500);
+    await tmux(["send-keys", "-t", paneId, "Enter"]);
+    await sleep(500);
+    await tmux(["send-keys", "-t", paneId, "Enter"]);
+
+    return {
+      content: [{ type: "text", text: JSON.stringify({ ok: true, project_name, task_name, tool, windowId, paneId }, null, 2) }],
+    };
+  }
+);
+
+server.tool(
+  "create-project-session",
+  "Create a new tmux session for a project. Use this before start-worker to set up the project workspace.",
+  {
+    project_name: z.string().min(1).describe("Session name (e.g. 'myproject')"),
+    path: z.string().optional().describe("Working directory (defaults to /home/ubuntu/<project_name>)"),
+  },
+  async ({ project_name, path }) => {
+    const cwd = path || `/home/ubuntu/${project_name}`;
+
+    // Kill existing session if it exists
+    await tmux(["kill-session", "-t", project_name]).catch(() => {});
+
+    const out = await tmux([
+      "new-session", "-d", "-s", project_name, "-c", cwd,
+      "-P", "-F", "#{session_name}\t#{session_id}\t#{window_id}\t#{pane_id}",
+    ]);
+    const [name, id, windowId, paneId] = out.trim().split("\t");
+    return {
+      content: [{ type: "text", text: JSON.stringify({ ok: true, name, id, windowId, paneId, cwd }, null, 2) }],
+    };
+  }
+);
+
+server.tool(
+  "stop-worker",
+  "Gracefully stop a worker agent (sends Ctrl-C sequence) without killing the tmux window. Useful when you want to stop the agent but keep the shell for inspection.",
+  {
+    target: z.string().min(1).describe("tmux pane ID or target (e.g. '%3' or 'myproject:worker1')"),
+    ctrlCCount: z.number().int().min(1).max(5).default(2),
+    ctrlCDelayMs: z.number().int().min(100).max(5000).default(600),
+  },
+  async ({ target, ctrlCCount, ctrlCDelayMs }) => {
+    for (let i = 0; i < ctrlCCount; i++) {
+      await tmux(["send-keys", "-t", target, "C-c"]);
+      await sleep(ctrlCDelayMs);
+    }
+    // Clear any leftover input
+    await tmux(["send-keys", "-t", target, "C-u"]).catch(() => {});
+    return { content: [{ type: "text", text: JSON.stringify({ ok: true, target, ctrlCCount }, null, 2) }] };
+  }
+);
+
+// ---------------------------------------------------------------------------
+// Read-only tmux tools
+// ---------------------------------------------------------------------------
 
 server.tool(
   "capture-pane",
