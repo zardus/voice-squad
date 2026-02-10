@@ -1,14 +1,42 @@
 const { execSync, execFile } = require("child_process");
 
 const TARGET = "captain:0";
-// Claude Code's input box separator — strip this and everything below it
-const INPUT_BOX_RE = /^[─]{20,}/m;
-
+// Strip Claude/Codex interactive input chrome (textbox + autosuggest) from a captured pane.
+// This keeps the UI's "Terminal" view focused on conversation/log output.
 function stripInputBox(output) {
-  const matches = [...output.matchAll(new RegExp(INPUT_BOX_RE.source, "gm"))];
-  if (matches.length === 0) return output;
-  const cutMatch = matches.length >= 2 ? matches[matches.length - 2] : matches[0];
-  return output.slice(0, cutMatch.index).trimEnd();
+  const lines = output.split("\n");
+  while (lines.length && lines[lines.length - 1] === "") lines.pop();
+
+  const delimiterRe = /^[─━]{20,}\s*$/;
+  const delimiterIdxs = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (delimiterRe.test(lines[i])) delimiterIdxs.push(i);
+  }
+
+  function looksLikeInputChrome(after) {
+    for (let i = 0; i < Math.min(60, after.length); i++) {
+      const l = after[i] || "";
+      if (l.trimStart().startsWith("❯")) return true;
+      if (l.includes("┌") || l.includes("└") || l.includes("│")) return true;
+      if (l.includes("Ctrl") && l.includes("Enter")) return true;
+    }
+    return false;
+  }
+
+  const uiDelimiterIdxs = delimiterIdxs.filter((idx) => looksLikeInputChrome(lines.slice(idx + 1)));
+  if (uiDelimiterIdxs.length) {
+    const cutIdx = uiDelimiterIdxs.length >= 2 ? uiDelimiterIdxs[uiDelimiterIdxs.length - 2] : uiDelimiterIdxs[0];
+    return lines.slice(0, cutIdx).join("\n").trimEnd();
+  }
+
+  // Fallback: cut before the last "❯" prompt line if present.
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if ((lines[i] || "").trimStart().startsWith("❯")) {
+      return lines.slice(0, i).join("\n").trimEnd();
+    }
+  }
+
+  return output.trimEnd();
 }
 
 function capturePaneOutput() {

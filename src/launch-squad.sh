@@ -16,7 +16,7 @@ mkdir -p /home/ubuntu/captain
 cp /opt/squad/captain/instructions.md /home/ubuntu/captain/CLAUDE.md
 cp /opt/squad/captain/instructions.md /home/ubuntu/captain/AGENTS.md
 
-# Install MCP config for the captain (tmux access)
+# Install MCP config for the captain (squad MCP: tmux + worker management)
 cp /opt/squad/mcp-config.json /home/ubuntu/.squad-mcp.json
 mkdir -p /home/ubuntu/.codex
 cp /opt/squad/codex-mcp-config.toml /home/ubuntu/.codex/config.toml

@@ -60,6 +60,7 @@ echo "==> Updating installed files..."
 
 # Snapshot the current package.json hash BEFORE overwriting, so we can detect changes
 OLD_PKG_HASH=$(md5sum /opt/squad/voice/package.json 2>/dev/null | cut -d' ' -f1 || echo "none")
+OLD_SQUAD_MCP_PKG_HASH=$(md5sum /opt/squad/squad-mcp/package.json 2>/dev/null | cut -d' ' -f1 || echo "none")
 
 # --- Voice server source files (*.js, *.json — node_modules left untouched) ---
 sudo cp "$REPO_DIR"/src/voice/*.js /opt/squad/voice/
@@ -73,6 +74,14 @@ sudo cp -r "$REPO_DIR"/src/voice/public /opt/squad/voice/public
 sudo cp "$REPO_DIR/src/captain-instructions.md" /opt/squad/captain/instructions.md
 sudo cp "$REPO_DIR/src/mcp-config.json"         /opt/squad/mcp-config.json
 sudo cp "$REPO_DIR/src/codex-mcp-config.toml"   /opt/squad/codex-mcp-config.toml
+
+# --- Squad MCP server (tmux + workers) ---
+sudo mkdir -p /opt/squad/squad-mcp
+sudo cp "$REPO_DIR"/src/squad-mcp/*.js /opt/squad/squad-mcp/
+sudo cp "$REPO_DIR"/src/squad-mcp/package.json /opt/squad/squad-mcp/
+if [ -f "$REPO_DIR/src/squad-mcp/package-lock.json" ]; then
+    sudo cp "$REPO_DIR/src/squad-mcp/package-lock.json" /opt/squad/squad-mcp/
+fi
 
 # --- Heartbeat monitor script ---
 sudo cp "$REPO_DIR/src/heartbeat.sh"            /opt/squad/heartbeat.sh
@@ -118,6 +127,15 @@ if [ "$OLD_PKG_HASH" != "$NEW_PKG_HASH" ]; then
     echo "    Dependencies updated."
 else
     echo "==> package.json unchanged — skipping npm install."
+fi
+
+NEW_SQUAD_MCP_PKG_HASH=$(md5sum /opt/squad/squad-mcp/package.json 2>/dev/null | cut -d' ' -f1 || echo "none")
+if [ "$OLD_SQUAD_MCP_PKG_HASH" != "$NEW_SQUAD_MCP_PKG_HASH" ]; then
+    echo "==> squad-mcp package.json changed — running npm install..."
+    (cd /opt/squad/squad-mcp && sudo npm install --production)
+    echo "    squad-mcp dependencies updated."
+else
+    echo "==> squad-mcp package.json unchanged — skipping npm install."
 fi
 
 # ---------------------------------------------------------------------------
@@ -294,7 +312,7 @@ if [ "$RESTART_CAPTAIN" = true ]; then
         echo "    Found captain process: PID $CAPTAIN_PID ($CAPTAIN_CMD)"
         echo "    Sending SIGTERM..."
 
-        # Kill the entire process group (captain + its children like tmux-mcp)
+        # Kill the entire process group (captain + its children like MCP servers)
         kill -- -"$CAPTAIN_PID" 2>/dev/null || kill "$CAPTAIN_PID" 2>/dev/null || true
 
         # Wait up to 5s for the process to die

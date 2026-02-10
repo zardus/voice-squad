@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Project Is
 
-Squad is a multi-agent AI orchestration system. It runs inside a privileged Docker container and uses a **captain/workers** pattern: a captain agent (Claude or Codex) manages worker agents that run in tmux panes, communicating via a tmux MCP server. It includes a voice interface (PWA) for controlling the captain from a phone.
+Squad is a multi-agent AI orchestration system. It runs inside a privileged Docker container and uses a **captain/workers** pattern: a captain agent (Claude or Codex) manages worker agents that run in tmux panes, communicating via the squad MCP server. It includes a voice interface (PWA) for controlling the captain from a phone.
 
 ## Build & Run
 
@@ -28,7 +28,7 @@ All build/runtime files live in `src/`:
 - `entrypoint.sh` — Starts dockerd, fixes permissions, calls launch-squad.sh
 - `launch-squad.sh` — Creates captain tmux session (window 0: captain CLI, window 1: voice server + cloudflared), generates auth token, displays QR code
 - `captain-instructions.md` — Injected as CLAUDE.md/AGENTS.md for the captain agent at runtime
-- `mcp-config.json` — Gives the captain access to tmux via the `tmux-mcp` npm package
+- `mcp-config.json` — Gives the captain access to tmux + worker management via the squad MCP server
 
 `src/voice/` — Voice interface server and PWA:
 

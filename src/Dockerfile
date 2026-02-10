@@ -109,8 +109,8 @@ COPY codex-mcp-config.toml /opt/squad/codex-mcp-config.toml
 COPY voice/ /opt/squad/voice/
 RUN cd /opt/squad/voice && npm install --production
 
-COPY squad-pane-mcp/ /opt/squad/squad-pane-mcp/
-RUN cd /opt/squad/squad-pane-mcp && npm install --production
+COPY squad-mcp/ /opt/squad/squad-mcp/
+RUN cd /opt/squad/squad-mcp && npm install --production
 
 COPY speak /usr/local/bin/speak
 COPY switch-account.sh /usr/local/bin/switch-account.sh

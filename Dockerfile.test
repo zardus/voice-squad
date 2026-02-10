@@ -26,12 +26,15 @@ RUN usermod -aG sudo ubuntu \
 COPY src/voice/ /opt/squad/voice/
 RUN cd /opt/squad/voice && npm install --production
 
+# ── Squad MCP server (tmux + workers) ────────────────────────
+COPY src/squad-mcp/ /opt/squad/squad-mcp/
+RUN cd /opt/squad/squad-mcp && npm install --production
+
 # ── Scripts under test ──────────────────────────────────────
 COPY src/switch-account.sh /opt/tests/src/switch-account.sh
 
 # ── Test suite ───────────────────────────────────────────────
 COPY package.json playwright.config.js /opt/tests/
-COPY tests/ /opt/tests/tests/
 
 WORKDIR /opt/tests
 
@@ -40,6 +43,9 @@ ENV PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers
 
 RUN npm install \
     && npx playwright install --with-deps chromium
+
+# Copy tests after Playwright install so changing tests doesn't invalidate the heavy browser install layer.
+COPY tests/ /opt/tests/tests/
 
 # Make test dir + browser cache writable by ubuntu
 RUN chown -R ubuntu:ubuntu /opt/tests /opt/pw-browsers

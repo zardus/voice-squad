@@ -16,6 +16,41 @@ function tmuxExec(args) {
   }
 }
 
+function stripInputBox(output) {
+  const lines = output.split("\n");
+  while (lines.length && lines[lines.length - 1] === "") lines.pop();
+
+  const delimiterRe = /^[─━]{20,}\s*$/;
+  const delimiterIdxs = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (delimiterRe.test(lines[i])) delimiterIdxs.push(i);
+  }
+
+  function looksLikeInputChrome(after) {
+    for (let i = 0; i < Math.min(60, after.length); i++) {
+      const l = after[i] || "";
+      if (l.trimStart().startsWith("❯")) return true;
+      if (l.includes("┌") || l.includes("└") || l.includes("│")) return true;
+      if (l.includes("Ctrl") && l.includes("Enter")) return true;
+    }
+    return false;
+  }
+
+  const uiDelimiterIdxs = delimiterIdxs.filter((idx) => looksLikeInputChrome(lines.slice(idx + 1)));
+  if (uiDelimiterIdxs.length) {
+    const cutIdx = uiDelimiterIdxs.length >= 2 ? uiDelimiterIdxs[uiDelimiterIdxs.length - 2] : uiDelimiterIdxs[0];
+    return lines.slice(0, cutIdx).join("\n").trimEnd();
+  }
+
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if ((lines[i] || "").trimStart().startsWith("❯")) {
+      return lines.slice(0, i).join("\n").trimEnd();
+    }
+  }
+
+  return output.trimEnd();
+}
+
 function collectPanes() {
   const sessionsRaw = tmuxExec(["list-sessions", "-F", "#{session_name}:#{session_id}"]);
   if (!sessionsRaw.trim()) return { dump: "", paneCount: 0, sessions: [] };
@@ -36,7 +71,7 @@ function collectPanes() {
       const [windowName, windowId] = wLine.split(":");
       if (!windowName) continue;
 
-      const content = tmuxExec(["capture-pane", "-t", windowId || `${sessionName}:${windowName}`, "-p", "-S", "-200"]);
+      const content = stripInputBox(tmuxExec(["capture-pane", "-t", windowId || `${sessionName}:${windowName}`, "-p", "-S", "-200"]));
       const snippet = content.trim().slice(-2000); // keep last 2000 chars for raw view
       paneCount++;
 
