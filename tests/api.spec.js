@@ -50,7 +50,6 @@ test.describe("API endpoints", () => {
     expect(resp.status).toBe(200);
     const json = await resp.json();
     // Should have expected shape (either real data or fallback)
-    expect(json).toHaveProperty("summary");
     expect(json).toHaveProperty("sessions");
   });
 

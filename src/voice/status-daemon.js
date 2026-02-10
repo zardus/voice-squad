@@ -1,52 +1,39 @@
-const { execFileSync } = require("child_process");
-const https = require("https");
-const fs = require("fs");
+const { execFile } = require("child_process");
 
-const STATUS_FILE = "/tmp/squad-status.json";
-const INTERVAL_MS = 30000;
+const POLL_INTERVAL_MS = 1000;
 
-const HAIKU_PROMPT =
-  "You are summarizing the state of a multi-agent coding squad. Below are the terminal outputs from all active tmux sessions and windows. Give a concise status overview: what tasks are running, their progress, any errors or completions. Be specific about what each worker is doing. Format as a clean bullet list. Keep it under 300 words.";
-
-function tmuxExec(args) {
-  try {
-    return execFileSync("tmux", args, { encoding: "utf8", timeout: 5000 });
-  } catch {
-    return "";
-  }
+function tmuxExecAsync(args) {
+  return new Promise((resolve) => {
+    execFile("tmux", args, { encoding: "utf8", timeout: 5000 }, (err, stdout) => {
+      resolve(err ? "" : stdout);
+    });
+  });
 }
 
 function stripInputBox(output) {
   const lines = output.split("\n");
   while (lines.length && lines[lines.length - 1] === "") lines.pop();
 
-  const delimiterIdxs = [];
-
   function isDelimiterLine(line) {
     const s = (line || "").trim();
     if (s.length < 20) return false;
-    let dashy = 0;
     for (const ch of s) {
-      if (ch === "-" || ch === "─" || ch === "━") dashy++;
-      else return false;
+      if (ch !== "-" && ch !== "─" && ch !== "━") return false;
     }
-    return dashy / s.length >= 0.9;
+    return true;
   }
 
-  for (let i = 0; i < lines.length; i++) {
-    if (isDelimiterLine(lines[i])) delimiterIdxs.push(i);
-  }
-
-  // Prefer the Claude-style delimiter pairing: cut at the second-to-last delimiter
-  // when scanning backward from the end of the pane.
   let found = 0;
   for (let i = lines.length - 1; i >= 0 && (lines.length - 1 - i) < 400; i--) {
     if (isDelimiterLine(lines[i])) {
       found++;
-      if (found === 2) {
-        return lines.slice(0, i).join("\n").trimEnd();
-      }
+      if (found === 2) return lines.slice(0, i).join("\n").trimEnd();
     }
+  }
+
+  const delimiterIdxs = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (isDelimiterLine(lines[i])) delimiterIdxs.push(i);
   }
 
   function looksLikeInputChrome(after) {
@@ -74,138 +61,79 @@ function stripInputBox(output) {
   return output.trimEnd();
 }
 
-function collectPanes() {
-  const sessionsRaw = tmuxExec(["list-sessions", "-F", "#{session_name}:#{session_id}"]);
-  if (!sessionsRaw.trim()) return { dump: "", paneCount: 0, sessions: [] };
+async function collectPanes() {
+  const sessionsRaw = await tmuxExecAsync(["list-sessions", "-F", "#{session_name}\t#{session_id}"]);
+  if (!sessionsRaw.trim()) return { sessions: [] };
 
-  const sessions = [];
-  let dump = "";
-  let paneCount = 0;
+  const sessionLines = sessionsRaw.trim().split("\n");
 
-  for (const sLine of sessionsRaw.trim().split("\n")) {
-    const [sessionName, sessionId] = sLine.split(":");
-    if (!sessionName) continue;
+  const sessions = (await Promise.all(sessionLines.map(async (sLine) => {
+    const tabIdx = sLine.indexOf("\t");
+    if (tabIdx < 0) return null;
+    const sessionName = sLine.slice(0, tabIdx);
+    const sessionId = sLine.slice(tabIdx + 1);
+    if (!sessionName) return null;
 
-    const windowsRaw = tmuxExec(["list-windows", "-t", sessionId || sessionName, "-F", "#{window_name}:#{window_id}"]);
-    if (!windowsRaw.trim()) continue;
+    const windowsRaw = await tmuxExecAsync(["list-windows", "-t", sessionId || sessionName, "-F", "#{window_name}\t#{window_id}"]);
+    if (!windowsRaw.trim()) return null;
 
-    const windows = [];
-    for (const wLine of windowsRaw.trim().split("\n")) {
-      const [windowName, windowId] = wLine.split(":");
-      if (!windowName) continue;
+    const windowLines = windowsRaw.trim().split("\n");
+    const windows = (await Promise.all(windowLines.map(async (wLine) => {
+      const wTabIdx = wLine.indexOf("\t");
+      if (wTabIdx < 0) return null;
+      const windowName = wLine.slice(0, wTabIdx);
+      const windowId = wLine.slice(wTabIdx + 1);
+      if (!windowName) return null;
 
-      const content = stripInputBox(tmuxExec(["capture-pane", "-t", windowId || `${sessionName}:${windowName}`, "-p", "-S", "-200"]));
-      const snippet = content.trim().slice(-2000); // keep last 2000 chars for raw view
-      paneCount++;
+      const raw = await tmuxExecAsync(["capture-pane", "-t", windowId || `${sessionName}:${windowName}`, "-p", "-S", "-200"]);
+      const content = stripInputBox(raw);
+      return { name: windowName, content: content.trim().slice(-3000) };
+    }))).filter(Boolean);
 
-      dump += `=== Session: ${sessionName} | Window: ${windowName} ===\n${content}\n\n`;
-      windows.push({ name: windowName, snippet });
-    }
+    return { name: sessionName, windows };
+  }))).filter(Boolean);
 
-    sessions.push({ name: sessionName, windows });
-  }
-
-  return { dump, paneCount, sessions };
-}
-
-function callHaiku(dump) {
-  const body = JSON.stringify({
-    model: "claude-haiku-4-5-20251001",
-    max_tokens: 1024,
-    messages: [{ role: "user", content: `${HAIKU_PROMPT}\n\n${dump}` }],
-  });
-
-  return new Promise((resolve, reject) => {
-    const req = https.request(
-      {
-        hostname: "api.anthropic.com",
-        path: "/v1/messages",
-        method: "POST",
-        headers: {
-          "x-api-key": process.env.ANTHROPIC_API_KEY,
-          "Content-Type": "application/json",
-          "Content-Length": Buffer.byteLength(body),
-          "anthropic-version": "2023-06-01",
-        },
-      },
-      (res) => {
-        const chunks = [];
-        res.on("data", (c) => chunks.push(c));
-        res.on("end", () => {
-          const text = Buffer.concat(chunks).toString();
-          if (res.statusCode !== 200) {
-            reject(new Error(`Haiku API ${res.statusCode}: ${text.slice(0, 200)}`));
-            return;
-          }
-          try {
-            const data = JSON.parse(text);
-            resolve(data.content[0].text);
-          } catch (e) {
-            reject(new Error("Failed to parse Haiku response"));
-          }
-        });
-      }
-    );
-    req.on("error", reject);
-    req.end(body);
-  });
+  return { sessions };
 }
 
 // --- On-demand lifecycle ---
 
 let timer = null;
 let running = false;
-let generation = 0; // monotonic counter to detect stale callbacks after stop/start
+let generation = 0;
+let lastStateJson = "";
+let lastState = null;
 
 async function tick(broadcast, gen) {
+  if (!running || gen !== generation) return;
+
   try {
-    const { dump, paneCount, sessions } = collectPanes();
-    if (!dump.trim()) {
-      console.log("[status] no tmux sessions found, skipping");
-      return;
+    const state = await collectPanes();
+    const stateJson = JSON.stringify(state);
+
+    if (stateJson !== lastStateJson) {
+      lastStateJson = stateJson;
+      lastState = state;
+      broadcast(state);
     }
-
-    console.log(`[status] captured ${paneCount} panes across ${sessions.length} sessions, ${dump.length} chars`);
-    const summary = await callHaiku(dump);
-
-    // If stop() was called (or stop+start) while the LLM call was in flight, discard
-    if (!running || gen !== generation) return;
-
-    console.log(`[status] summary: ${summary.slice(0, 100)}...`);
-
-    const result = {
-      timestamp: new Date().toISOString(),
-      summary,
-      paneCount,
-      sessions,
-    };
-
-    fs.writeFileSync(STATUS_FILE, JSON.stringify(result, null, 2));
-    broadcast(result);
   } catch (err) {
-    console.error("[status] error:", err.message);
+    console.error("[status-stream] error:", err.message);
   }
-}
 
-function runCycle(broadcast, gen) {
-  tick(broadcast, gen).then(() => {
-    if (running && gen === generation) {
-      timer = setTimeout(() => {
-        if (running && gen === generation) {
-          runCycle(broadcast, gen);
-        }
-      }, INTERVAL_MS);
-    }
-  });
+  if (running && gen === generation) {
+    timer = setTimeout(() => tick(broadcast, gen), POLL_INTERVAL_MS);
+  }
 }
 
 function start(broadcast) {
   if (running) return;
   running = true;
   generation++;
+  lastStateJson = "";
+  lastState = null;
   const gen = generation;
-  console.log("[status] started on-demand refresh, interval=30s");
-  runCycle(broadcast, gen);
+  console.log("[status-stream] started live streaming, interval=1s");
+  tick(broadcast, gen);
 }
 
 function stop() {
@@ -216,11 +144,16 @@ function stop() {
     clearTimeout(timer);
     timer = null;
   }
-  console.log("[status] stopped on-demand refresh");
+  lastStateJson = "";
+  console.log("[status-stream] stopped live streaming");
 }
 
 function isRunning() {
   return running;
 }
 
-module.exports = { start, stop, isRunning };
+function getLastState() {
+  return lastState;
+}
+
+module.exports = { start, stop, isRunning, getLastState };

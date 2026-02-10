@@ -1,7 +1,6 @@
 const express = require("express");
 const http = require("http");
 const path = require("path");
-const fs = require("fs");
 const { WebSocketServer, WebSocket } = require("ws");
 const { sendToCaptain, capturePaneOutputAsync } = require("./tmux-bridge");
 const { transcribe } = require("./stt");
@@ -25,8 +24,6 @@ function checkToken(req) {
   return url.searchParams.get("token") === TOKEN;
 }
 
-const STATUS_FILE = "/tmp/squad-status.json";
-
 const app = express();
 
 app.use(express.json());
@@ -37,12 +34,8 @@ app.get("/api/status", (req, res) => {
   if (url.searchParams.get("token") !== TOKEN) {
     return res.status(401).json({ error: "Unauthorized" });
   }
-  try {
-    const data = fs.readFileSync(STATUS_FILE, "utf8");
-    res.json(JSON.parse(data));
-  } catch {
-    res.json({ timestamp: null, summary: "Status daemon not running yet.", paneCount: 0, sessions: [] });
-  }
+  const state = statusDaemon.getLastState();
+  res.json(state || { sessions: [] });
 });
 
 app.post("/api/speak", async (req, res) => {
@@ -126,9 +119,9 @@ const wss = new WebSocketServer({ noServer: true });
 const statusClients = new Set();
 
 function broadcastStatus(data) {
-  const msg = JSON.stringify({ type: "status_update", ...data });
+  const msg = JSON.stringify({ type: "status_stream_update", ...data });
   for (const client of statusClients) {
-    if (client.readyState === 1) {
+    if (client.readyState === 1 && client.bufferedAmount < 512 * 1024) {
       client.send(msg);
     }
   }

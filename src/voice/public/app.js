@@ -213,8 +213,8 @@ function connect() {
         playDing(false);
         break;
 
-      case "status_update":
-        renderStatus(msg);
+      case "status_stream_update":
+        renderStreamUpdate(msg);
         break;
 
       case "error":
@@ -561,105 +561,77 @@ tabs.forEach((tab) => {
   });
 });
 
-// --- Status tab ---
+// --- Status tab (live streaming) ---
 const statusTimeEl = document.getElementById("status-time");
-const statusSummaryEl = document.getElementById("status-summary");
 const statusPanesEl = document.getElementById("status-panes");
 
-let lastStatusTimestamp = null;
+const panelMap = new Map();
 
-function relativeTime(isoString) {
-  if (!isoString) return "never";
-  const diff = Math.floor((Date.now() - new Date(isoString).getTime()) / 1000);
-  if (diff < 5) return "just now";
-  if (diff < 60) return `${diff}s ago`;
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-  return `${Math.floor(diff / 3600)}h ago`;
-}
-
-function updateRelativeTime() {
-  if (lastStatusTimestamp) {
-    statusTimeEl.textContent = relativeTime(lastStatusTimestamp);
-  }
-}
-
-function mdToHtml(md) {
-  if (!md) return "";
-  const esc = md.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  const lines = esc.split("\n");
-  const out = [];
-  let inUl = false;
-  for (const line of lines) {
-    const headerMatch = line.match(/^(#{1,3})\s+(.+)$/);
-    if (headerMatch) {
-      if (inUl) { out.push("</ul>"); inUl = false; }
-      const tag = "h" + Math.min(headerMatch[1].length + 1, 4); // ## -> h3, ### -> h4
-      out.push(`<${tag}>${inline(headerMatch[2])}</${tag}>`);
-      continue;
+function renderStreamUpdate(data) {
+  if (!data.sessions || data.sessions.length === 0) {
+    statusTimeEl.textContent = "no sessions";
+    statusTimeEl.className = "";
+    for (const [, entry] of panelMap) entry.panel.remove();
+    panelMap.clear();
+    if (!statusPanesEl.querySelector(".status-empty")) {
+      statusPanesEl.innerHTML = '<div class="status-empty">No tmux sessions found</div>';
     }
-    const liMatch = line.match(/^[-*]\s+(.+)$/);
-    if (liMatch) {
-      if (!inUl) { out.push("<ul>"); inUl = true; }
-      out.push(`<li>${inline(liMatch[1])}</li>`);
-      continue;
-    }
-    if (inUl) { out.push("</ul>"); inUl = false; }
-    if (line.trim() === "") {
-      out.push("<br>");
-    } else {
-      out.push(`<p>${inline(line)}</p>`);
-    }
+    return;
   }
-  if (inUl) out.push("</ul>");
-  return out.join("");
 
-  function inline(s) {
-    return s
-      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-      .replace(/`([^`]+)`/g, "<code>$1</code>");
-  }
-}
+  statusTimeEl.textContent = "\u25cf LIVE";
+  statusTimeEl.className = "live-indicator";
 
-function renderStatus(data) {
-  lastStatusTimestamp = data.timestamp;
-  statusTimeEl.textContent = data.timestamp ? relativeTime(data.timestamp) : "waiting...";
-  statusSummaryEl.innerHTML = mdToHtml(data.summary);
+  const emptyMsg = statusPanesEl.querySelector(".status-empty");
+  if (emptyMsg) emptyMsg.remove();
 
-  statusPanesEl.innerHTML = "";
-  if (data.sessions && data.sessions.length) {
-    for (const session of data.sessions) {
-      for (const win of session.windows) {
-        const details = document.createElement("details");
-        details.className = "pane-details";
+  const currentKeys = new Set();
 
-        const summary = document.createElement("summary");
-        summary.textContent = `${session.name} / ${win.name}`;
-        details.appendChild(summary);
+  for (const session of data.sessions) {
+    for (const win of session.windows) {
+      const key = `${session.name}\t${win.name}`;
+      currentKeys.add(key);
+
+      let entry = panelMap.get(key);
+      if (!entry) {
+        const panel = document.createElement("div");
+        panel.className = "stream-panel";
+
+        const header = document.createElement("div");
+        header.className = "stream-panel-header";
+        header.textContent = `${session.name} / ${win.name}`;
+        panel.appendChild(header);
 
         const pre = document.createElement("pre");
-        pre.className = "pane-snippet";
-        pre.textContent = win.snippet;
-        details.appendChild(pre);
+        pre.className = "stream-panel-content";
+        panel.appendChild(pre);
 
-        statusPanesEl.appendChild(details);
+        statusPanesEl.appendChild(panel);
+        entry = { panel, pre, lastContent: "" };
+        panelMap.set(key, entry);
+      }
+
+      if (win.content !== entry.lastContent) {
+        const wasAtBottom =
+          entry.pre.scrollHeight - entry.pre.scrollTop - entry.pre.clientHeight < 40;
+        entry.pre.textContent = win.content;
+        entry.lastContent = win.content;
+        entry.pre.classList.remove("updated");
+        void entry.pre.offsetWidth; // force reflow to restart animation
+        entry.pre.classList.add("updated");
+        if (wasAtBottom) {
+          entry.pre.scrollTop = entry.pre.scrollHeight;
+        }
       }
     }
   }
-}
 
-async function fetchStatus() {
-  try {
-    const resp = await fetch(`/api/status?token=${encodeURIComponent(token)}`);
-    if (resp.ok) {
-      const data = await resp.json();
-      renderStatus(data);
+  for (const [key, entry] of panelMap) {
+    if (!currentKeys.has(key)) {
+      entry.panel.remove();
+      panelMap.delete(key);
     }
-  } catch (e) {
-    // ignore fetch errors
   }
 }
-
-// Update relative time every second
-setInterval(updateRelativeTime, 1000);
 
 connect();

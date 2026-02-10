@@ -56,21 +56,7 @@ const SUMMARY_TEXT =
 
 const TRANSCRIPTION_TEXT = "How are the workers doing on the auth service?";
 
-// Status tab: markdown summary rendered by mdToHtml in app.js
-const STATUS_SUMMARY_HTML = `<h3>Squad Overview</h3>
-<p><strong>Captain</strong> (Claude) — idle, monitoring 2 active workers</p>
-<br>
-<h3>auth-service</h3>
-<ul>
-<li><strong>Worker 1</strong> — Refactoring <code>src/auth/jwt.ts</code>: adding refresh token rotation. ~60% complete, currently writing <code>rotateRefreshToken()</code> and updating token middleware.</li>
-<li><strong>Worker 2</strong> — Writing integration tests for auth endpoints in <code>tests/auth.integration.test.ts</code>. 4 of 7 test cases done. Currently writing the token refresh flow test.</li>
-</ul>
-<br>
-<h3>frontend-app</h3>
-<ul>
-<li><strong>Worker 3</strong> — Finished. Migrated dashboard component from class to functional with hooks. All 12 tests passing. Waiting for review.</li>
-</ul>`;
-
+// Status tab: live stream panes
 const STATUS_PANES = [
   {
     session: "auth-service",
@@ -213,32 +199,30 @@ test.describe("Screenshots", () => {
     await page.waitForTimeout(100);
 
     await page.evaluate(
-      ({ summaryHtml, panes }) => {
-        document.getElementById("status-time").textContent = "12s ago";
-        document.getElementById("status-summary").innerHTML = summaryHtml;
+      ({ panes }) => {
+        document.getElementById("status-time").textContent = "\u25cf LIVE";
+        document.getElementById("status-time").className = "live-indicator";
 
         const panesEl = document.getElementById("status-panes");
         panesEl.innerHTML = "";
         for (const pane of panes) {
-          const details = document.createElement("details");
-          details.className = "pane-details";
+          const panel = document.createElement("div");
+          panel.className = "stream-panel";
 
-          const summary = document.createElement("summary");
-          summary.textContent = `${pane.session} / ${pane.window}`;
-          details.appendChild(summary);
+          const header = document.createElement("div");
+          header.className = "stream-panel-header";
+          header.textContent = `${pane.session} / ${pane.window}`;
+          panel.appendChild(header);
 
           const pre = document.createElement("pre");
-          pre.className = "pane-snippet";
+          pre.className = "stream-panel-content";
           pre.textContent = pane.snippet;
-          details.appendChild(pre);
+          panel.appendChild(pre);
 
-          panesEl.appendChild(details);
+          panesEl.appendChild(panel);
         }
-
-        // Open the first pane to show what expanded content looks like
-        panesEl.querySelector("details").open = true;
       },
-      { summaryHtml: STATUS_SUMMARY_HTML, panes: STATUS_PANES }
+      { panes: STATUS_PANES }
     );
 
     await page.waitForTimeout(300);

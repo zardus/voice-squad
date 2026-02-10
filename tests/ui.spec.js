@@ -383,9 +383,8 @@ test.describe("UI", () => {
       await page.goto(pageUrl());
       await page.click('[data-tab="status"]');
 
-      await expect(page.locator("#status-title")).toHaveText("squad overview");
+      await expect(page.locator("#status-title")).toHaveText("live status");
       await expect(page.locator("#status-time")).toBeVisible();
-      await expect(page.locator("#status-summary")).toBeVisible();
       // status-panes container exists in DOM (may be empty/hidden until data arrives)
       await expect(page.locator("#status-panes")).toBeAttached();
     });
