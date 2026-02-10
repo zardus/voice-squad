@@ -33,10 +33,10 @@ echo "Starting $CAPTAIN as captain..."
 # Create a tmux session for the captain (starts in ~/captain/ where its instructions live)
 tmux new-session -d -s captain -c /home/ubuntu/captain
 
-# Start the heartbeat monitor only after tmux has created the initial pane (%0).
-# (It relies on tmux being up and the pane existing.)
-if ! pgrep -f "/opt/squad/heartbeat.sh" >/dev/null 2>&1; then
-    nohup /opt/squad/heartbeat.sh >>/tmp/heartbeat.log 2>&1 &
+# Start the unified pane monitor (captain heartbeat + worker idle detection).
+# Relies on tmux being up and the captain pane existing.
+if ! pgrep -f "/opt/squad/pane-monitor.sh" >/dev/null 2>&1; then
+    nohup /opt/squad/pane-monitor.sh >>/tmp/pane-monitor.log 2>&1 &
 fi
 
 # Launch captain inside the tmux session using the unified restart script.
@@ -86,10 +86,6 @@ echo "$VOICE_URL" > /tmp/voice-url.txt
 # Show QR code in a second tmux window
 tmux new-window -t captain -n voice
 tmux send-keys -t captain:voice "node /opt/squad/voice/show-qr.js '${VOICE_URL}' && echo 'Voice server log: /tmp/voice-server.log' && tail -f /tmp/voice-server.log" Enter
-
-# Start idle monitor in its own tmux window
-tmux new-window -t captain -n idle-monitor
-tmux send-keys -t captain:idle-monitor "/opt/squad/idle-monitor.sh" Enter
 
 # Select the captain window (window 0) and attach
 tmux select-window -t captain:0

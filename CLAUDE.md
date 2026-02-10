@@ -57,7 +57,7 @@ This pulls latest git, copies `src/` files to `/opt/squad/` (the installed locat
 **Key paths:**
 - Source: `src/voice/` — server code; `src/voice/public/` — frontend (index.html, app.js, style.css)
 - Installed (live): `/opt/squad/voice/` — the voice server runs from here, not from `src/`
-- Heartbeat: `src/heartbeat.sh` → installed to `/opt/squad/heartbeat.sh`
+- Pane monitor: `src/pane-monitor.sh` → installed to `/opt/squad/pane-monitor.sh`
 
 **Logs:**
 - Deploy output: `/tmp/update.log`

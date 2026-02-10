@@ -47,13 +47,13 @@ test.describe("Docker infrastructure", () => {
     expect(windows.length).toBeGreaterThanOrEqual(1);
   });
 
-  test("heartbeat process is running", () => {
+  test("pane monitor process is running", () => {
     try {
-      const out = execSync("pgrep -af heartbeat", { encoding: "utf8", timeout: 5000 });
+      const out = execSync("pgrep -af pane-monitor", { encoding: "utf8", timeout: 5000 });
       expect(out.trim()).toBeTruthy();
     } catch {
-      // heartbeat.sh may not be running in all configurations — warn but don't fail
-      console.warn("heartbeat process not found (may be expected in dev)");
+      // pane-monitor.sh may not be running in all configurations — warn but don't fail
+      console.warn("pane-monitor process not found (may be expected in dev)");
     }
   });
 

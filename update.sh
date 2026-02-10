@@ -71,9 +71,9 @@ sudo cp -r "$REPO_DIR"/src/voice/public /opt/squad/voice/public
 # --- Captain instructions ---
 sudo cp "$REPO_DIR/src/captain-instructions.md" /opt/squad/captain/instructions.md
 
-# --- Heartbeat monitor script ---
-sudo cp "$REPO_DIR/src/heartbeat.sh"            /opt/squad/heartbeat.sh
-sudo chmod +x /opt/squad/heartbeat.sh
+# --- Pane monitor script (unified heartbeat + idle detection) ---
+sudo cp "$REPO_DIR/src/pane-monitor.sh"          /opt/squad/pane-monitor.sh
+sudo chmod +x /opt/squad/pane-monitor.sh
 
 # --- speak CLI script ---
 sudo cp "$REPO_DIR/src/speak" /usr/local/bin/speak
@@ -87,9 +87,8 @@ sudo chmod +x /usr/local/bin/switch-account.sh
 sudo cp "$REPO_DIR/src/restart-captain.sh" /opt/squad/restart-captain.sh
 sudo chmod +x /opt/squad/restart-captain.sh
 
-# --- Idle monitor script ---
-sudo cp "$REPO_DIR/src/idle-monitor.sh" /opt/squad/idle-monitor.sh
-sudo chmod +x /opt/squad/idle-monitor.sh
+# --- Remove old separate monitor scripts (replaced by pane-monitor.sh) ---
+sudo rm -f /opt/squad/heartbeat.sh /opt/squad/idle-monitor.sh
 
 # --- Startup scripts (take effect on next container start only) ---
 sudo cp "$REPO_DIR/src/launch-squad.sh" /opt/squad/launch-squad.sh
@@ -220,18 +219,22 @@ else
     echo "==> WARNING: Captain tmux session not found!"
 fi
 
-# Ensure heartbeat monitor is running (lightweight safety net for stalled captains).
-echo "==> Heartbeat monitor..."
-if pgrep -f "/opt/squad/heartbeat.sh" > /dev/null 2>&1; then
-    echo "    Heartbeat: running."
+# Ensure pane monitor is running (unified captain heartbeat + worker idle detection).
+# Kill any old separate monitors first, then start/keep the unified one.
+echo "==> Pane monitor..."
+pkill -f "/opt/squad/heartbeat.sh" 2>/dev/null || true
+pkill -f "/opt/squad/idle-monitor.sh" 2>/dev/null || true
+if pgrep -f "/opt/squad/pane-monitor.sh" > /dev/null 2>&1; then
+    # Restart it so it picks up the new script
+    pkill -f "/opt/squad/pane-monitor.sh" 2>/dev/null || true
+    sleep 0.3
+fi
+nohup /opt/squad/pane-monitor.sh >>/tmp/pane-monitor.log 2>&1 &
+sleep 0.3
+if pgrep -f "/opt/squad/pane-monitor.sh" > /dev/null 2>&1; then
+    echo "    Pane monitor: running."
 else
-    nohup /opt/squad/heartbeat.sh >/tmp/heartbeat.nohup 2>&1 &
-    sleep 0.2
-    if pgrep -f "/opt/squad/heartbeat.sh" > /dev/null 2>&1; then
-        echo "    Heartbeat: started."
-    else
-        echo "    WARNING: heartbeat failed to start. Check /tmp/heartbeat.nohup"
-    fi
+    echo "    WARNING: pane monitor failed to start. Check /tmp/pane-monitor.log"
 fi
 
 # ---------------------------------------------------------------------------

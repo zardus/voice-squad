@@ -100,9 +100,8 @@ RUN usermod -aG docker ubuntu \
 COPY entrypoint.sh /entrypoint.sh
 COPY launch-squad.sh /opt/squad/launch-squad.sh
 COPY restart-captain.sh /opt/squad/restart-captain.sh
-COPY heartbeat.sh /opt/squad/heartbeat.sh
-COPY idle-monitor.sh /opt/squad/idle-monitor.sh
-RUN chmod +x /entrypoint.sh /opt/squad/launch-squad.sh /opt/squad/restart-captain.sh /opt/squad/heartbeat.sh /opt/squad/idle-monitor.sh
+COPY pane-monitor.sh /opt/squad/pane-monitor.sh
+RUN chmod +x /entrypoint.sh /opt/squad/launch-squad.sh /opt/squad/restart-captain.sh /opt/squad/pane-monitor.sh
 
 COPY captain-instructions.md /opt/squad/captain/instructions.md
 

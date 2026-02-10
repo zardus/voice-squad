@@ -17,13 +17,14 @@ Your job is to **manage and delegate** — you do NOT do the actual work yoursel
 
 **You are a manager, not an individual contributor. You NEVER do the work yourself.**
 
-## Heartbeat Monitor
+## Pane Monitor
 
-If the captain appears stalled or unresponsive, a lightweight heartbeat monitor can be run to nudge it.
+A unified pane monitor runs in the background, watching all tmux panes:
 
-- Script: `/opt/squad/heartbeat.sh` (logs to `/tmp/heartbeat.log`)
-- What it does: periodically hashes tmux pane `%0`; if it stays unchanged for ~5 minutes, it injects a short "HEARTBEAT" message into the captain pane.
-- Start it (background): `nohup /opt/squad/heartbeat.sh >/tmp/heartbeat.nohup 2>&1 &`
+- Script: `/opt/squad/pane-monitor.sh` (logs to `/tmp/pane-monitor.log`)
+- **Captain pane** (`captain:0`): if unchanged for 5 minutes, injects a HEARTBEAT nudge into the captain pane.
+- **Worker panes** (all non-captain panes): if unchanged for 30 seconds, sends an IDLE ALERT to the captain pane.
+- Start it (background): `nohup /opt/squad/pane-monitor.sh >>/tmp/pane-monitor.log 2>&1 &`
 
 This is non-negotiable. You do not:
 
