@@ -58,6 +58,42 @@ function stripInputBox(output) {
     return lines.slice(0, cutIdx).join("\n").trimEnd();
   }
 
+  // Codex CLI renders an input prompt that starts with U+203A ("›") and shows status
+  // lines like "? for shortcuts" and "XX% context left" near the bottom, without
+  // Claude-style delimiter lines. If detected near the end, cut from the prompt onward.
+  function cutAtCodexPromptFromEnd(maxScanLines) {
+    const start = Math.max(0, lines.length - maxScanLines);
+    let promptIdx = -1;
+    for (let i = lines.length - 1; i >= start; i--) {
+      const l = lines[i] || "";
+      if (l.trimStart().startsWith("›")) {
+        promptIdx = i;
+        break;
+      }
+    }
+    if (promptIdx < 0) return -1;
+
+    let confirmed = false;
+    const confirmStart = Math.max(start, promptIdx - 5);
+    const confirmEnd = Math.min(lines.length, promptIdx + 15);
+    for (let i = confirmStart; i < confirmEnd; i++) {
+      const l = lines[i] || "";
+      if (l.includes("? for shortcuts")) confirmed = true;
+      if (/%\s*context\s+left/.test(l)) confirmed = true;
+    }
+    if (!confirmed) return -1;
+
+    // Strip blank lines immediately above the prompt (Codex leaves vertical padding).
+    let cutIdx = promptIdx;
+    while (cutIdx > 0 && (lines[cutIdx - 1] || "").trim() === "") cutIdx--;
+    return cutIdx;
+  }
+
+  const codexCutIdx = cutAtCodexPromptFromEnd(30);
+  if (codexCutIdx >= 0) {
+    return lines.slice(0, codexCutIdx).join("\n").trimEnd();
+  }
+
   // Fallback: cut before the last "❯" prompt line if present.
   for (let i = lines.length - 1; i >= 0; i--) {
     if ((lines[i] || "").trimStart().startsWith("❯")) {
