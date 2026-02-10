@@ -8,6 +8,7 @@ RUN apt-get update && apt-get install -y \
     git \
     gh \
     tmux \
+    whiptail \
     ca-certificates \
     gnupg \
     lsb-release \

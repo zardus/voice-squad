@@ -16,7 +16,9 @@ trap cleanup EXIT
 
 pause() {
   echo ""
-  read -r -p "Press Enter to return to menu... " _ </dev/tty || true
+  # Use stdin instead of /dev/tty: in some docker/tmux setups /dev/tty isn't
+  # available even though the process is interactive.
+  read -r -p "Press Enter to return to menu... " _ || true
 }
 
 menu_clear() {
@@ -40,11 +42,18 @@ show_web_ui_qr() {
     return 1
   fi
 
-  echo ""
-  echo "Web UI URL:"
-  echo "  ${url}"
-  echo ""
-  node /opt/squad/voice/show-qr.js "${url}"
+  if command -v whiptail >/dev/null 2>&1 && [[ -t 0 && -t 1 ]]; then
+    local qr_out
+    qr_out="$(node /opt/squad/voice/show-qr.js "${url}" 2>&1 || true)"
+    # whiptail needs a single string; preserve newlines.
+    whiptail --title "Squad Web UI" --scrolltext --msgbox "Web UI URL:\n  ${url}\n\n${qr_out}" 25 90
+  else
+    echo ""
+    echo "Web UI URL:"
+    echo "  ${url}"
+    echo ""
+    node /opt/squad/voice/show-qr.js "${url}"
+  fi
 }
 
 run_interactive() {
@@ -203,75 +212,163 @@ if [[ "${1:-}" == "--action" ]]; then
   exit $?
 fi
 
-while true; do
-  menu_clear
-  echo "Squad Main Menu"
-  echo "==============="
-  status_line
-  echo ""
-  echo "1) Connect to Captain (tmux attach)"
-  echo "2) Restart Captain (claude)"
-  echo "3) Restart Captain (codex)"
-  echo "4) Restart Web UI (voice server)"
-  echo "5) Restart Idle Monitor (pane-monitor)"
-  echo "6) Launch Shell"
-  echo "7) Run update script (if present in /home/ubuntu)"
-  echo "8) Show Web UI QR code + URL"
-  echo "q) Quit (exit container process)"
-  echo ""
+use_whiptail=0
+if command -v whiptail >/dev/null 2>&1 && [[ -t 0 && -t 1 ]]; then
+  use_whiptail=1
+fi
 
-  read -r -p "Select> " choice </dev/tty || choice="q"
+plain_menu_loop() {
+  while true; do
+    menu_clear
+    echo "Squad Main Menu"
+    echo "==============="
+    status_line
+    echo ""
+    echo "1) Connect to Captain (tmux attach)"
+    echo "2) Restart Captain (claude)"
+    echo "3) Restart Captain (codex)"
+    echo "4) Restart Web UI (voice server)"
+    echo "5) Restart Idle Monitor (pane-monitor)"
+    echo "6) Launch Shell"
+    echo "7) Run update script (if present in /home/ubuntu)"
+    echo "8) Show Web UI QR code + URL"
+    echo ""
 
-  case "${choice}" in
-    1)
-      if have_captain_tmux; then
-        run_interactive tmux attach -t captain || true
-      else
-        echo "tmux session 'captain' not found yet."
+    if ! read -r -p "Select> " choice; then
+      # Don't exit the container if stdin is temporarily unavailable.
+      choice=""
+    fi
+
+    case "${choice}" in
+      1)
+        if have_captain_tmux; then
+          run_interactive tmux attach -t captain || true
+        else
+          echo "tmux session 'captain' not found yet."
+          pause
+        fi
+        ;;
+      2)
+        if have_captain_tmux; then
+          run_interactive /opt/squad/restart-captain.sh claude || true
+        else
+          echo "ERROR: tmux session 'captain' not found."
+        fi
         pause
-      fi
-      ;;
-    2)
-      if have_captain_tmux; then
-        run_interactive /opt/squad/restart-captain.sh claude || true
-      else
-        echo "ERROR: tmux session 'captain' not found."
-      fi
-      pause
-      ;;
-    3)
-      if have_captain_tmux; then
-        run_interactive /opt/squad/restart-captain.sh codex || true
-      else
-        echo "ERROR: tmux session 'captain' not found."
-      fi
-      pause
-      ;;
-    4)
-      restart_voice_server || true
-      pause
-      ;;
-    5)
-      restart_pane_monitor || true
-      pause
-      ;;
-    6)
-      run_interactive bash -l || true
-      ;;
-    7)
-      run_update_script_if_present || true
-      pause
-      ;;
-    8)
-      show_web_ui_qr || true
-      pause
-      ;;
-    q|Q)
-      exit 0
-      ;;
-    *)
-      echo "Unknown selection: ${choice}"
-      pause
-      ;;
-  esac
-done
+        ;;
+      3)
+        if have_captain_tmux; then
+          run_interactive /opt/squad/restart-captain.sh codex || true
+        else
+          echo "ERROR: tmux session 'captain' not found."
+        fi
+        pause
+        ;;
+      4)
+        restart_voice_server || true
+        pause
+        ;;
+      5)
+        restart_pane_monitor || true
+        pause
+        ;;
+      6)
+        run_interactive bash -l || true
+        ;;
+      7)
+        run_update_script_if_present || true
+        pause
+        ;;
+      8)
+        show_web_ui_qr || true
+        pause
+        ;;
+      *)
+        # Intentionally non-quittable. If the user types q/quit/exit, just ignore.
+        if [[ "${choice}" == "q" || "${choice}" == "Q" || "${choice}" == "quit" || "${choice}" == "exit" ]]; then
+          echo "Exit is disabled. Use Docker to stop the container if you really want to exit."
+        else
+          echo "Unknown selection: ${choice}"
+        fi
+        pause
+        ;;
+    esac
+  done
+}
+
+whiptail_menu_loop() {
+  while true; do
+    local status
+    status="$(status_line | tr '\n' ' ' | sed 's/  */ /g')"
+
+    # whiptail writes selection to stderr by default; capture it.
+    local choice rc
+    choice="$(
+      whiptail --title "Squad Main Menu" \
+        --menu "$status" 18 80 9 \
+        "1" "Connect to Captain (tmux attach)" \
+        "2" "Restart Captain (claude)" \
+        "3" "Restart Captain (codex)" \
+        "4" "Restart Web UI (voice server)" \
+        "5" "Restart Idle Monitor (pane-monitor)" \
+        "6" "Launch Shell" \
+        "7" "Run update script (if present in /home/ubuntu)" \
+        "8" "Show Web UI QR code + URL" \
+        3>&1 1>&2 2>&3
+    )"
+    rc=$?
+
+    # Cancel/Esc should never exit; just re-draw.
+    if [[ "$rc" -ne 0 ]]; then
+      continue
+    fi
+
+    case "${choice}" in
+      1)
+        if have_captain_tmux; then
+          run_interactive tmux attach -t captain || true
+        else
+          whiptail --title "Squad" --msgbox "tmux session 'captain' not found yet." 8 60
+        fi
+        ;;
+      2)
+        if have_captain_tmux; then
+          run_interactive /opt/squad/restart-captain.sh claude || true
+        else
+          whiptail --title "Squad" --msgbox "ERROR: tmux session 'captain' not found." 8 60
+        fi
+        ;;
+      3)
+        if have_captain_tmux; then
+          run_interactive /opt/squad/restart-captain.sh codex || true
+        else
+          whiptail --title "Squad" --msgbox "ERROR: tmux session 'captain' not found." 8 60
+        fi
+        ;;
+      4)
+        restart_voice_server || true
+        ;;
+      5)
+        restart_pane_monitor || true
+        ;;
+      6)
+        run_interactive bash -l || true
+        ;;
+      7)
+        run_update_script_if_present || true
+        ;;
+      8)
+        show_web_ui_qr || true
+        ;;
+      *)
+        whiptail --title "Squad" --msgbox "Unknown selection: ${choice}" 8 60
+        ;;
+    esac
+  done
+}
+
+if [[ "$use_whiptail" -eq 1 ]]; then
+  whiptail_menu_loop
+else
+  plain_menu_loop
+fi
