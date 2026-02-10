@@ -156,4 +156,4 @@ function getLastState() {
   return lastState;
 }
 
-module.exports = { start, stop, isRunning, getLastState };
+module.exports = { start, stop, isRunning, getLastState, collectPanes };

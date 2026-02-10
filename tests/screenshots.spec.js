@@ -194,8 +194,8 @@ test.describe("Screenshots", () => {
       type: "png",
     });
 
-    // ── Status Tab ───────────────────────────────────────────
-    await page.click('[data-tab="status"]');
+    // ── Screens Tab ──────────────────────────────────────────
+    await page.click('[data-tab="screens"]');
     await page.waitForTimeout(100);
 
     await page.evaluate(
@@ -227,7 +227,7 @@ test.describe("Screenshots", () => {
 
     await page.waitForTimeout(300);
     await page.screenshot({
-      path: `${SCREENSHOT_DIR}/status-tab.png`,
+      path: `${SCREENSHOT_DIR}/screens-tab.png`,
       type: "png",
     });
 

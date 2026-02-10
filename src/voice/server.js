@@ -1,5 +1,6 @@
 const express = require("express");
 const http = require("http");
+const https = require("https");
 const path = require("path");
 const { WebSocketServer, WebSocket } = require("ws");
 const { sendToCaptain, capturePaneOutputAsync } = require("./tmux-bridge");
@@ -108,6 +109,78 @@ app.post("/api/restart-captain", async (req, res) => {
     res.json({ ok: true, tool });
   } catch (err) {
     console.error("[restart] error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+const HAIKU_PROMPT =
+  "You are summarizing the state of a multi-agent coding squad. Below are the terminal outputs from all active tmux sessions and windows. Give a concise status overview: what tasks are running, their progress, any errors or completions. Be specific about what each worker is doing. Format as a clean bullet list. Keep it under 300 words.";
+
+function callHaiku(dump) {
+  const body = JSON.stringify({
+    model: "claude-haiku-4-5-20251001",
+    max_tokens: 1024,
+    messages: [{ role: "user", content: `${HAIKU_PROMPT}\n\n${dump}` }],
+  });
+
+  return new Promise((resolve, reject) => {
+    const req = https.request(
+      {
+        hostname: "api.anthropic.com",
+        path: "/v1/messages",
+        method: "POST",
+        headers: {
+          "x-api-key": process.env.ANTHROPIC_API_KEY,
+          "Content-Type": "application/json",
+          "Content-Length": Buffer.byteLength(body),
+          "anthropic-version": "2023-06-01",
+        },
+      },
+      (res) => {
+        const chunks = [];
+        res.on("data", (c) => chunks.push(c));
+        res.on("end", () => {
+          const text = Buffer.concat(chunks).toString();
+          if (res.statusCode !== 200) {
+            reject(new Error(`Haiku API ${res.statusCode}: ${text.slice(0, 200)}`));
+            return;
+          }
+          try {
+            const data = JSON.parse(text);
+            resolve(data.content[0].text);
+          } catch (e) {
+            reject(new Error("Failed to parse Haiku response"));
+          }
+        });
+      }
+    );
+    req.on("error", reject);
+    req.end(body);
+  });
+}
+
+app.post("/api/summary", async (req, res) => {
+  const { token } = req.body || {};
+  if (token !== TOKEN) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  try {
+    const { sessions } = await statusDaemon.collectPanes();
+    if (!sessions.length) {
+      return res.json({ summary: "No tmux sessions found." });
+    }
+    let dump = "";
+    for (const session of sessions) {
+      for (const win of session.windows) {
+        dump += `=== Session: ${session.name} | Window: ${win.name} ===\n${win.content}\n\n`;
+      }
+    }
+    console.log(`[summary] captured ${sessions.length} sessions, ${dump.length} chars, calling Haiku...`);
+    const summary = await callHaiku(dump);
+    console.log(`[summary] done: ${summary.slice(0, 100)}...`);
+    res.json({ summary });
+  } catch (err) {
+    console.error("[summary] error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });

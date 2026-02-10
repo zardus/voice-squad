@@ -36,13 +36,14 @@ test.describe("UI", () => {
   // ─── Tab bar ─────────────────────────────────────────────────
 
   test.describe("Tab bar", () => {
-    test("shows three tabs: Terminal, Status, Voice", async ({ page }) => {
+    test("shows four tabs: Terminal, Screens, Summary, Voice", async ({ page }) => {
       await page.goto(pageUrl());
       const tabs = page.locator("#tab-bar .tab");
-      await expect(tabs).toHaveCount(3);
+      await expect(tabs).toHaveCount(4);
       await expect(tabs.nth(0)).toHaveText("Terminal");
-      await expect(tabs.nth(1)).toHaveText("Status");
-      await expect(tabs.nth(2)).toHaveText("Voice");
+      await expect(tabs.nth(1)).toHaveText("Screens");
+      await expect(tabs.nth(2)).toHaveText("Summary");
+      await expect(tabs.nth(3)).toHaveText("Voice");
     });
 
     test("Terminal tab is active by default", async ({ page }) => {
@@ -51,11 +52,11 @@ test.describe("UI", () => {
       await expect(page.locator("#terminal-view")).toHaveClass(/active/);
     });
 
-    test("clicking Status tab switches to status view", async ({ page }) => {
+    test("clicking Screens tab switches to screens view", async ({ page }) => {
       await page.goto(pageUrl());
-      await page.click('[data-tab="status"]');
-      await expect(page.locator('[data-tab="status"]')).toHaveClass(/active/);
-      await expect(page.locator("#status-view")).toHaveClass(/active/);
+      await page.click('[data-tab="screens"]');
+      await expect(page.locator('[data-tab="screens"]')).toHaveClass(/active/);
+      await expect(page.locator("#screens-view")).toHaveClass(/active/);
       await expect(page.locator("#terminal-view")).not.toHaveClass(/active/);
     });
 
@@ -79,8 +80,8 @@ test.describe("UI", () => {
       visible = await page.locator(".tab-content.active").count();
       expect(visible).toBe(1);
 
-      // Switch to Status
-      await page.click('[data-tab="status"]');
+      // Switch to Screens
+      await page.click('[data-tab="screens"]');
       visible = await page.locator(".tab-content.active").count();
       expect(visible).toBe(1);
     });
@@ -376,24 +377,47 @@ test.describe("UI", () => {
     });
   });
 
-  // ─── Status tab ──────────────────────────────────────────────
+  // ─── Screens tab ─────────────────────────────────────────────
 
-  test.describe("Status tab", () => {
-    test("status tab loads with header elements", async ({ page }) => {
+  test.describe("Screens tab", () => {
+    test("screens tab loads with header elements", async ({ page }) => {
       await page.goto(pageUrl());
-      await page.click('[data-tab="status"]');
+      await page.click('[data-tab="screens"]');
 
-      await expect(page.locator("#status-title")).toHaveText("live status");
+      await expect(page.locator("#status-title")).toHaveText("screens");
       await expect(page.locator("#status-time")).toBeVisible();
       // status-panes container exists in DOM (may be empty/hidden until data arrives)
       await expect(page.locator("#status-panes")).toBeAttached();
     });
 
-    test("status body is scrollable", async ({ page }) => {
+    test("screens body is scrollable", async ({ page }) => {
       await page.goto(pageUrl());
-      await page.click('[data-tab="status"]');
+      await page.click('[data-tab="screens"]');
 
       const overflow = await page.locator("#status-body").evaluate(
+        (el) => getComputedStyle(el).overflowY,
+      );
+      expect(overflow).toBe("auto");
+    });
+  });
+
+  // ─── Summary tab ────────────────────────────────────────────
+
+  test.describe("Summary tab", () => {
+    test("summary tab loads with header and refresh button", async ({ page }) => {
+      await page.goto(pageUrl());
+      await page.click('[data-tab="summary"]');
+
+      await expect(page.locator("#summary-tab-title")).toHaveText("summary");
+      await expect(page.locator("#refresh-summary-btn")).toBeVisible();
+      await expect(page.locator("#summary-tab-content")).toBeVisible();
+    });
+
+    test("summary body is scrollable", async ({ page }) => {
+      await page.goto(pageUrl());
+      await page.click('[data-tab="summary"]');
+
+      const overflow = await page.locator("#summary-tab-body").evaluate(
         (el) => getComputedStyle(el).overflowY,
       );
       expect(overflow).toBe("auto");

@@ -330,6 +330,29 @@ body {
   font-size: 12px;
   font-weight: 600;
   border-bottom: 1px solid #0f3460;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.stream-panel-header::before {
+  content: "\25B8";
+  display: inline-block;
+  margin-right: 6px;
+  font-size: 10px;
+  transition: transform 0.15s;
+}
+
+.stream-panel:not(.collapsed) .stream-panel-header::before {
+  transform: rotate(90deg);
+}
+
+.stream-panel.collapsed .stream-panel-content {
+  display: none;
+}
+
+.stream-panel.collapsed .stream-panel-header {
+  border-bottom: none;
 }
 
 .stream-panel-content {
@@ -347,15 +370,6 @@ body {
   margin: 0;
 }
 
-.stream-panel-content.updated {
-  animation: content-flash 0.5s ease-out;
-}
-
-@keyframes content-flash {
-  from { background-color: rgba(78, 204, 163, 0.08); }
-  to { background-color: #0a0a15; }
-}
-
 .live-indicator {
   color: #4ecca3;
   font-weight: 600;
@@ -368,6 +382,127 @@ body {
   text-align: center;
   padding: 40px 20px;
   font-size: 14px;
+}
+
+/* Summary view */
+#summary-tab-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: #16213e;
+  border-bottom: 1px solid #0f3460;
+  flex-shrink: 0;
+}
+
+#summary-tab-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #a78bfa;
+  font-weight: 600;
+}
+
+#refresh-summary-btn {
+  padding: 4px 14px;
+  border: 1px solid #a78bfa;
+  border-radius: 6px;
+  background: #1a1a2e;
+  color: #a78bfa;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+#refresh-summary-btn:active {
+  background: #a78bfa;
+  color: #1a1a2e;
+}
+
+#refresh-summary-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+#summary-tab-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  background: #0d0d1a;
+  -webkit-overflow-scrolling: touch;
+}
+
+#summary-tab-content {
+  font-size: 14px;
+  line-height: 1.6;
+  color: #e0e0e0;
+}
+
+#summary-tab-content h3,
+#summary-tab-content h4 {
+  color: #a78bfa;
+  font-weight: 600;
+  margin: 12px 0 6px;
+}
+
+#summary-tab-content h3:first-child,
+#summary-tab-content h4:first-child {
+  margin-top: 0;
+}
+
+#summary-tab-content h3 { font-size: 15px; }
+#summary-tab-content h4 { font-size: 14px; }
+
+#summary-tab-content p {
+  margin: 2px 0;
+}
+
+#summary-tab-content ul {
+  list-style: none;
+  padding-left: 12px;
+  margin: 4px 0 8px;
+}
+
+#summary-tab-content li {
+  position: relative;
+  padding-left: 14px;
+  margin: 4px 0;
+}
+
+#summary-tab-content li::before {
+  content: "\2022";
+  position: absolute;
+  left: 0;
+  color: #4ecca3;
+  font-weight: bold;
+}
+
+#summary-tab-content strong {
+  color: #fff;
+  font-weight: 600;
+}
+
+#summary-tab-content code {
+  font-family: "SF Mono", "Cascadia Code", "Fira Code", Consolas, monospace;
+  font-size: 12px;
+  background: rgba(78, 204, 163, 0.1);
+  border: 1px solid #0f3460;
+  border-radius: 3px;
+  padding: 1px 5px;
+  color: #4ecca3;
+}
+
+.summary-loading {
+  color: #a0a0a0;
+  font-style: italic;
+  animation: pulse-opacity 1.2s ease-in-out infinite;
+}
+
+.summary-error {
+  color: #e94560;
 }
 
 /* Auto-read toggle */

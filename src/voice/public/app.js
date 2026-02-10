@@ -144,8 +144,8 @@ function connect() {
   ws.onopen = () => {
     statusEl.textContent = "connecting...";
     statusEl.className = "disconnected";
-    // Re-send status tab state on reconnect
-    if (statusTabActive) {
+    // Re-send screens tab state on reconnect
+    if (screensTabActive) {
       ws.send(JSON.stringify({ type: "status_tab_active" }));
     }
   };
@@ -525,10 +525,10 @@ voiceRestartCaptainBtn.addEventListener("click", restartCaptain);
 const tabs = document.querySelectorAll("#tab-bar .tab");
 const tabContents = document.querySelectorAll(".tab-content");
 
-let statusTabActive = false;
+let screensTabActive = false;
 
-function sendStatusTabState(active) {
-  statusTabActive = active;
+function sendScreensTabState(active) {
+  screensTabActive = active;
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ type: active ? "status_tab_active" : "status_tab_inactive" }));
   }
@@ -538,14 +538,14 @@ tabs.forEach((tab) => {
   tab.addEventListener("click", () => {
     const target = tab.dataset.tab;
     const wasVoice = document.getElementById("voice-view").classList.contains("active");
-    const wasStatus = document.getElementById("status-view").classList.contains("active");
+    const wasScreens = document.getElementById("screens-view").classList.contains("active");
     tabs.forEach((t) => t.classList.toggle("active", t === tab));
     tabContents.forEach((c) => {
       c.classList.toggle("active", c.id === target + "-view");
     });
-    // Notify server about status tab activation/deactivation
-    if (target === "status" && !wasStatus) sendStatusTabState(true);
-    if (target !== "status" && wasStatus) sendStatusTabState(false);
+    // Notify server about screens tab activation/deactivation
+    if (target === "screens" && !wasScreens) sendScreensTabState(true);
+    if (target !== "screens" && wasScreens) sendScreensTabState(false);
     // Voice tab: force auto-read on, hide controls
     if (target === "voice") {
       autoreadBeforeVoice = autoreadCb.checked;
@@ -561,7 +561,7 @@ tabs.forEach((tab) => {
   });
 });
 
-// --- Status tab (live streaming) ---
+// --- Screens tab (live streaming) ---
 const statusTimeEl = document.getElementById("status-time");
 const statusPanesEl = document.getElementById("status-panes");
 
@@ -595,11 +595,14 @@ function renderStreamUpdate(data) {
       let entry = panelMap.get(key);
       if (!entry) {
         const panel = document.createElement("div");
-        panel.className = "stream-panel";
+        panel.className = "stream-panel collapsed";
 
         const header = document.createElement("div");
         header.className = "stream-panel-header";
         header.textContent = `${session.name} / ${win.name}`;
+        header.addEventListener("click", () => {
+          panel.classList.toggle("collapsed");
+        });
         panel.appendChild(header);
 
         const pre = document.createElement("pre");
@@ -616,9 +619,6 @@ function renderStreamUpdate(data) {
           entry.pre.scrollHeight - entry.pre.scrollTop - entry.pre.clientHeight < 40;
         entry.pre.textContent = win.content;
         entry.lastContent = win.content;
-        entry.pre.classList.remove("updated");
-        void entry.pre.offsetWidth; // force reflow to restart animation
-        entry.pre.classList.add("updated");
         if (wasAtBottom) {
           entry.pre.scrollTop = entry.pre.scrollHeight;
         }
@@ -633,5 +633,74 @@ function renderStreamUpdate(data) {
     }
   }
 }
+
+// --- Summary tab ---
+const summaryTabContentEl = document.getElementById("summary-tab-content");
+const refreshSummaryBtn = document.getElementById("refresh-summary-btn");
+
+function mdToHtml(md) {
+  if (!md) return "";
+  const esc = md.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const lines = esc.split("\n");
+  const out = [];
+  let inUl = false;
+  for (const line of lines) {
+    const headerMatch = line.match(/^(#{1,3})\s+(.+)$/);
+    if (headerMatch) {
+      if (inUl) { out.push("</ul>"); inUl = false; }
+      const tag = "h" + Math.min(headerMatch[1].length + 1, 4);
+      out.push(`<${tag}>${inlineMd(headerMatch[2])}</${tag}>`);
+      continue;
+    }
+    const liMatch = line.match(/^[-*]\s+(.+)$/);
+    if (liMatch) {
+      if (!inUl) { out.push("<ul>"); inUl = true; }
+      out.push(`<li>${inlineMd(liMatch[1])}</li>`);
+      continue;
+    }
+    if (inUl) { out.push("</ul>"); inUl = false; }
+    if (line.trim() === "") {
+      out.push("<br>");
+    } else {
+      out.push(`<p>${inlineMd(line)}</p>`);
+    }
+  }
+  if (inUl) out.push("</ul>");
+  return out.join("");
+}
+
+function inlineMd(s) {
+  return s
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/`([^`]+)`/g, "<code>$1</code>");
+}
+
+refreshSummaryBtn.addEventListener("click", async () => {
+  refreshSummaryBtn.disabled = true;
+  refreshSummaryBtn.textContent = "Loading...";
+  summaryTabContentEl.innerHTML = '<div class="summary-loading">Generating summary...</div>';
+
+  try {
+    const resp = await fetch("/api/summary", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token }),
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ error: "Request failed" }));
+      summaryTabContentEl.innerHTML = '<div class="summary-error">Error: ' +
+        (err.error || "Request failed").replace(/&/g, "&amp;").replace(/</g, "&lt;") + '</div>';
+      return;
+    }
+    const data = await resp.json();
+    summaryTabContentEl.innerHTML = mdToHtml(data.summary);
+  } catch (err) {
+    summaryTabContentEl.innerHTML = '<div class="summary-error">Error: ' +
+      err.message.replace(/&/g, "&amp;").replace(/</g, "&lt;") + '</div>';
+  } finally {
+    refreshSummaryBtn.disabled = false;
+    refreshSummaryBtn.textContent = "Refresh";
+  }
+});
 
 connect();

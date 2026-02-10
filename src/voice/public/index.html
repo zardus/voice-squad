@@ -16,7 +16,8 @@
   <div id="app">
     <div id="tab-bar">
       <button class="tab active" data-tab="terminal">Terminal</button>
-      <button class="tab" data-tab="status">Status</button>
+      <button class="tab" data-tab="screens">Screens</button>
+      <button class="tab" data-tab="summary">Summary</button>
       <button class="tab" data-tab="voice">Voice</button>
     </div>
 
@@ -58,13 +59,23 @@
       </div>
     </div>
 
-    <div id="status-view" class="tab-content">
+    <div id="screens-view" class="tab-content">
       <div id="status-header">
-        <span id="status-title">live status</span>
+        <span id="status-title">screens</span>
         <span id="status-time">waiting...</span>
       </div>
       <div id="status-body">
         <div id="status-panes"></div>
+      </div>
+    </div>
+
+    <div id="summary-view" class="tab-content">
+      <div id="summary-tab-header">
+        <span id="summary-tab-title">summary</span>
+        <button id="refresh-summary-btn" title="Refresh summary">Refresh</button>
+      </div>
+      <div id="summary-tab-body">
+        <div id="summary-tab-content">Click Refresh to generate an AI summary of all screens.</div>
       </div>
     </div>
 
