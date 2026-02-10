@@ -210,4 +210,61 @@ test.describe("squad MCP server", () => {
 
     await client.request("tools/call", { name: "tmux-kill-session", arguments: { sessionName: "mcp-delta" } });
   });
+
+  test("capture-pane-delta truncates output to maxLines keeping most recent lines", async () => {
+    await client.request("tools/call", {
+      name: "tmux-new-session",
+      arguments: { sessionName: "mcp-trunc", cwd: "/home/ubuntu", killIfExists: true },
+    });
+
+    // Generate 60 numbered lines so we can verify which ones survive truncation.
+    await client.request("tools/call", {
+      name: "tmux-send-command",
+      arguments: {
+        target: "mcp-trunc:0",
+        command: "for i in $(seq 1 60); do echo \"LINE_$i\"; done",
+        enterCount: 1,
+        delayBeforeEnterMs: 50,
+      },
+    });
+
+    // Wait for the last line to appear.
+    {
+      const deadline = Date.now() + 3000;
+      let raw = "";
+      while (Date.now() < deadline) {
+        const cap = await client.request("tools/call", {
+          name: "capture-pane",
+          arguments: { target: "mcp-trunc:0", lines: 200, mode: "raw" },
+        });
+        raw = cap.content?.[0]?.text || "";
+        if (raw.includes("LINE_60")) break;
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      expect(raw).toContain("LINE_60");
+    }
+
+    // First delta call with maxLines=10 — should truncate to 10 most-recent lines.
+    const delta = await client.request("tools/call", {
+      name: "capture-pane-delta",
+      arguments: { paneId: "mcp-trunc:0", reset: true, mode: "raw", maxLines: 10 },
+    });
+    const text = delta.content?.[0]?.text || "";
+
+    // Should contain the truncation notice.
+    expect(text).toContain("truncated");
+    expect(text).toContain("lines omitted");
+
+    // Should contain the last line (LINE_60) but NOT the first line (LINE_1).
+    expect(text).toContain("LINE_60");
+    expect(text).not.toContain("LINE_1");
+
+    // Count non-header, non-truncation-notice content lines — should be at most 10.
+    const bodyLines = text.split("\n").filter(
+      (l) => !l.startsWith("[pane") && !l.startsWith("[truncated")
+    );
+    expect(bodyLines.length).toBeLessThanOrEqual(10);
+
+    await client.request("tools/call", { name: "tmux-kill-session", arguments: { sessionName: "mcp-trunc" } });
+  });
 });

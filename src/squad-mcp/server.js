@@ -475,14 +475,15 @@ server.tool(
 
 server.tool(
   "capture-pane-delta",
-  "Capture only NEW tmux pane output since the last check (per pane + mode). Default mode is filtered to ignore Claude/Codex input chrome that constantly changes.",
+  "Capture only NEW tmux pane output since the last check (per pane + mode). Default mode is filtered to ignore Claude/Codex input chrome that constantly changes. Output is capped to maxLines (default 40) most-recent lines; set maxLines higher if you need more.",
   {
     paneId: z.string().min(1).describe("tmux pane ID or target (e.g. '%3' or 'captain:0')"),
     overlap: z.number().int().min(0).max(50).default(5),
     reset: z.boolean().default(false),
     mode: z.enum(["filtered", "raw"]).default("filtered"),
+    maxLines: z.number().int().min(1).max(4000).default(40).describe("Max lines to return (keeps most recent). Increase if you need more context."),
   },
-  async ({ paneId, overlap = 5, reset = false, mode = "filtered" }) => {
+  async ({ paneId, overlap = 5, reset = false, mode = "filtered", maxLines = 40 }) => {
     const resolvedPaneId = paneId.startsWith("%") ? paneId : await resolvePaneId(paneId);
     const stateKey = `${resolvedPaneId}|${mode}`;
 
@@ -496,18 +497,25 @@ server.tool(
       };
     }
 
+    // Truncate an array of lines to at most maxLines, keeping the most recent (bottom).
+    function truncate(lines) {
+      if (lines.length <= maxLines) return lines.join("\n");
+      const omitted = lines.length - maxLines;
+      return `[truncated — ${omitted} lines omitted, use maxLines param for more]\n${lines.slice(-maxLines).join("\n")}`;
+    }
+
     if (reset) {
       paneState.set(stateKey, {
         lastContent: currentLines,
         lastCaptureTime: Date.now(),
       });
-      return { content: [{ type: "text", text: `[pane ${resolvedPaneId} | ${currentLines.length} lines | reset: true]\n${currentLines.join("\n")}` }] };
+      return { content: [{ type: "text", text: `[pane ${resolvedPaneId} | ${currentLines.length} lines | reset: true]\n${truncate(currentLines)}` }] };
     }
 
     const state = paneState.get(stateKey);
     if (!state) {
       paneState.set(stateKey, { lastContent: currentLines, lastCaptureTime: Date.now() });
-      return { content: [{ type: "text", text: `[pane ${resolvedPaneId} | ${currentLines.length} lines | first check: true]\n${currentLines.join("\n")}` }] };
+      return { content: [{ type: "text", text: `[pane ${resolvedPaneId} | ${currentLines.length} lines | first check: true]\n${truncate(currentLines)}` }] };
     }
 
     if (
@@ -540,7 +548,7 @@ server.tool(
     state.lastContent = currentLines;
     state.lastCaptureTime = Date.now();
 
-    return { content: [{ type: "text", text: `${header}\n${resultLines.join("\n")}` }] };
+    return { content: [{ type: "text", text: `${header}\n${truncate(resultLines)}` }] };
   }
 );
 
