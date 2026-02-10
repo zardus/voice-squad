@@ -71,4 +71,18 @@ This pulls latest git, copies `src/` files to `/opt/squad/` (the installed locat
 - **Voice interface**: A phone PWA connects via WebSocket through a cloudflared quick tunnel (`*.trycloudflare.com`). Auth is via a random token embedded in the URL (shown as a QR code at startup in the voice tmux window). The pipeline: STT (Whisper) -> send to captain via tmux -> poll output -> summarize (Claude Sonnet) -> TTS (OpenAI) -> play on phone.
 - **Environment variables**: `SQUAD_CAPTAIN` (claude|codex), `VOICE_TOKEN` (auto-generated).
 - The container runs `--privileged` for Docker-in-Docker support. The Docker container itself is the sandbox boundary.
-- There is no formal test suite. Manual testing is done by launching a squad and verifying agent behavior.
+## Running Tests
+
+**Tests MUST be run in a separate Docker container**, not in the live squad container. The squad MCP server runs live in the captain's container, and running tests there will interfere with the running captain and workers.
+
+The project includes a `Dockerfile.test` that builds a lightweight test image with tmux, the voice server, and Playwright:
+
+```bash
+# Build the test image (from the repo root)
+docker build -f Dockerfile.test -t voice-squad-test .
+
+# Run all tests (including integration tests)
+docker run --rm voice-squad-test
+```
+
+This is the same setup used in CI (`.github/workflows/ci.yml`). The test container starts its own tmux session and voice server in isolation — no API keys, agents, or tunnels needed.
