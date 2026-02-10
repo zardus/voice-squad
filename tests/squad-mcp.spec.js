@@ -267,4 +267,98 @@ test.describe("squad MCP server", () => {
 
     await client.request("tools/call", { name: "tmux-kill-session", arguments: { sessionName: "mcp-trunc" } });
   });
+
+  test("capture-pane-delta ignores volatile bottom lines (input box simulation)", async () => {
+    // Simulate the Claude Code / Codex input box problem: the visible pane
+    // has stable content at the top and a constantly-changing input area at
+    // the bottom. Without the bottom-line stripping fix, the delta would
+    // always report "gap detected" because the suffix anchor (from the
+    // previous capture's last few lines) never matches the current capture.
+    //
+    // We simulate this by using ANSI escape codes to clear + rewrite the
+    // screen with identical top lines but different bottom lines, then
+    // clearing scrollback so capture-pane sees only the visible screen.
+    //
+    // We use 30 stable lines + 5 volatile lines. After the shell prompt
+    // (~1 line), the total is ~36 lines. Stripping the last 10 for
+    // comparison leaves ~26 lines — all from the stable region.
+
+    await client.request("tools/call", {
+      name: "tmux-new-session",
+      arguments: { sessionName: "mcp-inputbox", cwd: "/home/ubuntu", killIfExists: true },
+    });
+
+    // Phase 1: Write 30 stable lines + 5 "old" bottom lines, clear scrollback
+    const writePhase1 = [
+      "printf '\\033[2J\\033[H';",
+      "for i in $(seq 1 30); do echo \"STABLE_$i\"; done;",
+      "for i in $(seq 1 5); do echo \"OLDBOT_$i\"; done;",
+      "tmux clear-history -t mcp-inputbox:0",
+    ].join(" ");
+    await client.request("tools/call", {
+      name: "tmux-send-command",
+      arguments: { target: "mcp-inputbox:0", command: writePhase1, enterCount: 1, delayBeforeEnterMs: 50 },
+    });
+
+    // Wait for phase 1 output
+    {
+      const deadline = Date.now() + 3000;
+      let raw = "";
+      while (Date.now() < deadline) {
+        const cap = await client.request("tools/call", {
+          name: "capture-pane",
+          arguments: { target: "mcp-inputbox:0", lines: 100, mode: "raw" },
+        });
+        raw = cap.content?.[0]?.text || "";
+        if (raw.includes("STABLE_30") && raw.includes("OLDBOT_5")) break;
+        await new Promise((r) => setTimeout(r, 150));
+      }
+      expect(raw).toContain("STABLE_30");
+    }
+
+    // Reset delta baseline
+    await client.request("tools/call", {
+      name: "capture-pane-delta",
+      arguments: { paneId: "mcp-inputbox:0", reset: true, mode: "raw", maxLines: 200 },
+    });
+
+    // Phase 2: Rewrite screen with SAME stable lines but DIFFERENT bottom lines
+    const writePhase2 = [
+      "printf '\\033[2J\\033[H';",
+      "for i in $(seq 1 30); do echo \"STABLE_$i\"; done;",
+      "for i in $(seq 1 5); do echo \"NEWBOT_$i\"; done;",
+      "tmux clear-history -t mcp-inputbox:0",
+    ].join(" ");
+    await client.request("tools/call", {
+      name: "tmux-send-command",
+      arguments: { target: "mcp-inputbox:0", command: writePhase2, enterCount: 1, delayBeforeEnterMs: 50 },
+    });
+
+    // Wait for phase 2 output
+    {
+      const deadline = Date.now() + 3000;
+      let raw = "";
+      while (Date.now() < deadline) {
+        const cap = await client.request("tools/call", {
+          name: "capture-pane",
+          arguments: { target: "mcp-inputbox:0", lines: 100, mode: "raw" },
+        });
+        raw = cap.content?.[0]?.text || "";
+        if (raw.includes("NEWBOT_5") && raw.includes("STABLE_30")) break;
+        await new Promise((r) => setTimeout(r, 150));
+      }
+      expect(raw).toContain("NEWBOT_5");
+    }
+
+    // The delta should NOT report "gap detected" — the stable region is
+    // identical, only the bottom (input box area) changed.
+    const delta = await client.request("tools/call", {
+      name: "capture-pane-delta",
+      arguments: { paneId: "mcp-inputbox:0", reset: false, mode: "raw", maxLines: 200 },
+    });
+    const dText = delta.content?.[0]?.text || "";
+    expect(dText).not.toContain("gap detected");
+
+    await client.request("tools/call", { name: "tmux-kill-session", arguments: { sessionName: "mcp-inputbox" } });
+  });
 });

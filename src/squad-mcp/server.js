@@ -518,22 +518,36 @@ server.tool(
       return { content: [{ type: "text", text: `[pane ${resolvedPaneId} | ${currentLines.length} lines | first check: true]\n${truncate(currentLines)}` }] };
     }
 
+    // Strip the last INPUT_BOX_STRIP_LINES from both captures before diffing.
+    // Claude Code / Codex workers have a constantly-changing input box and
+    // autocomplete area at the bottom of their pane. Including those lines in
+    // the comparison causes the suffix-anchor to never match, producing a
+    // false "gap detected" on every call. Stripping is only for the
+    // comparison — the actual returned output uses the full capture.
+    const INPUT_BOX_STRIP_LINES = 10;
+    const currentForCompare = currentLines.length > INPUT_BOX_STRIP_LINES
+      ? currentLines.slice(0, -INPUT_BOX_STRIP_LINES)
+      : currentLines;
+    const previousForCompare = state.lastContent.length > INPUT_BOX_STRIP_LINES
+      ? state.lastContent.slice(0, -INPUT_BOX_STRIP_LINES)
+      : state.lastContent;
+
     if (
-      currentLines.length === state.lastContent.length &&
-      currentLines.join("\n") === state.lastContent.join("\n")
+      currentForCompare.length === previousForCompare.length &&
+      currentForCompare.join("\n") === previousForCompare.join("\n")
     ) {
       state.lastCaptureTime = Date.now();
       return { content: [{ type: "text", text: `[pane ${resolvedPaneId} | no new output]` }] };
     }
 
-    const newStart = findNewContentStart(state.lastContent, currentLines);
+    const newStart = findNewContentStart(previousForCompare, currentForCompare);
     let resultLines;
     let header;
 
     if (newStart === -1) {
       resultLines = currentLines;
       header = `[pane ${resolvedPaneId} | ${currentLines.length} lines | gap detected — showing full capture]`;
-    } else if (newStart >= currentLines.length) {
+    } else if (newStart >= currentForCompare.length) {
       state.lastContent = currentLines;
       state.lastCaptureTime = Date.now();
       return { content: [{ type: "text", text: `[pane ${resolvedPaneId} | no new output]` }] };
