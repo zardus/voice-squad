@@ -2,7 +2,7 @@ const express = require("express");
 const http = require("http");
 const path = require("path");
 const fs = require("fs");
-const { WebSocketServer } = require("ws");
+const { WebSocketServer, WebSocket } = require("ws");
 const { sendToCaptain, capturePaneOutputAsync } = require("./tmux-bridge");
 const { transcribe } = require("./stt");
 const { synthesize } = require("./tts");
@@ -157,18 +157,32 @@ wss.on("connection", (ws) => {
 
   ws.send(JSON.stringify({ type: "connected", captain: CAPTAIN }));
 
-  let lastSnapshot = "";
+  let lastSnapshot = null;
+  let snapshotInFlight = false;
 
-  const snapshotTimer = setInterval(async () => {
-    if (ws.readyState !== ws.OPEN) return;
-    if (ws.bufferedAmount > 65536) return;
-    const content = await capturePaneOutputAsync();
+  async function snapshotTick() {
+    if (ws.readyState !== WebSocket.OPEN) return;
+    if (snapshotInFlight) return;
+    // If the client is slow, avoid queueing more snapshots (they are full-text).
+    if (ws.bufferedAmount > 256 * 1024) return;
 
-    if (content !== lastSnapshot) {
-      lastSnapshot = content;
-      ws.send(JSON.stringify({ type: "tmux_snapshot", content }));
+    snapshotInFlight = true;
+    try {
+      const content = await capturePaneOutputAsync();
+      if (content !== lastSnapshot) {
+        lastSnapshot = content;
+        ws.send(JSON.stringify({ type: "tmux_snapshot", content }));
+      }
+    } catch {
+      // Ignore snapshot errors; next tick will retry.
+    } finally {
+      snapshotInFlight = false;
     }
-  }, 1000);
+  }
+
+  // Send an initial snapshot immediately so the Terminal view populates on load.
+  snapshotTick();
+  const snapshotTimer = setInterval(snapshotTick, 1000);
 
   ws.on("message", (data, isBinary) => {
     if (isBinary) {

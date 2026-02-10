@@ -20,7 +20,6 @@ const voiceCaptainToolSelect = document.getElementById("voice-captain-tool-selec
 const voiceRestartCaptainBtn = document.getElementById("voice-restart-captain-btn");
 let lastTtsAudioData = null;
 let speakAudioQueue = []; // TTS audio received while mic is held down
-let speakPending = false; // true after speak_text arrives, forces next audio to play
 
 // Auto-read toggle: OFF by default, persisted in localStorage
 let autoreadBeforeVoice = null; // saved state when entering Voice tab
@@ -156,10 +155,8 @@ function connect() {
     if (evt.data instanceof ArrayBuffer) {
       lastTtsAudioData = evt.data;
       voiceReplayBtn.disabled = false;
-      // Always play if this follows a speak_text (explicit captain speak command),
-      // otherwise respect the autoread toggle
-      const shouldPlay = speakPending || autoreadCb.checked;
-      speakPending = false;
+      // Respect the auto-read toggle for autoplay; replay is always available.
+      const shouldPlay = autoreadCb.checked;
       if (shouldPlay) {
         if (recording || wantRecording) {
           // Mic is active — hold audio until recording stops
@@ -189,7 +186,6 @@ function connect() {
         break;
 
       case "speak_text":
-        speakPending = true; // next binary frame is from explicit speak — always play
         if (msg.text) {
           summaryEl.textContent = msg.text;
         }
@@ -232,7 +228,6 @@ function connect() {
     statusEl.className = "disconnected";
     // Reset audio unlock so next user gesture re-primes the Audio element
     audioUnlocked = false;
-    speakPending = false;
     setTimeout(connect, 2000);
   };
 

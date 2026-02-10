@@ -20,10 +20,33 @@ function stripInputBox(output) {
   const lines = output.split("\n");
   while (lines.length && lines[lines.length - 1] === "") lines.pop();
 
-  const delimiterRe = /^[─━]{20,}\s*$/;
   const delimiterIdxs = [];
+
+  function isDelimiterLine(line) {
+    const s = (line || "").trim();
+    if (s.length < 20) return false;
+    let dashy = 0;
+    for (const ch of s) {
+      if (ch === "-" || ch === "─" || ch === "━") dashy++;
+      else return false;
+    }
+    return dashy / s.length >= 0.9;
+  }
+
   for (let i = 0; i < lines.length; i++) {
-    if (delimiterRe.test(lines[i])) delimiterIdxs.push(i);
+    if (isDelimiterLine(lines[i])) delimiterIdxs.push(i);
+  }
+
+  // Prefer the Claude-style delimiter pairing: cut at the second-to-last delimiter
+  // when scanning backward from the end of the pane.
+  let found = 0;
+  for (let i = lines.length - 1; i >= 0 && (lines.length - 1 - i) < 400; i--) {
+    if (isDelimiterLine(lines[i])) {
+      found++;
+      if (found === 2) {
+        return lines.slice(0, i).join("\n").trimEnd();
+      }
+    }
   }
 
   function looksLikeInputChrome(after) {

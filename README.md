@@ -2,6 +2,20 @@
 
 A multi-agent AI orchestration system with voice control. A captain agent (Claude or Codex) manages a squad of worker agents running in tmux panes, while you direct everything from your phone via a voice interface.
 
+## Screenshots
+
+<p align="center">
+  <img src="screenshots/terminal-tab.png" width="260" alt="Terminal tab — live captain output">
+  <img src="screenshots/status-tab.png" width="260" alt="Status tab — squad overview with worker details">
+  <img src="screenshots/voice-tab.png" width="260" alt="Voice tab — hands-free control">
+</p>
+
+<p align="center">
+  <em>Terminal</em> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <em>Status</em> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <em>Voice</em>
+</p>
+
 ## How It Works
 
 Voice Squad runs inside a privileged Docker container using a **captain/workers** pattern:
