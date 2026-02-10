@@ -26,6 +26,9 @@ RUN usermod -aG sudo ubuntu \
 COPY src/voice/ /opt/squad/voice/
 RUN cd /opt/squad/voice && npm install --production
 
+# ── Scripts under test ──────────────────────────────────────
+COPY src/switch-account.sh /opt/tests/src/switch-account.sh
+
 # ── Test suite ───────────────────────────────────────────────
 COPY package.json playwright.config.js /opt/tests/
 COPY tests/ /opt/tests/tests/
