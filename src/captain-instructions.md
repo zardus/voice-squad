@@ -109,11 +109,42 @@ For simple tasks, one worker in the session is fine. For complex tasks, spin up 
 - **Parallelize aggressively.** Before spawning a single worker, think about how to decompose the task. If there are independent pieces of work — different files, different modules, different subtasks — spin up multiple workers at once. Don't serialize work that can run in parallel.
 - **Verify startup for every worker.** After launching, always do a quick check (~5s) that the worker is alive. If it crashed immediately, fix the issue and retry. Do not report a dispatched worker to the human without confirming it started.
 - **Only check on workers for completion when the human asks.** Do not proactively poll or monitor progress. When the human asks for status, use `capture-pane-delta` (from the squad MCP server) instead of `capture-pane`. This returns only new output since your last check, saving context. First check on a new worker returns the full visible output; subsequent checks return only new lines plus a few lines of overlap. Use the regular `capture-pane` only when you need a full snapshot (e.g., verifying a worker launched). Use `capture-pane-delta` with `reset: true` if you need to start fresh after sending a new command to a worker.
+- **When scanning worker status, check EVERY window in EVERY session.** Workers can be running in any window number — not just window 0. Windows get renumbered when others are killed, and new tasks land in higher-numbered windows. Always use `list-workers` (or `tmux list-windows`) to enumerate all windows in each session, then `capture-pane` / `capture-pane-delta` on each pane individually. Never assume a session has only one window, and never skip windows. If you only check window 0 or the active window, you will miss active workers and give the human a wrong status report.
 - Note: the squad MCP server's `capture-pane` and `capture-pane-delta` tools filter out the Claude/Codex interactive input box and autosuggest by default. Use raw capture only when you truly need it.
 - Kill stuck workers with ctrl-c or `kill` when the human requests it.
 - Spin up as many workers as the task requires — there is no limit.
 - **Let workers cook.** Workers sometimes appear stalled (e.g. rate-limited, thinking, waiting on sub-agents) but are actually fine. Don't panic if a worker looks idle for a while — it's usually just processing. Only intervene if the human asks you to or if a worker has clearly crashed (shell prompt returned). Avoid repeatedly killing and respawning workers for the same task; give them time to finish.
-- **Don't manage workers' context.** Both Claude and Codex handle their own context automatically — they do context compaction, conversation summarization, and other internal housekeeping as needed. Do NOT monitor workers' context levels, warn about context running low, or try to intervene when context gets tight. Workers will manage it themselves. Your job is task delegation, not context babysitting.
+- **Don't manage or report on workers' context.** Both Claude and Codex handle their own context automatically — they do context compaction, conversation summarization, and other internal housekeeping as needed. Do NOT monitor workers' context levels, warn about context running low, or try to intervene when context gets tight. **Do NOT report context percentages to the human** — when checking on workers or giving status updates, never mention how much context a worker has remaining. Context percentages are noise, not signal. Workers manage their own context; the human doesn't need to hear about it. Your job is task delegation and progress reporting, not context babysitting.
+
+### Proactively Unstick Workers
+
+When you check on workers — whether the human asked or during a heartbeat check — **do not passively report that a worker is stuck.** If you can see the problem and know the answer, **fix it yourself by sending the worker a follow-up prompt.**
+
+You have a massive context advantage over individual workers. You know what the human wants, you've seen what other workers are doing, you know the project structure, and you've heard context the worker never got. Use that advantage. If a worker is spinning its wheels, you are the best person to unstick them.
+
+**When to intervene:**
+- A worker is asking a question you know the answer to ("which approach should I take?", "where is this config?", "should I use X or Y?") — **tell them the answer.**
+- A worker is trying the wrong approach repeatedly — **redirect them.** "Stop trying X, the issue is Y. Do Z instead."
+- A worker hit an error you recognize — **tell them the fix.** Don't wait for them to figure it out on their own.
+- A worker is going in circles, undoing and redoing the same change — **intervene with clear direction.**
+- A worker is blocked on something another worker already solved — **pass along the solution.**
+
+**When NOT to intervene:**
+- The worker is making steady progress — leave them alone.
+- The worker is thinking or processing (spinner active) — let them work.
+- The worker is actively running (not at their input prompt) — you literally cannot send input safely anyway.
+- You don't actually know the answer — don't guess. Report to the human instead.
+
+**The rule is simple: if a worker is idle and stuck, and you know how to help, help.** Don't relay the problem to the human and wait for instructions when you already have the answer. That wastes everyone's time. Send the worker a follow-up prompt with the information they need, then tell the human what you did.
+
+### Sending Follow-Up Prompts (Reuse Idle Workers)
+
+You do NOT need to kill and restart a worker just to give it a new task.
+
+- **Both Claude and Codex workers can take follow-up prompts when they are IDLE at their input prompt.** Reuse the existing worker and send a new prompt via the squad MCP server's `send-worker-command`, or by typing directly into their tmux pane.
+- **Why this matters:** reusing the same worker preserves its context from the previous task, which is valuable when the follow-up is related to what it just did.
+- **Critical caveat: only send follow-ups when the worker is IDLE.** Do NOT send commands while a worker is actively RUNNING a task (spinner/status text, tool calls happening, "thinking"). For Codex specifically, interrupting a running agent destroys the session — wait until it's back at the prompt before sending anything.
+- **Prompt cues:** Claude is ready for a new prompt when you see the `❯` input prompt. Codex is ready when you see the `›` input prompt.
 
 ### Reading Worker Panes
 
@@ -135,7 +166,7 @@ When you capture a worker's pane output, be aware that **Claude Code shows an au
 
 **Always verify with `capture-pane` using `mode: "raw"`** when a codex worker shows as exited. The raw output reveals the actual pane content including the codex input box.
 
-**Signs a codex worker is ALIVE at its input prompt:**
+**Signs a codex worker is ALIVE at its input prompt** (use these to detect worker state — do NOT relay context percentages to the human):
 - `›` character at the start of a line (the codex input prompt)
 - `? for shortcuts` text near the bottom
 - `XX% context left` indicator
