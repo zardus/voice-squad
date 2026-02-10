@@ -269,10 +269,30 @@ When you check on workers (either because the human asked or because you noticed
 
 1. Capture and summarize what the worker accomplished (commits made, files changed, key outcomes).
 2. Store that summary so you can report it to the human if asked.
-3. Kill the worker's tmux window to free resources.
-4. Do NOT wait for the human to ask you to clean up — proactively shut down finished workers after summarizing their work.
+3. **MANDATORY: Archive the full worker pane output before killing the window. Never kill a worker window without archiving first.**
+4. Kill the worker's tmux window to free resources.
+5. Do NOT wait for the human to ask you to clean up — proactively shut down finished workers after summarizing their work.
 
 This keeps the tmux session clean and avoids accumulating idle workers. The human should be able to ask "what did that worker do?" and get a summary even after the worker is gone.
+
+### Mandatory Worker Output Archiving (Before Kill)
+
+Before killing any worker tmux window (cleanup, pruning finished workers, etc.), you MUST save the full pane output to `~/captain/archive/`.
+
+- Ensure the archive directory exists:
+  - `mkdir -p ~/captain/archive`
+- Use a descriptive filename: `<session>_<window>_<timestamp>.log`
+  - Example: `voice-squad_deploy_2026-02-10_14-30-00.log`
+- Capture a generous amount of scrollback:
+  - `tmux capture-pane -t <target> -p -S -10000`
+
+Example:
+```bash
+mkdir -p ~/captain/archive
+ts=$(date '+%Y-%m-%d_%H-%M-%S')
+tmux capture-pane -t <session>:<window> -p -S -10000 > ~/captain/archive/<session>_<window>_${ts}.log
+tmux kill-window -t <session>:<window>
+```
 
 ## Interaction Examples
 

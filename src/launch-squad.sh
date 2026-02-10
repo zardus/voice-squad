@@ -13,6 +13,7 @@ rm -f /home/ubuntu/CLAUDE.md /home/ubuntu/AGENTS.md
 
 # Captain instructions in ~/captain/ — workers in ~/project/ never walk into here
 mkdir -p /home/ubuntu/captain
+mkdir -p /home/ubuntu/captain/archive
 cp /opt/squad/captain/instructions.md /home/ubuntu/captain/CLAUDE.md
 cp /opt/squad/captain/instructions.md /home/ubuntu/captain/AGENTS.md
 
