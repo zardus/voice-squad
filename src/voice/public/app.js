@@ -539,6 +539,7 @@ tabs.forEach((tab) => {
     const target = tab.dataset.tab;
     const wasVoice = document.getElementById("voice-view").classList.contains("active");
     const wasScreens = document.getElementById("screens-view").classList.contains("active");
+    const wasSummary = document.getElementById("summary-view").classList.contains("active");
     tabs.forEach((t) => t.classList.toggle("active", t === tab));
     tabContents.forEach((c) => {
       c.classList.toggle("active", c.id === target + "-view");
@@ -558,6 +559,9 @@ tabs.forEach((tab) => {
         autoreadBeforeVoice = null;
       }
     }
+
+    // Summary tab: auto-refresh once on tab switch so the user sees fresh data.
+    if (target === "summary" && !wasSummary) refreshSummary();
   });
 });
 
@@ -638,6 +642,37 @@ function renderStreamUpdate(data) {
 const summaryTabContentEl = document.getElementById("summary-tab-content");
 const refreshSummaryBtn = document.getElementById("refresh-summary-btn");
 
+async function refreshSummary() {
+  // Prevent overlapping fetches (auto-refresh on tab switch + manual clicks).
+  if (refreshSummaryBtn.disabled) return;
+
+  refreshSummaryBtn.disabled = true;
+  refreshSummaryBtn.textContent = "Loading...";
+  summaryTabContentEl.innerHTML = '<div class="summary-loading">Generating summary...</div>';
+
+  try {
+    const resp = await fetch("/api/summary", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token }),
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ error: "Request failed" }));
+      summaryTabContentEl.innerHTML = '<div class="summary-error">Error: ' +
+        (err.error || "Request failed").replace(/&/g, "&amp;").replace(/</g, "&lt;") + '</div>';
+      return;
+    }
+    const data = await resp.json();
+    summaryTabContentEl.innerHTML = mdToHtml(data.summary);
+  } catch (err) {
+    summaryTabContentEl.innerHTML = '<div class="summary-error">Error: ' +
+      err.message.replace(/&/g, "&amp;").replace(/</g, "&lt;") + '</div>';
+  } finally {
+    refreshSummaryBtn.disabled = false;
+    refreshSummaryBtn.textContent = "Refresh";
+  }
+}
+
 function mdToHtml(md) {
   if (!md) return "";
   const esc = md.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -675,32 +710,6 @@ function inlineMd(s) {
     .replace(/`([^`]+)`/g, "<code>$1</code>");
 }
 
-refreshSummaryBtn.addEventListener("click", async () => {
-  refreshSummaryBtn.disabled = true;
-  refreshSummaryBtn.textContent = "Loading...";
-  summaryTabContentEl.innerHTML = '<div class="summary-loading">Generating summary...</div>';
-
-  try {
-    const resp = await fetch("/api/summary", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token }),
-    });
-    if (!resp.ok) {
-      const err = await resp.json().catch(() => ({ error: "Request failed" }));
-      summaryTabContentEl.innerHTML = '<div class="summary-error">Error: ' +
-        (err.error || "Request failed").replace(/&/g, "&amp;").replace(/</g, "&lt;") + '</div>';
-      return;
-    }
-    const data = await resp.json();
-    summaryTabContentEl.innerHTML = mdToHtml(data.summary);
-  } catch (err) {
-    summaryTabContentEl.innerHTML = '<div class="summary-error">Error: ' +
-      err.message.replace(/&/g, "&amp;").replace(/</g, "&lt;") + '</div>';
-  } finally {
-    refreshSummaryBtn.disabled = false;
-    refreshSummaryBtn.textContent = "Refresh";
-  }
-});
+refreshSummaryBtn.addEventListener("click", refreshSummary);
 
 connect();
