@@ -96,7 +96,7 @@ while true; do
                     log "HEARTBEAT: Captain pane idle for ${threshold}s — injecting nudge"
                     tmux send-keys -t "$CAPTAIN_PANE" \
                         'HEARTBEAT MESSAGE: please do a check of the current tasks and nudge them along or clean them up if reasonable. If there are any concrete developments worth reporting, use the speak command to give the human a voice update via text-to-speech.' 2>/dev/null || true
-                    sleep 1
+                    sleep 0.5
                     tmux send-keys -t "$CAPTAIN_PANE" Enter 2>/dev/null || true
                     log "Heartbeat injected. Resetting counter."
                 else
@@ -104,7 +104,9 @@ while true; do
                     sw="${pane%.*}"   # drop .pane_index → session:window
                     log "IDLE ALERT: Worker $sw idle for ${threshold}s — notifying captain"
                     tmux send-keys -t "$CAPTAIN_PANE" \
-                        "IDLE ALERT: Worker $sw has been idle for ${threshold} seconds" Enter 2>/dev/null || true
+                        "IDLE ALERT: Worker $sw has been idle for ${threshold} seconds" 2>/dev/null || true
+                    sleep 0.5
+                    tmux send-keys -t "$CAPTAIN_PANE" Enter 2>/dev/null || true
                 fi
 
                 already_notified["$pane"]=1

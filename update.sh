@@ -220,19 +220,24 @@ else
 fi
 
 # Ensure pane monitor is running (unified captain heartbeat + worker idle detection).
-# Kill any old separate monitors first, then start/keep the unified one.
+# Kill any old separate monitors first, then (re)start the unified one in a tmux window.
 echo "==> Pane monitor..."
 pkill -f "/opt/squad/heartbeat.sh" 2>/dev/null || true
 pkill -f "/opt/squad/idle-monitor.sh" 2>/dev/null || true
-if pgrep -f "/opt/squad/pane-monitor.sh" > /dev/null 2>&1; then
-    # Restart it so it picks up the new script
-    pkill -f "/opt/squad/pane-monitor.sh" 2>/dev/null || true
-    sleep 0.3
+pkill -f "/opt/squad/pane-monitor.sh" 2>/dev/null || true
+sleep 0.5
+
+# Start pane monitor in the captain:idle-monitor tmux window
+if tmux has-session -t captain 2>/dev/null; then
+    if ! tmux list-windows -t captain -F '#{window_name}' 2>/dev/null | grep -q '^idle-monitor$'; then
+        tmux new-window -t captain -n idle-monitor
+    fi
+    tmux send-keys -t captain:idle-monitor "/opt/squad/pane-monitor.sh 2>&1 | tee -a /tmp/pane-monitor.log" Enter
+    sleep 0.5
 fi
-nohup /opt/squad/pane-monitor.sh >>/tmp/pane-monitor.log 2>&1 &
-sleep 0.3
+
 if pgrep -f "/opt/squad/pane-monitor.sh" > /dev/null 2>&1; then
-    echo "    Pane monitor: running."
+    echo "    Pane monitor: running (captain:idle-monitor)."
 else
     echo "    WARNING: pane monitor failed to start. Check /tmp/pane-monitor.log"
 fi

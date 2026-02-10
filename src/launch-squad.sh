@@ -33,10 +33,11 @@ echo "Starting $CAPTAIN as captain..."
 # Create a tmux session for the captain (starts in ~/captain/ where its instructions live)
 tmux new-session -d -s captain -c /home/ubuntu/captain
 
-# Start the unified pane monitor (captain heartbeat + worker idle detection).
+# Start the unified pane monitor in a dedicated tmux window (captain heartbeat + worker idle detection).
 # Relies on tmux being up and the captain pane existing.
 if ! pgrep -f "/opt/squad/pane-monitor.sh" >/dev/null 2>&1; then
-    nohup /opt/squad/pane-monitor.sh >>/tmp/pane-monitor.log 2>&1 &
+    tmux new-window -t captain -n idle-monitor
+    tmux send-keys -t captain:idle-monitor "/opt/squad/pane-monitor.sh 2>&1 | tee -a /tmp/pane-monitor.log" Enter
 fi
 
 # Launch captain inside the tmux session using the unified restart script.
