@@ -63,7 +63,7 @@ if [ -z "$SHELL_PID" ]; then
     echo "[restart-captain] WARNING: Could not get pane PID for captain:0"
 else
     # Check if there's a captain process running under the shell
-    CAPTAIN_PID=$(ps -o pid= --ppid "$SHELL_PID" 2>/dev/null | head -1 | tr -d ' ')
+    CAPTAIN_PID=$(ps -o pid= --ppid "$SHELL_PID" 2>/dev/null | head -1 | tr -d ' ' || true)
 
     if [ -n "$CAPTAIN_PID" ]; then
         CAPTAIN_CMD=$(ps -o comm= -p "$CAPTAIN_PID" 2>/dev/null || echo "unknown")

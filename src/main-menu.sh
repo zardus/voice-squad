@@ -45,8 +45,25 @@ show_web_ui_qr() {
   if command -v whiptail >/dev/null 2>&1 && [[ -t 0 && -t 1 ]]; then
     local qr_out
     qr_out="$(node /opt/squad/voice/show-qr.js "${url}" 2>&1 || true)"
+    local lines cols height width
+    lines="$(tput lines 2>/dev/null || echo 0)"
+    cols="$(tput cols 2>/dev/null || echo 0)"
+
+    # Use most of the screen for the QR view; leave a small margin so whiptail
+    # has room for borders/buttons.
+    height=35
+    width=100
+    if [[ "${lines}" =~ ^[0-9]+$ ]] && [[ "${lines}" -ge 20 ]]; then
+      height=$((lines - 4))
+      [[ "${height}" -lt 20 ]] && height=20
+    fi
+    if [[ "${cols}" =~ ^[0-9]+$ ]] && [[ "${cols}" -ge 60 ]]; then
+      width=$((cols - 4))
+      [[ "${width}" -lt 60 ]] && width=60
+    fi
+
     # whiptail needs a single string; preserve newlines.
-    whiptail --title "Squad Web UI" --scrolltext --msgbox "Web UI URL:\n  ${url}\n\n${qr_out}" 25 90
+    whiptail --title "Squad Web UI" --scrolltext --msgbox "Web UI URL:\n  ${url}\n\n${qr_out}" "${height}" "${width}"
   else
     echo ""
     echo "Web UI URL:"
@@ -180,15 +197,12 @@ run_update_script_if_present() {
 }
 
 status_line() {
-  local voice_url voice_pid cloud_pid cap="?"
-  voice_url=""
-  [[ -f /tmp/voice-url.txt ]] && voice_url="$(cat /tmp/voice-url.txt 2>/dev/null || true)"
+  local voice_pid cloud_pid cap="?"
   voice_pid="$(pgrep -f "node /opt/squad/voice/server.js" | head -1 || true)"
   cloud_pid="$(pgrep -f "cloudflared tunnel --url http://localhost:3000" | head -1 || true)"
   [[ -n "${SQUAD_CAPTAIN:-}" ]] && cap="${SQUAD_CAPTAIN}"
 
   echo "Captain: ${cap} | tmux: $(have_captain_tmux && echo up || echo down) | voice: ${voice_pid:-down} | tunnel: ${cloud_pid:-down}"
-  [[ -n "${voice_url}" ]] && echo "Voice URL: ${voice_url}"
 }
 
 # Non-interactive entrypoint for tests/scripts.
@@ -302,6 +316,7 @@ whiptail_menu_loop() {
     status="$(status_line | tr '\n' ' ' | sed 's/  */ /g')"
 
     # whiptail writes selection to stderr by default; capture it.
+    # Use || true to prevent set -e from killing the script on Cancel/Esc.
     local choice rc
     choice="$(
       whiptail --title "Squad Main Menu" \
@@ -315,8 +330,7 @@ whiptail_menu_loop() {
         "7" "Run update script (if present in /home/ubuntu)" \
         "8" "Show Web UI QR code + URL" \
         3>&1 1>&2 2>&3
-    )"
-    rc=$?
+    )" && rc=0 || rc=$?
 
     # Cancel/Esc should never exit; just re-draw.
     if [[ "$rc" -ne 0 ]]; then
