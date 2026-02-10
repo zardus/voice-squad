@@ -87,6 +87,10 @@ sudo chmod +x /usr/local/bin/switch-account.sh
 sudo cp "$REPO_DIR/src/restart-captain.sh" /opt/squad/restart-captain.sh
 sudo chmod +x /opt/squad/restart-captain.sh
 
+# --- Idle monitor script ---
+sudo cp "$REPO_DIR/src/idle-monitor.sh" /opt/squad/idle-monitor.sh
+sudo chmod +x /opt/squad/idle-monitor.sh
+
 # --- Startup scripts (take effect on next container start only) ---
 sudo cp "$REPO_DIR/src/launch-squad.sh" /opt/squad/launch-squad.sh
 sudo chmod +x /opt/squad/launch-squad.sh

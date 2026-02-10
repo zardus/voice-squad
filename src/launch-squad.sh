@@ -86,6 +86,10 @@ echo "$VOICE_URL" > /tmp/voice-url.txt
 tmux new-window -t captain -n voice
 tmux send-keys -t captain:voice "node /opt/squad/voice/show-qr.js '${VOICE_URL}' && echo 'Voice server log: /tmp/voice-server.log' && tail -f /tmp/voice-server.log" Enter
 
+# Start idle monitor in its own tmux window
+tmux new-window -t captain -n idle-monitor
+tmux send-keys -t captain:idle-monitor "/opt/squad/idle-monitor.sh" Enter
+
 # Select the captain window (window 0) and attach
 tmux select-window -t captain:0
 exec tmux attach -t captain
