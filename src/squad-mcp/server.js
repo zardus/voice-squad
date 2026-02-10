@@ -10,6 +10,9 @@ const execFileAsync = promisify(execFile);
 
 const DEFAULT_CAPTURE_LINES = 500;
 const MIN_MATCH_LINES = 3; // suffix matching anchor size
+// tmux 3.4+ does NOT interpret \t as tab in -F format strings.
+// Use a multi-char delimiter that won't appear in pane/session values.
+const SEP = "|||";
 
 // Per-pane state tracking for capture-pane-delta:
 // key = `${paneId}|${mode}` where mode is "filtered" or "raw"
@@ -123,13 +126,21 @@ async function resolvePaneId(target) {
   return stdout.trim();
 }
 
-function agentLaunchCommand(agent, { continueSession, includeMcpConfig, mcpConfigPath } = {}) {
+function agentLaunchCommand(agent, { continueSession, codexResumeId, includeMcpConfig, mcpConfigPath } = {}) {
   if (agent !== "claude" && agent !== "codex") throw new Error(`Invalid agent: ${agent}`);
   const parts = [];
-  if (agent === "claude") parts.push("claude", "--dangerously-skip-permissions");
-  else parts.push("codex", "--dangerously-bypass-approvals-and-sandbox");
 
-  if (continueSession) parts.push("--continue");
+  if (agent === "claude") {
+    parts.push("claude", "--dangerously-skip-permissions");
+    if (continueSession) parts.push("--continue");
+  } else {
+    // Codex does NOT support --continue. It uses "codex resume SESSION_ID".
+    if (continueSession && codexResumeId) {
+      parts.push("codex", "--dangerously-bypass-approvals-and-sandbox", "resume", codexResumeId);
+    } else {
+      parts.push("codex", "--dangerously-bypass-approvals-and-sandbox");
+    }
+  }
 
   if (includeMcpConfig && agent === "claude") {
     parts.push("--mcp-config", mcpConfigPath || "/home/ubuntu/.squad-mcp.json");
@@ -151,7 +162,7 @@ async function listPanesAll() {
     "#{pane_current_command}",
     "#{pane_current_path}",
     "#{pane_title}",
-  ].join("\t");
+  ].join(SEP);
   const out = await tmux(["list-panes", "-a", "-F", fmt]);
   const lines = out.trim() ? out.trim().split("\n") : [];
   return lines.map((l) => {
@@ -167,7 +178,7 @@ async function listPanesAll() {
       currentCommand,
       currentPath,
       paneTitle,
-    ] = l.split("\t");
+    ] = l.split(SEP);
     return {
       paneId,
       sessionName,
@@ -196,6 +207,23 @@ async function listAgents({ includeCaptain = false } = {}) {
     }));
 }
 
+/**
+ * Extract the codex resume session ID from pane output.
+ * Codex prints "To continue this session, run codex resume SESSION_ID" on exit.
+ * Returns the session ID string or null if not found.
+ */
+async function extractCodexResumeId(target) {
+  try {
+    const lines = await captureTmuxPaneLines(target, { lines: 100, mode: "raw" });
+    // Look for "codex resume SESSION_ID" pattern (session IDs look like UUIDs or hex strings)
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const m = lines[i].match(/codex\s+resume\s+(\S+)/);
+      if (m) return m[1];
+    }
+  } catch { /* pane may not exist yet */ }
+  return null;
+}
+
 async function restartAgentInPane(target, agent, opts) {
   const {
     continueSession = true,
@@ -211,6 +239,14 @@ async function restartAgentInPane(target, agent, opts) {
 
   const paneId = await resolvePaneId(target);
 
+  // For codex, capture the resume session ID BEFORE killing the process.
+  // Codex prints "codex resume SESSION_ID" when it exits, but it may also
+  // be visible from a previous exit. Capture before AND after Ctrl-C.
+  let codexResumeId = null;
+  if (agent === "codex" && continueSession) {
+    codexResumeId = await extractCodexResumeId(target);
+  }
+
   for (let i = 0; i < ctrlCCount; i++) {
     await tmux(["send-keys", "-t", target, "C-c"]);
     await sleep(ctrlCDelayMs);
@@ -220,7 +256,13 @@ async function restartAgentInPane(target, agent, opts) {
   await tmux(["send-keys", "-t", target, "C-u"]).catch(() => {});
   await sleep(settleMs);
 
-  const launch = agentLaunchCommand(agent, { continueSession, includeMcpConfig, mcpConfigPath });
+  // For codex, try again after the process has exited (it may print the
+  // resume ID as part of its shutdown message).
+  if (agent === "codex" && continueSession && !codexResumeId) {
+    codexResumeId = await extractCodexResumeId(target);
+  }
+
+  const launch = agentLaunchCommand(agent, { continueSession, codexResumeId, includeMcpConfig, mcpConfigPath });
   const fullCmd = sourceEnv
     ? `set -a; [ -f /home/ubuntu/env ] && . /home/ubuntu/env; set +a; ${launch}`
     : launch;
@@ -228,18 +270,30 @@ async function restartAgentInPane(target, agent, opts) {
   await tmux(["send-keys", "-t", target, "-l", fullCmd]);
   await tmux(["send-keys", "-t", target, "Enter"]);
 
-  if (!verify) return { paneId, launched: fullCmd, verified: false };
+  if (!verify) return { paneId, launched: fullCmd, status: "unchecked", codexResumeId };
 
   await sleep(verifyDelayMs);
   const panes = await listPanesAll();
   const pane = panes.find((p) => p.paneId === paneId);
-  const ok = !!pane && pane.currentCommand === agent;
+  const running = !!pane && pane.currentCommand === agent;
+
+  if (!running) {
+    return {
+      paneId,
+      launched: fullCmd,
+      status: "failed",
+      error: `Expected '${agent}' to be running but found '${pane?.currentCommand || "unknown"}'. The agent may have crashed on startup.`,
+      currentCommand: pane?.currentCommand || null,
+      codexResumeId,
+    };
+  }
+
   return {
     paneId,
     launched: fullCmd,
-    verified: true,
-    currentCommand: pane?.currentCommand || null,
-    ok,
+    status: "running",
+    currentCommand: pane.currentCommand,
+    codexResumeId,
   };
 }
 
@@ -260,14 +314,14 @@ server.tool(
       "#{session_windows}",
       "#{session_attached}",
       "#{session_path}",
-    ].join("\t");
+    ].join(SEP);
     const out = await tmux(["list-sessions", "-F", fmt]).catch(() => "");
     const sessions = out.trim()
       ? out
           .trim()
           .split("\n")
           .map((l) => {
-            const [name, id, windows, attached, path] = l.split("\t");
+            const [name, id, windows, attached, path] = l.split(SEP);
             return { name, id, windows: Number(windows), attached: Number(attached), path };
           })
       : [];
@@ -281,14 +335,14 @@ server.tool(
   "List windows in a tmux session.",
   { session: z.string().min(1) },
   async ({ session }) => {
-    const fmt = ["#{window_index}", "#{window_name}", "#{window_id}", "#{window_active}", "#{window_panes}"].join("\t");
+    const fmt = ["#{window_index}", "#{window_name}", "#{window_id}", "#{window_active}", "#{window_panes}"].join(SEP);
     const out = await tmux(["list-windows", "-t", session, "-F", fmt]).catch(() => "");
     const windows = out.trim()
       ? out
           .trim()
           .split("\n")
           .map((l) => {
-            const [index, name, id, active, panes] = l.split("\t");
+            const [index, name, id, active, panes] = l.split(SEP);
             return { index: Number(index), name, id, active: active === "1", panes: Number(panes) };
           })
       : [];
@@ -315,7 +369,7 @@ server.tool(
         "#{pane_current_command}",
         "#{pane_current_path}",
         "#{pane_title}",
-      ].join("\t");
+      ].join(SEP);
       const out = await tmux(["list-panes", "-t", target, "-F", fmt]).catch(() => "");
       const lines = out.trim() ? out.trim().split("\n") : [];
       return lines.map((l) => {
@@ -331,7 +385,7 @@ server.tool(
           currentCommand,
           currentPath,
           paneTitle,
-        ] = l.split("\t");
+        ] = l.split(SEP);
         return {
           paneId,
           sessionName,
@@ -358,7 +412,7 @@ server.tool(
 
 server.tool(
   "send-worker-command",
-  "Send a command to a worker pane. Double-Enter with delays ensures submission even with bracketed paste mode.",
+  "Send a command to a worker pane. Double-Enter with delays ensures submission even with bracketed paste mode. WARNING: For Codex workers, sending commands to a RUNNING agent (e.g. Escape + new text) will kill the in-progress session. Only use this on idle shell prompts or stopped workers. To give a Codex worker a new task, stop it first, then start a new one.",
   {
     target: z.string().min(1).describe("tmux pane ID or target (e.g. '%3' or 'myproject:worker1')"),
     command: z.string().min(1).describe("The command string to send"),
@@ -375,7 +429,7 @@ server.tool(
 
 server.tool(
   "send-worker-key",
-  "Send a SINGLE key to a worker pane. Used for interacting with menus, confirmations, and control sequences. Only one key per call.",
+  "Send a SINGLE key to a worker pane. Used for interacting with menus, confirmations, and control sequences. Only one key per call. WARNING: For Codex workers, sending Escape or arbitrary keys to a RUNNING agent will destroy the in-progress session. Only safe keys for running Codex are 'C-c' (to stop it). Use 'y'/'n'/Enter only when Codex is showing a confirmation prompt.",
   {
     target: z.string().min(1).describe("tmux pane ID or target (e.g. '%3' or 'myproject:worker1')"),
     key: z.string().min(1).describe("A single tmux key (e.g. 'C-c', 'Enter', 'y', 'n', 'Up', 'Down', 'q')"),
@@ -406,8 +460,9 @@ server.tool(
     task_name: z.string().min(1).describe("Window name for this worker (used as tmux window name)"),
     tool: z.enum(["claude", "codex"]).describe("Which agent CLI to launch"),
     prompt: z.string().min(1).describe("The task description / prompt to give the agent"),
+    cwd: z.string().optional().describe("Working directory for the worker window. Defaults to the project session's working directory."),
   },
-  async ({ project_name, task_name, tool, prompt }) => {
+  async ({ project_name, task_name, tool, prompt, cwd }) => {
     // Verify session exists
     if (!(await tmuxOk(["has-session", "-t", project_name]))) {
       return {
@@ -416,12 +471,25 @@ server.tool(
       };
     }
 
+    // Resolve working directory: use explicit cwd, or fall back to session's working directory
+    let workDir = cwd;
+    if (!workDir) {
+      try {
+        const sessionPath = await tmux(["display-message", "-p", "-t", project_name, "#{session_path}"]);
+        workDir = sessionPath.trim();
+      } catch {
+        // Could not determine session path; new-window will inherit tmux defaults
+      }
+    }
+
     // Create a new window in the session
-    const winOut = await tmux([
-      "new-window", "-t", project_name, "-n", task_name,
-      "-P", "-F", "#{window_id}\t#{pane_id}",
-    ]);
-    const [windowId, paneId] = winOut.trim().split("\t");
+    const newWindowArgs = ["new-window", "-t", project_name, "-n", task_name];
+    if (workDir) {
+      newWindowArgs.push("-c", workDir);
+    }
+    newWindowArgs.push("-P", "-F", `#{window_id}${SEP}#{pane_id}`);
+    const winOut = await tmux(newWindowArgs);
+    const [windowId, paneId] = winOut.trim().split(SEP);
 
     // Build the launch command
     const agentCmd = tool === "claude"
@@ -460,9 +528,9 @@ server.tool(
 
     const out = await tmux([
       "new-session", "-d", "-s", project_name, "-c", cwd,
-      "-P", "-F", "#{session_name}\t#{session_id}\t#{window_id}\t#{pane_id}",
+      "-P", "-F", ["#{session_name}", "#{session_id}", "#{window_id}", "#{pane_id}"].join(SEP),
     ]);
-    const [name, id, windowId, paneId] = out.trim().split("\t");
+    const [name, id, windowId, paneId] = out.trim().split(SEP);
     return {
       content: [{ type: "text", text: JSON.stringify({ ok: true, name, id, windowId, paneId, cwd }, null, 2) }],
     };
@@ -619,8 +687,80 @@ server.tool(
 );
 
 server.tool(
+  "list-workers",
+  "List all worker panes across all project sessions with their status. Shows project (session), task (window name), agent type, working directory, and whether the agent is still running or has exited to a shell.",
+  {},
+  async () => {
+    const panes = await listPanesAll();
+    // Exclude the captain session window 0 (that's the captain itself)
+    const workers = panes
+      .filter((p) => !(p.sessionName === "captain" && p.windowIndex === 0))
+      .filter((p) => p.sessionName !== "captain" || p.windowIndex !== 1) // also exclude voice window
+      .map((p) => {
+        const isAgent = p.currentCommand === "claude" || p.currentCommand === "codex";
+        return {
+          target: p.paneId,
+          project: p.sessionName,
+          task: p.windowName,
+          agent: isAgent ? p.currentCommand : null,
+          status: isAgent ? "running" : "exited",
+          currentCommand: p.currentCommand,
+          cwd: p.currentPath,
+        };
+      });
+    return { content: [{ type: "text", text: JSON.stringify({ workers }, null, 2) }] };
+  }
+);
+
+server.tool(
+  "check-worker-status",
+  "Check the status of a specific worker pane. Returns whether the agent is running, exited to shell, or the pane no longer exists. For exited codex workers, attempts to find the resume session ID.",
+  {
+    target: z.string().min(1).describe("tmux pane ID or target (e.g. '%3' or 'myproject:worker1')"),
+  },
+  async ({ target }) => {
+    let paneId;
+    try {
+      paneId = await resolvePaneId(target);
+    } catch {
+      return {
+        content: [{ type: "text", text: JSON.stringify({ status: "not_found", target, error: "Pane does not exist" }, null, 2) }],
+      };
+    }
+
+    const panes = await listPanesAll();
+    const pane = panes.find((p) => p.paneId === paneId);
+    if (!pane) {
+      return {
+        content: [{ type: "text", text: JSON.stringify({ status: "not_found", target, paneId }, null, 2) }],
+      };
+    }
+
+    const isAgent = pane.currentCommand === "claude" || pane.currentCommand === "codex";
+    const result = {
+      status: isAgent ? "running" : "exited",
+      target,
+      paneId,
+      agent: isAgent ? pane.currentCommand : null,
+      currentCommand: pane.currentCommand,
+      project: pane.sessionName,
+      task: pane.windowName,
+      cwd: pane.currentPath,
+    };
+
+    // For exited codex workers, look for resume ID
+    if (!isAgent) {
+      const resumeId = await extractCodexResumeId(paneId);
+      if (resumeId) result.codexResumeId = resumeId;
+    }
+
+    return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+  }
+);
+
+server.tool(
   "restart-pane-agent",
-  "Restart a single pane as a Claude or Codex agent (Ctrl-C sequence + relaunch). Uses --continue by default.",
+  "Restart a single pane as a Claude or Codex agent (Ctrl-C sequence + relaunch). For Claude, uses --continue. For Codex, captures the resume session ID and uses 'codex resume SESSION_ID'.",
   {
     target: z.string().min(1).describe("tmux target (pane id like %3, or target like session:window)"),
     agent: z.enum(["claude", "codex"]),
@@ -634,13 +774,10 @@ server.tool(
   },
   async (args) => {
     const res = await restartAgentInPane(args.target, args.agent, args);
-    if (res.verified && !res.ok) {
-      return {
-        content: [{ type: "text", text: JSON.stringify(res, null, 2) }],
-        isError: true,
-      };
-    }
-    return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+    return {
+      content: [{ type: "text", text: JSON.stringify(res, null, 2) }],
+      isError: res.status === "failed",
+    };
   }
 );
 
@@ -673,7 +810,7 @@ server.tool(
         verifyDelayMs: args.verifyDelayMs,
       });
       results.push({ target: a.paneId, sessionName: a.sessionName, windowName: a.windowName, agent: a.agent, result: r });
-      if (r.verified && !r.ok && args.stopOnFailure) {
+      if (r.status === "failed" && args.stopOnFailure) {
         return { content: [{ type: "text", text: JSON.stringify({ restarted: results.length, results }, null, 2) }], isError: true };
       }
     }

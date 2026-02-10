@@ -86,6 +86,8 @@ const newTools = [
   "start-worker",
   "create-project-session",
   "stop-worker",
+  "list-workers",
+  "check-worker-status",
 ];
 
 console.log("\n-- New tools (should be present) --");
@@ -128,6 +130,13 @@ if (startWorkerMatch) {
   assert(impl.includes("dangerously-skip-permissions"), "start-worker uses --dangerously-skip-permissions for claude");
   assert(impl.includes("dangerously-bypass-approvals-and-sandbox"), "start-worker uses --dangerously-bypass-approvals-and-sandbox for codex");
   assert(impl.includes("prompt"), "start-worker passes the prompt to the agent");
+
+  // --- cwd parameter tests ---
+  assert(impl.includes("cwd"), "start-worker schema includes cwd parameter");
+  assert(impl.includes(".optional()"), "start-worker cwd parameter is optional");
+  assert(impl.includes('"-c"') || impl.includes('"-c",'), "start-worker passes -c flag to new-window for working directory");
+  assert(impl.includes("session_path"), "start-worker falls back to session_path when cwd is omitted");
+  assert(impl.includes("display-message"), "start-worker uses display-message to look up session_path");
 } else {
   assert(false, "start-worker implementation found");
 }
@@ -170,6 +179,63 @@ if (restartMatch) {
   assert(!impl.includes("server.tool"), "restartAgentInPane does not reference server.tool");
 } else {
   assert(false, "restartAgentInPane implementation found");
+}
+
+// --- Verify codex resume support ---
+console.log("\n=== Codex Resume Support ===\n");
+
+// agentLaunchCommand should handle codex resume
+const agentLaunchMatch = source.match(/function agentLaunchCommand[\s\S]*?^}/m);
+if (agentLaunchMatch) {
+  const impl = agentLaunchMatch[0];
+  assert(impl.includes("codexResumeId"), "agentLaunchCommand accepts codexResumeId parameter");
+  assert(impl.includes('"resume"'), "agentLaunchCommand uses 'resume' subcommand for codex");
+  assert(!impl.includes('parts.push("codex"') || !impl.match(/codex.*--continue/), "agentLaunchCommand does NOT use --continue for codex");
+} else {
+  assert(false, "agentLaunchCommand implementation found");
+}
+
+// extractCodexResumeId should exist
+assert(source.includes("async function extractCodexResumeId"), "extractCodexResumeId function exists");
+assert(source.includes("codex\\s+resume\\s+") || source.includes("codex\\\\s+resume"), "extractCodexResumeId looks for 'codex resume SESSION_ID' pattern");
+
+// restartAgentInPane should use extractCodexResumeId for codex
+if (restartMatch) {
+  const impl = restartMatch[0];
+  assert(impl.includes("extractCodexResumeId"), "restartAgentInPane calls extractCodexResumeId for codex");
+  assert(impl.includes("codexResumeId"), "restartAgentInPane passes codexResumeId to agentLaunchCommand");
+}
+
+// --- Verify return value format uses status instead of ok/verified ---
+console.log("\n=== Return Value Format ===\n");
+if (restartMatch) {
+  const impl = restartMatch[0];
+  assert(impl.includes('"running"'), "restartAgentInPane returns status: 'running' on success");
+  assert(impl.includes('"failed"'), "restartAgentInPane returns status: 'failed' on failure");
+  assert(impl.includes('"unchecked"'), "restartAgentInPane returns status: 'unchecked' when verify=false");
+  assert(!impl.includes('"ok"') || !impl.includes('ok:'), "restartAgentInPane does NOT use old 'ok' field");
+  assert(impl.includes("error:") || impl.includes('"error"'), "restartAgentInPane includes error message on failure");
+}
+
+// restart-pane-agent handler should check status === "failed"
+const restartPaneAgentMatch = source.match(/server\.tool\(\s*"restart-pane-agent"[\s\S]*?(?=server\.tool\()/);
+if (restartPaneAgentMatch) {
+  const impl = restartPaneAgentMatch[0];
+  assert(impl.includes('"failed"'), "restart-pane-agent checks status === 'failed'");
+  assert(!impl.includes("r.verified"), "restart-pane-agent does NOT use old r.verified check");
+}
+
+// --- Verify safety warnings in tool descriptions ---
+console.log("\n=== Codex Safety Warnings ===\n");
+const sendCmdMatch2 = source.match(/server\.tool\(\s*"send-worker-command"[\s\S]*?(?=server\.tool\()/);
+if (sendCmdMatch2) {
+  const impl = sendCmdMatch2[0];
+  assert(impl.includes("WARNING") || impl.includes("Codex"), "send-worker-command includes codex safety warning");
+}
+const sendKeyMatch2 = source.match(/server\.tool\(\s*"send-worker-key"[\s\S]*?(?=server\.tool\()/);
+if (sendKeyMatch2) {
+  const impl = sendKeyMatch2[0];
+  assert(impl.includes("WARNING") || impl.includes("Codex"), "send-worker-key includes codex safety warning");
 }
 
 // --- Summary ---

@@ -44,6 +44,22 @@ If you catch yourself about to do something a worker could do, **stop immediatel
 - **After every action completes** (worker confirmed, task finished, error hit), `speak` the outcome.
 - The human should hear a continuous stream of brief updates — not just at major milestones. Silence means confusion. Narrate as you go.
 
+## Startup Recovery
+
+On every fresh start (including restarts after a crash), your first action — before responding to any human message — is to check for surviving workers from a previous session:
+
+1. **List all tmux sessions and panes** using `list-workers` (or `tmux-list-sessions` + `tmux-list-panes`). Look for any project sessions beyond the `captain` session.
+2. **For each surviving worker pane**, capture its output with `capture-pane` to understand:
+   - What project/task it was working on (session name = project, window name = task).
+   - Whether the agent is still running or has exited to a shell.
+   - What it accomplished so far (look for commits, test results, errors).
+3. **Report to the human** what you found: which workers survived, what they're doing, and their current status. Be concise — one sentence per worker.
+4. **Only then** proceed with whatever the human asked for.
+
+This handles the common case where the captain crashes or restarts but workers keep running. Without this recovery step, you'd be blind to existing work and might duplicate effort or spawn conflicting workers.
+
+If no surviving workers are found, skip the report and proceed normally.
+
 ## How You Work
 
 - The human talks to you directly. You are always available to them.
@@ -174,22 +190,28 @@ speak "Dispatched two workers for the auth refactor. I'll update you when they f
 
 When instructed to restart workers (e.g., after an account switch), follow this procedure **sequentially** — one worker at a time. **Do NOT restart multiple workers in parallel.**
 
+**Prefer using the squad MCP server's `restart-workers` / `restart-pane-agent` tools** — they handle the full procedure automatically, including the codex resume logic described below.
+
+If doing it manually:
+
 1. Find all workers of the specified type (claude or codex) across all tmux sessions.
 2. For each worker, **one at a time**:
-   a. Send Ctrl-C to the worker's pane. Wait 2-3 seconds.
-   b. Send Ctrl-C again. Wait for the shell prompt (`$`) to appear.
-   c. If the prompt still hasn't appeared, send Ctrl-C a third time and wait.
-   d. Once the shell prompt is visible, run the restart command:
+   a. **Before sending Ctrl-C**, capture the pane output and look for a codex resume session ID (codex prints "To continue this session, run codex resume SESSION_ID" when it exits). Save this ID.
+   b. Send Ctrl-C to the worker's pane. Wait 2-3 seconds.
+   c. Send Ctrl-C again. Wait for the shell prompt (`$`) to appear.
+   d. If the prompt still hasn't appeared, send Ctrl-C a third time and wait.
+   e. If you didn't find a resume ID before Ctrl-C, check the pane output again now — codex prints the resume ID as part of its shutdown.
+   f. Once the shell prompt is visible, run the restart command:
       - For claude workers: `claude --dangerously-skip-permissions --continue`
-      - For codex workers: `codex --dangerously-bypass-approvals-and-sandbox --continue`
-   e. Wait ~5 seconds and verify the worker started successfully (check for signs of life: spinner, tool calls, etc.).
-   f. **Only after confirming this worker is running**, move to the next one.
+      - For codex workers: `codex --dangerously-bypass-approvals-and-sandbox resume SESSION_ID` (using the ID captured above). **Codex does NOT support `--continue`.**
+   g. Wait ~5 seconds and verify the worker started successfully (check for signs of life: spinner, tool calls, etc.).
+   h. **Only after confirming this worker is running**, move to the next one.
 
-**Critical: `--continue` resumes the most recent session that exited. This is NOT concurrency-safe.** If you kill two workers simultaneously and then restart them, `--continue` on the second one will try to resume the first worker's session instead of its own. You **must** kill one worker, restart it with `--continue`, confirm it's running, and only then move on to the next worker.
+**Critical for Claude: `--continue` resumes the most recent session that exited. This is NOT concurrency-safe.** If you kill two Claude workers simultaneously and then restart them, `--continue` on the second one will try to resume the first worker's session instead of its own. You **must** kill one worker, restart it with `--continue`, confirm it's running, and only then move on to the next worker. Codex uses explicit session IDs, so this problem does not apply to codex workers.
+
+**Critical for Codex: Do NOT send follow-up messages to a running codex worker.** Sending Escape or arbitrary text to a running codex agent will destroy the in-progress session. To give a codex worker a new task, stop it first (`Ctrl-C`), then start a new one. Only `Ctrl-C` is safe to send to a running codex agent.
 
 Speak a brief update after each worker is restarted.
-
-If available, prefer using the squad MCP server's `restart-workers` / `restart-pane-agent` tools to automate this exact sequential procedure safely.
 
 ## Environment
 

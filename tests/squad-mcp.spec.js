@@ -7,12 +7,21 @@
  * - capture-pane-delta works
  * - filtered capture strips interactive input chrome markers
  * - captain/worker restart tools exist (smoke)
+ * - start-worker honors the cwd parameter
  */
 const { test, expect } = require("@playwright/test");
-const { spawn } = require("child_process");
+const { spawn, execFile } = require("child_process");
+const { promisify } = require("util");
 const fs = require("fs");
 const path = require("path");
 const readline = require("readline");
+
+const execFileAsync = promisify(execFile);
+
+// Helper to kill a tmux session directly (no MCP tool for kill-session)
+async function killTmuxSession(name) {
+  await execFileAsync("tmux", ["kill-session", "-t", name]).catch(() => {});
+}
 
 function resolveServerPath() {
   if (fs.existsSync("/opt/squad/squad-mcp/server.js")) return "/opt/squad/squad-mcp/server.js";
@@ -96,24 +105,44 @@ test.describe("squad MCP server", () => {
     const names = (res.tools || []).map((t) => t.name);
     expect(names).toContain("capture-pane-delta");
     expect(names).toContain("capture-pane");
-    expect(names).toContain("tmux-new-session");
-    expect(names).toContain("tmux-new-window");
-    expect(names).toContain("tmux-send-command");
+    expect(names).toContain("tmux-list-sessions");
+    expect(names).toContain("tmux-list-windows");
+    expect(names).toContain("tmux-list-panes");
+    expect(names).toContain("send-worker-command");
+    expect(names).toContain("send-worker-key");
+    expect(names).toContain("start-worker");
+    expect(names).toContain("create-project-session");
+    expect(names).toContain("kill-worker");
+    expect(names).toContain("stop-worker");
     expect(names).toContain("restart-pane-agent");
     expect(names).toContain("restart-workers");
     expect(names).toContain("restart-captain");
+    expect(names).toContain("list-agents");
+    expect(names).toContain("list-workers");
+    expect(names).toContain("check-worker-status");
+  });
+
+  test("start-worker schema includes optional cwd parameter", async () => {
+    const res = await client.request("tools/list", {});
+    const startWorker = (res.tools || []).find((t) => t.name === "start-worker");
+    expect(startWorker).toBeTruthy();
+    const props = startWorker.inputSchema?.properties || {};
+    expect(props.cwd).toBeTruthy();
+    // cwd should not be in the required list (it's optional)
+    const required = startWorker.inputSchema?.required || [];
+    expect(required).not.toContain("cwd");
   });
 
   test("can create a session, run a command, and capture output", async () => {
     // Create an isolated session.
     await client.request("tools/call", {
-      name: "tmux-new-session",
-      arguments: { sessionName: "mcp-test", cwd: "/home/ubuntu", killIfExists: true },
+      name: "create-project-session",
+      arguments: { project_name: "mcp-test", path: "/home/ubuntu" },
     });
 
     await client.request("tools/call", {
-      name: "tmux-send-command",
-      arguments: { target: "mcp-test:0", command: "printf 'hello-from-mcp\\n'", enterCount: 1, delayBeforeEnterMs: 50 },
+      name: "send-worker-command",
+      arguments: { target: "mcp-test:0", command: "printf 'hello-from-mcp\\n'" },
     });
 
     const cap = await client.request("tools/call", {
@@ -123,15 +152,15 @@ test.describe("squad MCP server", () => {
     const text = cap.content?.[0]?.text || "";
     expect(text).toContain("hello-from-mcp");
 
-    await client.request("tools/call", { name: "tmux-kill-session", arguments: { sessionName: "mcp-test" } });
+    await killTmuxSession("mcp-test");
   });
 
   test("filtered capture strips a simulated input chrome section", async () => {
     const PROMPT = "\u276f prompt";
     const DELIM = "\u2500".repeat(10);
     await client.request("tools/call", {
-      name: "tmux-new-session",
-      arguments: { sessionName: "mcp-filter", cwd: "/home/ubuntu", killIfExists: true },
+      name: "create-project-session",
+      arguments: { project_name: "mcp-filter", path: "/home/ubuntu" },
     });
 
     // Produce output that looks like a CLI input section below a box-drawing delimiter.
@@ -145,8 +174,8 @@ test.describe("squad MCP server", () => {
     ].join(" ");
 
     await client.request("tools/call", {
-      name: "tmux-send-command",
-      arguments: { target: "mcp-filter:0", command: cmd, enterCount: 1, delayBeforeEnterMs: 50 },
+      name: "send-worker-command",
+      arguments: { target: "mcp-filter:0", command: cmd },
     });
 
     // Wait for the command to actually execute and print the delimiter (the command line itself only contains "\\u2500").
@@ -182,13 +211,13 @@ test.describe("squad MCP server", () => {
     expect(rText).toContain("BOTTOM");
     expect(rText).toContain(PROMPT);
 
-    await client.request("tools/call", { name: "tmux-kill-session", arguments: { sessionName: "mcp-filter" } });
+    await killTmuxSession("mcp-filter");
   });
 
   test("capture-pane-delta returns only new output after reset", async () => {
     await client.request("tools/call", {
-      name: "tmux-new-session",
-      arguments: { sessionName: "mcp-delta", cwd: "/home/ubuntu", killIfExists: true },
+      name: "create-project-session",
+      arguments: { project_name: "mcp-delta", path: "/home/ubuntu" },
     });
 
     await client.request("tools/call", {
@@ -197,8 +226,8 @@ test.describe("squad MCP server", () => {
     });
 
     await client.request("tools/call", {
-      name: "tmux-send-command",
-      arguments: { target: "mcp-delta:0", command: "echo DELTA_LINE_1", enterCount: 1, delayBeforeEnterMs: 50 },
+      name: "send-worker-command",
+      arguments: { target: "mcp-delta:0", command: "echo DELTA_LINE_1" },
     });
 
     const delta = await client.request("tools/call", {
@@ -208,23 +237,21 @@ test.describe("squad MCP server", () => {
     const dText = delta.content?.[0]?.text || "";
     expect(dText).toContain("DELTA_LINE_1");
 
-    await client.request("tools/call", { name: "tmux-kill-session", arguments: { sessionName: "mcp-delta" } });
+    await killTmuxSession("mcp-delta");
   });
 
   test("capture-pane-delta truncates output to maxLines keeping most recent lines", async () => {
     await client.request("tools/call", {
-      name: "tmux-new-session",
-      arguments: { sessionName: "mcp-trunc", cwd: "/home/ubuntu", killIfExists: true },
+      name: "create-project-session",
+      arguments: { project_name: "mcp-trunc", path: "/home/ubuntu" },
     });
 
     // Generate 60 numbered lines so we can verify which ones survive truncation.
     await client.request("tools/call", {
-      name: "tmux-send-command",
+      name: "send-worker-command",
       arguments: {
         target: "mcp-trunc:0",
         command: "for i in $(seq 1 60); do echo \"LINE_$i\"; done",
-        enterCount: 1,
-        delayBeforeEnterMs: 50,
       },
     });
 
@@ -265,7 +292,7 @@ test.describe("squad MCP server", () => {
     );
     expect(bodyLines.length).toBeLessThanOrEqual(10);
 
-    await client.request("tools/call", { name: "tmux-kill-session", arguments: { sessionName: "mcp-trunc" } });
+    await killTmuxSession("mcp-trunc");
   });
 
   test("capture-pane-delta ignores volatile bottom lines (input box simulation)", async () => {
@@ -284,8 +311,8 @@ test.describe("squad MCP server", () => {
     // comparison leaves ~26 lines — all from the stable region.
 
     await client.request("tools/call", {
-      name: "tmux-new-session",
-      arguments: { sessionName: "mcp-inputbox", cwd: "/home/ubuntu", killIfExists: true },
+      name: "create-project-session",
+      arguments: { project_name: "mcp-inputbox", path: "/home/ubuntu" },
     });
 
     // Phase 1: Write 30 stable lines + 5 "old" bottom lines, clear scrollback
@@ -296,8 +323,8 @@ test.describe("squad MCP server", () => {
       "tmux clear-history -t mcp-inputbox:0",
     ].join(" ");
     await client.request("tools/call", {
-      name: "tmux-send-command",
-      arguments: { target: "mcp-inputbox:0", command: writePhase1, enterCount: 1, delayBeforeEnterMs: 50 },
+      name: "send-worker-command",
+      arguments: { target: "mcp-inputbox:0", command: writePhase1 },
     });
 
     // Wait for phase 1 output
@@ -330,8 +357,8 @@ test.describe("squad MCP server", () => {
       "tmux clear-history -t mcp-inputbox:0",
     ].join(" ");
     await client.request("tools/call", {
-      name: "tmux-send-command",
-      arguments: { target: "mcp-inputbox:0", command: writePhase2, enterCount: 1, delayBeforeEnterMs: 50 },
+      name: "send-worker-command",
+      arguments: { target: "mcp-inputbox:0", command: writePhase2 },
     });
 
     // Wait for phase 2 output
@@ -359,6 +386,184 @@ test.describe("squad MCP server", () => {
     const dText = delta.content?.[0]?.text || "";
     expect(dText).not.toContain("gap detected");
 
-    await client.request("tools/call", { name: "tmux-kill-session", arguments: { sessionName: "mcp-inputbox" } });
+    await killTmuxSession("mcp-inputbox");
+  });
+
+  // ---------------------------------------------------------------------------
+  // list-workers and check-worker-status tests
+  // ---------------------------------------------------------------------------
+
+  test("list-workers returns worker info for project sessions", async () => {
+    await client.request("tools/call", {
+      name: "create-project-session",
+      arguments: { project_name: "mcp-lw-test", path: "/home/ubuntu" },
+    });
+
+    // Send a simple command so the pane has something running
+    await client.request("tools/call", {
+      name: "send-worker-command",
+      arguments: { target: "mcp-lw-test:0", command: "echo hello" },
+    });
+
+    const res = await client.request("tools/call", { name: "list-workers", arguments: {} });
+    const data = JSON.parse(res.content?.[0]?.text || "{}");
+    expect(data.workers).toBeDefined();
+    expect(Array.isArray(data.workers)).toBeTruthy();
+
+    // Should find our test session
+    const worker = data.workers.find((w) => w.project === "mcp-lw-test");
+    expect(worker).toBeTruthy();
+    expect(worker.project).toBe("mcp-lw-test");
+    expect(worker.cwd).toBeDefined();
+
+    await killTmuxSession("mcp-lw-test");
+  });
+
+  test("check-worker-status returns status for existing pane", async () => {
+    await client.request("tools/call", {
+      name: "create-project-session",
+      arguments: { project_name: "mcp-cs-test", path: "/home/ubuntu" },
+    });
+
+    const res = await client.request("tools/call", {
+      name: "check-worker-status",
+      arguments: { target: "mcp-cs-test:0" },
+    });
+    const data = JSON.parse(res.content?.[0]?.text || "{}");
+    expect(data.status).toBeDefined();
+    expect(data.project).toBe("mcp-cs-test");
+    expect(data.paneId).toBeDefined();
+    // It's running a shell, not an agent, so status should be "exited"
+    expect(data.status).toBe("exited");
+
+    await killTmuxSession("mcp-cs-test");
+  });
+
+  test("check-worker-status returns not_found for nonexistent pane", async () => {
+    const res = await client.request("tools/call", {
+      name: "check-worker-status",
+      arguments: { target: "nonexistent-session:99" },
+    });
+    const data = JSON.parse(res.content?.[0]?.text || "{}");
+    expect(data.status).toBe("not_found");
+  });
+
+  test("stop-worker sends Ctrl-C without killing window", async () => {
+    await client.request("tools/call", {
+      name: "create-project-session",
+      arguments: { project_name: "mcp-stop-test", path: "/home/ubuntu" },
+    });
+
+    // Run a long sleep so we can stop it
+    await client.request("tools/call", {
+      name: "send-worker-command",
+      arguments: { target: "mcp-stop-test:0", command: "sleep 999" },
+    });
+    await new Promise((r) => setTimeout(r, 500));
+
+    // Stop the worker
+    const res = await client.request("tools/call", {
+      name: "stop-worker",
+      arguments: { target: "mcp-stop-test:0" },
+    });
+    const data = JSON.parse(res.content?.[0]?.text || "{}");
+    expect(data.ok).toBe(true);
+
+    // Window should still exist
+    const panes = await client.request("tools/call", {
+      name: "tmux-list-panes",
+      arguments: { target: "mcp-stop-test" },
+    });
+    const panesData = JSON.parse(panes.content?.[0]?.text || "{}");
+    expect(panesData.panes.length).toBeGreaterThan(0);
+
+    await killTmuxSession("mcp-stop-test");
+  });
+
+  // ---------------------------------------------------------------------------
+  // start-worker cwd tests
+  // ---------------------------------------------------------------------------
+
+  test("start-worker uses explicit cwd when provided", async () => {
+    const testDir = "/tmp/test-worker-explicit-cwd";
+    fs.mkdirSync(testDir, { recursive: true });
+
+    // Create session with a DIFFERENT path so we can verify explicit cwd overrides it
+    await client.request("tools/call", {
+      name: "create-project-session",
+      arguments: { project_name: "mcp-cwd-explicit", path: "/home/ubuntu" },
+    });
+
+    // Start worker with explicit cwd
+    const res = await client.request("tools/call", {
+      name: "start-worker",
+      arguments: {
+        project_name: "mcp-cwd-explicit",
+        task_name: "cwd-test",
+        tool: "claude",
+        prompt: "test",
+        cwd: testDir,
+      },
+    });
+    const resText = res.content?.[0]?.text || "";
+    expect(resText).toContain('"ok": true');
+
+    // Give pane a moment to initialize
+    await new Promise((r) => setTimeout(r, 2000));
+
+    // Check pane's working directory via tmux-list-panes
+    const panes = await client.request("tools/call", {
+      name: "tmux-list-panes",
+      arguments: { target: "mcp-cwd-explicit" },
+    });
+    const panesData = JSON.parse(panes.content?.[0]?.text || "{}");
+    const workerPane = (panesData.panes || []).find(
+      (p) => p.windowName === "cwd-test"
+    );
+    expect(workerPane).toBeTruthy();
+    expect(workerPane.currentPath).toBe(testDir);
+
+    await killTmuxSession("mcp-cwd-explicit");
+  });
+
+  test("start-worker falls back to session directory when cwd omitted", async () => {
+    const sessionDir = "/tmp/test-worker-session-cwd";
+    fs.mkdirSync(sessionDir, { recursive: true });
+
+    // Create session with a specific working directory
+    await client.request("tools/call", {
+      name: "create-project-session",
+      arguments: { project_name: "mcp-cwd-fallback", path: sessionDir },
+    });
+
+    // Start worker WITHOUT cwd — should inherit session's directory
+    const res = await client.request("tools/call", {
+      name: "start-worker",
+      arguments: {
+        project_name: "mcp-cwd-fallback",
+        task_name: "fallback-test",
+        tool: "claude",
+        prompt: "test",
+      },
+    });
+    const resText = res.content?.[0]?.text || "";
+    expect(resText).toContain('"ok": true');
+
+    // Give pane a moment to initialize
+    await new Promise((r) => setTimeout(r, 2000));
+
+    // Check pane's working directory via tmux-list-panes
+    const panes = await client.request("tools/call", {
+      name: "tmux-list-panes",
+      arguments: { target: "mcp-cwd-fallback" },
+    });
+    const panesData = JSON.parse(panes.content?.[0]?.text || "{}");
+    const workerPane = (panesData.panes || []).find(
+      (p) => p.windowName === "fallback-test"
+    );
+    expect(workerPane).toBeTruthy();
+    expect(workerPane.currentPath).toBe(sessionDir);
+
+    await killTmuxSession("mcp-cwd-fallback");
   });
 });
