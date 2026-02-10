@@ -101,6 +101,7 @@ sudo chmod +x /entrypoint.sh
 #     (mirrors what launch-squad.sh does at boot)
 CAPTAIN="${SQUAD_CAPTAIN:-claude}"
 mkdir -p /home/ubuntu/captain
+mkdir -p /home/ubuntu/captain/archive
 if [ "$CAPTAIN" = "claude" ]; then
     cp /opt/squad/captain/instructions.md /home/ubuntu/captain/CLAUDE.md
 else
