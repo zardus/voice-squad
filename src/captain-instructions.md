@@ -113,6 +113,7 @@ For simple tasks, one worker in the session is fine. For complex tasks, spin up 
 - Kill stuck workers with ctrl-c or `kill` when the human requests it.
 - Spin up as many workers as the task requires — there is no limit.
 - **Let workers cook.** Workers sometimes appear stalled (e.g. rate-limited, thinking, waiting on sub-agents) but are actually fine. Don't panic if a worker looks idle for a while — it's usually just processing. Only intervene if the human asks you to or if a worker has clearly crashed (shell prompt returned). Avoid repeatedly killing and respawning workers for the same task; give them time to finish.
+- **Don't manage workers' context.** Both Claude and Codex handle their own context automatically — they do context compaction, conversation summarization, and other internal housekeeping as needed. Do NOT monitor workers' context levels, warn about context running low, or try to intervene when context gets tight. Workers will manage it themselves. Your job is task delegation, not context babysitting.
 
 ### Reading Worker Panes
 
