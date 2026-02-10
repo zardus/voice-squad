@@ -141,6 +141,11 @@ echo "==> Restarting voice server..."
 # Find the running voice server PID (if any)
 VOICE_PID=$(pgrep -f "node /opt/squad/voice/server.js" | head -1 || true)
 
+# Always source the env file so restarts don't depend on reading /proc/<pid>/environ
+# (which may be unreadable if the old server runs under a different UID).
+# shellcheck disable=SC1091
+if [ -f /home/ubuntu/env ]; then set -a; . /home/ubuntu/env; set +a; fi
+
 # If this script was spawned by the voice server (via /api/update), killing the
 # server closes the read end of our stdout pipe. The next echo would then get
 # SIGPIPE and kill the script before the new server starts. Redirect our output
@@ -177,14 +182,22 @@ if [ -n "$VOICE_PID" ]; then
     echo "    Voice server stopped."
 else
     echo "    No running voice server found — starting fresh."
-    # Fall back: source env file (same mechanism launch-squad.sh uses)
-    # shellcheck disable=SC1091
-    if [ -f /home/ubuntu/env ]; then set -a; . /home/ubuntu/env; set +a; fi
     _OAI_KEY="${_OPENAI_API_KEY:-${OPENAI_API_KEY:-}}"
     _ANT_KEY="${_ANTHROPIC_API_KEY:-${ANTHROPIC_API_KEY:-}}"
     _V_TOKEN="${VOICE_TOKEN:-}"
     _S_CAPTAIN="${SQUAD_CAPTAIN:-claude}"
 fi
+
+# Prefer /proc-extracted values when present; otherwise fall back to the env file.
+_OAI_KEY="${_OAI_KEY:-${_OPENAI_API_KEY:-${OPENAI_API_KEY:-}}}"
+_ANT_KEY="${_ANT_KEY:-${_ANTHROPIC_API_KEY:-${ANTHROPIC_API_KEY:-}}}"
+_V_TOKEN="${_V_TOKEN:-${VOICE_TOKEN:-}}"
+_S_CAPTAIN="${_S_CAPTAIN:-${SQUAD_CAPTAIN:-claude}}"
+
+# Source the env file again immediately before spawning node (explicitly required
+# for env var propagation semantics).
+# shellcheck disable=SC1091
+if [ -f /home/ubuntu/env ]; then set -a; . /home/ubuntu/env; set +a; fi
 
 # Launch voice server with the same environment.
 # Output goes to the same log file that the tmux voice window tails.
