@@ -27,7 +27,7 @@ ENV LANG=en_US.UTF-8 \
 # Configure nix for single-user mode (no daemon, no systemd in Docker)
 RUN chown -R ubuntu:ubuntu /nix \
     && mkdir -p /etc/nix \
-    && printf 'sandbox = false\n' > /etc/nix/nix.conf
+    && printf 'sandbox = false\nexperimental-features = nix-command flakes\n' > /etc/nix/nix.conf
 
 ENV NIX_REMOTE="" \
     NIX_PATH="nixpkgs=channel:nixpkgs-unstable"
