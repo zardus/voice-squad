@@ -43,11 +43,14 @@ if ! pgrep -f "/opt/squad/heartbeat.sh" >/dev/null 2>&1; then
     nohup /opt/squad/heartbeat.sh >>/tmp/heartbeat.log 2>&1 &
 fi
 
+# Initial prompt: tell captain to run startup recovery (check for surviving workers)
+STARTUP_PROMPT="Run startup recovery: use list-workers to check for surviving workers from a previous session. For each one, capture its output and report status. Then say you are ready for instructions."
+
 # Launch captain inside the tmux session
 if [ "$CAPTAIN" = "claude" ]; then
-    tmux send-keys -t captain "claude --dangerously-skip-permissions --mcp-config /home/ubuntu/.squad-mcp.json $*" Enter
+    tmux send-keys -t captain "claude --dangerously-skip-permissions --mcp-config /home/ubuntu/.squad-mcp.json -p \"$STARTUP_PROMPT\" $*" Enter
 else
-    tmux send-keys -t captain "codex --dangerously-bypass-approvals-and-sandbox $*" Enter
+    tmux send-keys -t captain "codex --dangerously-bypass-approvals-and-sandbox \"$STARTUP_PROMPT\" $*" Enter
 fi
 
 # Start voice server with API keys inline (not exported, so captain CLIs don't see them)
