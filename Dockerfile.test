@@ -29,7 +29,9 @@ RUN cd /opt/squad/voice && npm install --production
 # ── Scripts under test ──────────────────────────────────────
 COPY src/switch-account.sh /opt/tests/src/switch-account.sh
 COPY src/restart-captain.sh /opt/squad/restart-captain.sh
-RUN chmod +x /opt/squad/restart-captain.sh
+COPY src/pane-monitor.sh /opt/squad/pane-monitor.sh
+COPY src/main-menu.sh /opt/squad/main-menu.sh
+RUN chmod +x /opt/squad/restart-captain.sh /opt/squad/pane-monitor.sh /opt/squad/main-menu.sh
 
 # ── Test suite ───────────────────────────────────────────────
 COPY package.json playwright.config.js /opt/tests/
@@ -49,7 +51,7 @@ COPY tests/ /opt/tests/tests/
 RUN chown -R ubuntu:ubuntu /opt/tests /opt/pw-browsers
 
 # ── Test entrypoint ──────────────────────────────────────────
-COPY test-entrypoint.sh /test-entrypoint.sh
+COPY utils/test-entrypoint.sh /test-entrypoint.sh
 RUN chmod +x /test-entrypoint.sh
 
 USER ubuntu

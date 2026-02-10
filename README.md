@@ -170,10 +170,10 @@ You can update code without restarting the container:
 
 ```bash
 # Inside the container: update code + restart voice server only
-./update.sh
+./utils/update.sh
 
 # Also restart the captain agent
-./update.sh --restart-captain
+./utils/update.sh --restart-captain
 ```
 
 This pulls the latest code, copies files to the install location, reinstalls npm dependencies if needed, and restarts the voice server. The cloudflared tunnel URL stays stable, so your phone stays connected.
@@ -183,7 +183,11 @@ This pulls the latest code, copies files to the install location, reinstalls npm
 ```
 voice-squad/
 ├── run.sh                       # Host entry point — builds image, runs container
-├── update.sh                    # Hot-update script (runs inside container)
+├── utils/                       # Utility scripts
+│   ├── update.sh                # Hot-update script (runs inside container)
+│   ├── test.sh                  # Run Playwright tests against a running container
+│   ├── run-tests-in-container.sh # Build + run the isolated Docker test runner
+│   └── take-screenshots.sh      # Generate README screenshots via the test runner
 ├── CLAUDE.md                    # Instructions for Claude Code working on this repo
 ├── src/
 │   ├── Dockerfile               # Ubuntu 24.04 + Docker-in-Docker + Node.js + Python + tools

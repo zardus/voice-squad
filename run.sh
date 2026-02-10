@@ -24,9 +24,6 @@ fi
 exec docker run -it --rm --privileged \
     -p 3000:3000 \
     -v "$(pwd)/home:/home/ubuntu" \
-    -v "${HOME}/.claude:/home/ubuntu/.claude" \
-    -v "${HOME}/.claude.json:/home/ubuntu/.claude.json" \
-    -v "${HOME}/.codex:/home/ubuntu/.codex" \
     -e ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY}" \
     -e OPENAI_API_KEY="${OPENAI_API_KEY}" \
     -e SQUAD_CAPTAIN="$CAPTAIN" \

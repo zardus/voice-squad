@@ -88,6 +88,7 @@ echo "$VOICE_URL" > /tmp/voice-url.txt
 tmux new-window -t captain -n voice
 tmux send-keys -t captain:voice "node /opt/squad/voice/show-qr.js '${VOICE_URL}' && echo 'Voice server log: /tmp/voice-server.log' && tail -f /tmp/voice-server.log" Enter
 
-# Select the captain window (window 0) and attach
+# Select the captain window (window 0) but do not attach:
+# the container foreground is /opt/squad/main-menu.sh, which can attach on demand.
 tmux select-window -t captain:0
-exec tmux attach -t captain
+exit 0

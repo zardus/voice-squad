@@ -19,8 +19,8 @@
 #   - Captain agent       — unless --restart-captain is passed
 #
 # Usage:
-#   ./update.sh                      # update code + restart voice server only
-#   ./update.sh --restart-captain    # also restart the captain agent (LAST step)
+#   ./utils/update.sh                      # update code + restart voice server only
+#   ./utils/update.sh --restart-captain    # also restart the captain agent (LAST step)
 
 set -euo pipefail
 
@@ -36,9 +36,10 @@ for arg in "$@"; do
 done
 
 # ---------------------------------------------------------------------------
-# Locate the repo root (the directory this script lives in)
+# Locate the repo root
 # ---------------------------------------------------------------------------
-REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_DIR="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null || (cd "$SCRIPT_DIR/.." && pwd))"
 echo "==> Repo: $REPO_DIR"
 
 # ---------------------------------------------------------------------------
@@ -93,6 +94,8 @@ sudo rm -f /opt/squad/heartbeat.sh /opt/squad/idle-monitor.sh
 # --- Startup scripts (take effect on next container start only) ---
 sudo cp "$REPO_DIR/src/launch-squad.sh" /opt/squad/launch-squad.sh
 sudo chmod +x /opt/squad/launch-squad.sh
+sudo cp "$REPO_DIR/src/main-menu.sh" /opt/squad/main-menu.sh
+sudo chmod +x /opt/squad/main-menu.sh
 sudo cp "$REPO_DIR/src/entrypoint.sh" /entrypoint.sh
 sudo chmod +x /entrypoint.sh
 

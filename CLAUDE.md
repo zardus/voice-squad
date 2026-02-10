@@ -48,8 +48,8 @@ All build/runtime files live in `src/`:
 After editing source files, you **must** run the deploy script to apply changes to the live server:
 
 ```bash
-./update.sh                   # hot-update code + restart voice server
-./update.sh --restart-captain # also restart the captain agent
+./utils/update.sh                   # hot-update code + restart voice server
+./utils/update.sh --restart-captain # also restart the captain agent
 ```
 
 This pulls latest git, copies `src/` files to `/opt/squad/` (the installed location), and restarts the voice server. The cloudflared tunnel and captain agent are kept alive (unless `--restart-captain` is passed).

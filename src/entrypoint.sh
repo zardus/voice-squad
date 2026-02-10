@@ -19,6 +19,7 @@ fi
 
 # Ensure home directory is writable (volume mounts may be owned by root)
 sudo chown ubuntu:ubuntu /home/ubuntu
+sudo chown -R ubuntu:ubuntu /home/ubuntu/.codex /home/ubuntu/.claude 2>/dev/null || true
 
 # Source user environment if present (set -a auto-exports all vars)
 if [ -f /home/ubuntu/env ]; then
@@ -28,4 +29,7 @@ if [ -f /home/ubuntu/env ]; then
 fi
 
 # Launch the squad
-exec /opt/squad/launch-squad.sh "$@"
+/opt/squad/launch-squad.sh "$@" > /tmp/launch-squad.log 2>&1 &
+
+# Launch the main menu
+exec /opt/squad/main-menu.sh
