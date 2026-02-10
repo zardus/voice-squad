@@ -128,6 +128,31 @@ When you capture a worker's pane output, be aware that **Claude Code shows an au
 
 **Do NOT kill workers just because you see unsubmitted text in their input prompt.** That text is an autosuggest/autocomplete ghost — the worker never typed it and is not waiting on it. Judge worker state solely by the conversation area above the prompt line.
 
+### Codex Worker State Detection
+
+**`list-workers` can report codex workers as `status: "exited"` / `agent: null` even when they are alive at the input prompt.** This happens because tmux's reported foreground command may change when codex is idle. Do NOT trust `list-workers` or `check-worker-status` alone to determine if a codex worker is dead.
+
+**Always verify with `capture-pane` using `mode: "raw"`** when a codex worker shows as exited. The raw output reveals the actual pane content including the codex input box.
+
+**Signs a codex worker is ALIVE at its input prompt:**
+- `›` character at the start of a line (the codex input prompt)
+- `? for shortcuts` text near the bottom
+- `XX% context left` indicator
+
+Example of a live codex idle prompt in raw pane output:
+```
+› Explain this codebase
+
+  ? for shortcuts                                    85% context left
+```
+The text after `›` (e.g. "Explain this codebase") is autosuggest/ghost text — not a submitted command.
+
+**Signs a codex worker is TRULY dead:**
+- A bare shell prompt (`$`) with no codex UI elements
+- No `›`, no `? for shortcuts`, no `% context left` anywhere in the pane
+
+**Important:** The filtered mode of `capture-pane` strips the codex input box (just like it strips Claude's), which can make a live-but-idle codex worker look empty. When checking whether a codex worker is alive, always use `mode: "raw"`.
+
 ## Cleaning Up Finished Workers
 
 When you check on workers (either because the human asked or because you noticed), and a worker has clearly finished its task:

@@ -47,11 +47,14 @@ function trimTrailingEmptyLines(lines) {
 
 function looksLikeClaudeOrCodexInputChrome(linesAfterDelimiter) {
   // Heuristic: Claude Code uses a prompt line beginning with "❯" and often uses box drawing.
+  // Codex uses "›" as its prompt and shows "? for shortcuts" / "XX% context left".
   // We only strip below delimiter if we see an interactive prompt beneath it.
   for (let i = 0; i < Math.min(60, linesAfterDelimiter.length); i++) {
     const l = linesAfterDelimiter[i] ?? "";
     if (l.trimStart().startsWith("❯")) return true;
+    if (l.trimStart().startsWith("›")) return true;
     if (l.includes("Ctrl") && l.includes("Enter")) return true;
+    if (l.includes("? for shortcuts")) return true;
     if (l.includes("┌") || l.includes("└") || l.includes("│")) return true;
   }
   return false;
@@ -82,9 +85,9 @@ function stripCliInputChrome(lines) {
     return trimTrailingEmptyLines(out);
   }
 
-  // Fallback: cut before the last "❯" prompt line if present.
+  // Fallback: cut before the last "❯" (Claude) or "›" (Codex) prompt line if present.
   for (let i = out.length - 1; i >= 0; i--) {
-    if (out[i].trimStart().startsWith("❯")) {
+    if (out[i].trimStart().startsWith("❯") || out[i].trimStart().startsWith("›")) {
       out.splice(i);
       return trimTrailingEmptyLines(out);
     }
@@ -222,6 +225,29 @@ async function extractCodexResumeId(target) {
     }
   } catch { /* pane may not exist yet */ }
   return null;
+}
+
+/**
+ * Detect whether a codex agent is alive at its interactive input prompt.
+ * When codex is idle, tmux may not report "codex" as pane_current_command,
+ * causing list-workers to falsely report it as exited. This checks the raw
+ * pane content for codex-specific UI markers: › prompt, "? for shortcuts",
+ * and "XX% context left".
+ */
+async function detectCodexAlive(target) {
+  try {
+    const lines = await captureTmuxPaneLines(target, { lines: 30, mode: "raw" });
+    const tail = lines.slice(-15);
+    let hasPrompt = false;
+    let hasShortcutsOrContext = false;
+    for (const line of tail) {
+      if (line.trimStart().startsWith("›")) hasPrompt = true;
+      if (line.includes("? for shortcuts") || /\d+%\s*context left/.test(line)) hasShortcutsOrContext = true;
+    }
+    return hasPrompt && hasShortcutsOrContext;
+  } catch {
+    return false;
+  }
 }
 
 async function restartAgentInPane(target, agent, opts) {
@@ -693,21 +719,32 @@ server.tool(
   async () => {
     const panes = await listPanesAll();
     // Exclude the captain session window 0 (that's the captain itself)
-    const workers = panes
+    const filtered = panes
       .filter((p) => !(p.sessionName === "captain" && p.windowIndex === 0))
-      .filter((p) => p.sessionName !== "captain" || p.windowIndex !== 1) // also exclude voice window
-      .map((p) => {
-        const isAgent = p.currentCommand === "claude" || p.currentCommand === "codex";
-        return {
-          target: p.paneId,
-          project: p.sessionName,
-          task: p.windowName,
-          agent: isAgent ? p.currentCommand : null,
-          status: isAgent ? "running" : "exited",
-          currentCommand: p.currentCommand,
-          cwd: p.currentPath,
-        };
-      });
+      .filter((p) => p.sessionName !== "captain" || p.windowIndex !== 1); // also exclude voice window
+    const workers = await Promise.all(filtered.map(async (p) => {
+      const isAgent = p.currentCommand === "claude" || p.currentCommand === "codex";
+      let agent = isAgent ? p.currentCommand : null;
+      let status = isAgent ? "running" : "exited";
+      // When tmux doesn't report codex as the foreground command (e.g. codex
+      // is idle at its input prompt), check the raw pane content for codex UI.
+      if (!isAgent) {
+        const codexAlive = await detectCodexAlive(p.paneId);
+        if (codexAlive) {
+          agent = "codex";
+          status = "running";
+        }
+      }
+      return {
+        target: p.paneId,
+        project: p.sessionName,
+        task: p.windowName,
+        agent,
+        status,
+        currentCommand: p.currentCommand,
+        cwd: p.currentPath,
+      };
+    }));
     return { content: [{ type: "text", text: JSON.stringify({ workers }, null, 2) }] };
   }
 );
@@ -737,19 +774,32 @@ server.tool(
     }
 
     const isAgent = pane.currentCommand === "claude" || pane.currentCommand === "codex";
+    let detectedAgent = isAgent ? pane.currentCommand : null;
+    let detectedStatus = isAgent ? "running" : "exited";
+
+    // When tmux doesn't report codex as the foreground command (e.g. codex
+    // is idle at its input prompt), check the raw pane content for codex UI.
+    if (!isAgent) {
+      const codexAlive = await detectCodexAlive(paneId);
+      if (codexAlive) {
+        detectedAgent = "codex";
+        detectedStatus = "running";
+      }
+    }
+
     const result = {
-      status: isAgent ? "running" : "exited",
+      status: detectedStatus,
       target,
       paneId,
-      agent: isAgent ? pane.currentCommand : null,
+      agent: detectedAgent,
       currentCommand: pane.currentCommand,
       project: pane.sessionName,
       task: pane.windowName,
       cwd: pane.currentPath,
     };
 
-    // For exited codex workers, look for resume ID
-    if (!isAgent) {
+    // For truly exited workers, look for codex resume ID
+    if (detectedStatus === "exited") {
       const resumeId = await extractCodexResumeId(paneId);
       if (resumeId) result.codexResumeId = resumeId;
     }

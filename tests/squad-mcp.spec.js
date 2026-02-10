@@ -481,6 +481,188 @@ test.describe("squad MCP server", () => {
   });
 
   // ---------------------------------------------------------------------------
+  // Codex input prompt detection tests
+  // ---------------------------------------------------------------------------
+
+  test("list-workers detects codex alive at input prompt (not reported as exited)", async () => {
+    await client.request("tools/call", {
+      name: "create-project-session",
+      arguments: { project_name: "mcp-codex-detect", path: "/home/ubuntu" },
+    });
+
+    // Simulate a codex input prompt: › prompt, "? for shortcuts", "85% context left"
+    // The pane's currentCommand will be "bash" (not "codex"), but the content
+    // should trigger detectCodexAlive and report the worker as running.
+    const cmd = [
+      "printf '\\033[2J\\033[H';",
+      "echo 'Some previous output';",
+      "echo '';",
+      "printf '\\xe2\\x80\\xba Explain this codebase\\n';",
+      "echo '';",
+      "printf '  ? for shortcuts                                    85%% context left\\n';",
+    ].join(" ");
+
+    await client.request("tools/call", {
+      name: "send-worker-command",
+      arguments: { target: "mcp-codex-detect:0", command: cmd },
+    });
+
+    // Wait for the codex prompt markers to appear
+    {
+      const deadline = Date.now() + 3000;
+      let raw = "";
+      while (Date.now() < deadline) {
+        const cap = await client.request("tools/call", {
+          name: "capture-pane",
+          arguments: { target: "mcp-codex-detect:0", lines: 100, mode: "raw" },
+        });
+        raw = cap.content?.[0]?.text || "";
+        if (raw.includes("context left") && raw.includes("? for shortcuts")) break;
+        await new Promise((r) => setTimeout(r, 150));
+      }
+      expect(raw).toContain("context left");
+    }
+
+    // list-workers should detect this as a live codex worker
+    const res = await client.request("tools/call", { name: "list-workers", arguments: {} });
+    const data = JSON.parse(res.content?.[0]?.text || "{}");
+    const worker = data.workers.find((w) => w.project === "mcp-codex-detect");
+    expect(worker).toBeTruthy();
+    expect(worker.agent).toBe("codex");
+    expect(worker.status).toBe("running");
+
+    await killTmuxSession("mcp-codex-detect");
+  });
+
+  test("check-worker-status detects codex alive at input prompt", async () => {
+    await client.request("tools/call", {
+      name: "create-project-session",
+      arguments: { project_name: "mcp-codex-cs", path: "/home/ubuntu" },
+    });
+
+    // Simulate codex input prompt
+    const cmd = [
+      "printf '\\033[2J\\033[H';",
+      "echo 'Task output here';",
+      "printf '\\xe2\\x80\\xba \\n';",
+      "printf '  ? for shortcuts                                    72%% context left\\n';",
+    ].join(" ");
+
+    await client.request("tools/call", {
+      name: "send-worker-command",
+      arguments: { target: "mcp-codex-cs:0", command: cmd },
+    });
+
+    // Wait for markers
+    {
+      const deadline = Date.now() + 3000;
+      let raw = "";
+      while (Date.now() < deadline) {
+        const cap = await client.request("tools/call", {
+          name: "capture-pane",
+          arguments: { target: "mcp-codex-cs:0", lines: 100, mode: "raw" },
+        });
+        raw = cap.content?.[0]?.text || "";
+        if (raw.includes("context left") && raw.includes("? for shortcuts")) break;
+        await new Promise((r) => setTimeout(r, 150));
+      }
+      expect(raw).toContain("context left");
+    }
+
+    const res = await client.request("tools/call", {
+      name: "check-worker-status",
+      arguments: { target: "mcp-codex-cs:0" },
+    });
+    const data = JSON.parse(res.content?.[0]?.text || "{}");
+    expect(data.agent).toBe("codex");
+    expect(data.status).toBe("running");
+
+    await killTmuxSession("mcp-codex-cs");
+  });
+
+  test("check-worker-status reports exited for plain shell (no codex prompt)", async () => {
+    await client.request("tools/call", {
+      name: "create-project-session",
+      arguments: { project_name: "mcp-no-codex", path: "/home/ubuntu" },
+    });
+
+    // Just a plain shell with no codex markers
+    await client.request("tools/call", {
+      name: "send-worker-command",
+      arguments: { target: "mcp-no-codex:0", command: "echo 'just a shell'" },
+    });
+    await new Promise((r) => setTimeout(r, 500));
+
+    const res = await client.request("tools/call", {
+      name: "check-worker-status",
+      arguments: { target: "mcp-no-codex:0" },
+    });
+    const data = JSON.parse(res.content?.[0]?.text || "{}");
+    expect(data.agent).toBeNull();
+    expect(data.status).toBe("exited");
+
+    await killTmuxSession("mcp-no-codex");
+  });
+
+  test("filtered capture strips codex input prompt (› character)", async () => {
+    await client.request("tools/call", {
+      name: "create-project-session",
+      arguments: { project_name: "mcp-codex-filter", path: "/home/ubuntu" },
+    });
+
+    // Use node to print codex-style prompt markers. The command echo contains
+    // escaped "\u203a" (6 ASCII chars), while node outputs the actual › (U+203A)
+    // character. We check for the actual character to avoid false positives.
+    const cmd = [
+      "node -e",
+      "\"console.log('CODEX_TOP_CONTENT'); console.log(''); console.log('\\u203a Some suggestion'); console.log('  ' + String.fromCharCode(63) + ' for shortcuts                                    90' + String.fromCharCode(37) + ' context left')\"",
+    ].join(" ");
+
+    await client.request("tools/call", {
+      name: "send-worker-command",
+      arguments: { target: "mcp-codex-filter:0", command: cmd },
+    });
+
+    // Wait for output — check for actual › character (U+203A)
+    {
+      const deadline = Date.now() + 3000;
+      let raw = "";
+      while (Date.now() < deadline) {
+        const cap = await client.request("tools/call", {
+          name: "capture-pane",
+          arguments: { target: "mcp-codex-filter:0", lines: 100, mode: "raw" },
+        });
+        raw = cap.content?.[0]?.text || "";
+        if (raw.includes("\u203a") && raw.includes("CODEX_TOP_CONTENT")) break;
+        await new Promise((r) => setTimeout(r, 150));
+      }
+      expect(raw).toContain("\u203a");
+    }
+
+    // Filtered capture should strip the codex prompt line (starting with ›)
+    const filtered = await client.request("tools/call", {
+      name: "capture-pane",
+      arguments: { target: "mcp-codex-filter:0", lines: 100, mode: "filtered" },
+    });
+    const fText = filtered.content?.[0]?.text || "";
+    expect(fText).toContain("CODEX_TOP_CONTENT");
+    // The actual › character (U+203A) should be stripped from filtered output.
+    // Note: the command echo contains "\u203a" (ASCII escape), not the actual char.
+    expect(fText).not.toContain("\u203a");
+
+    // Raw should contain the actual › character
+    const raw = await client.request("tools/call", {
+      name: "capture-pane",
+      arguments: { target: "mcp-codex-filter:0", lines: 100, mode: "raw" },
+    });
+    const rText = raw.content?.[0]?.text || "";
+    expect(rText).toContain("CODEX_TOP_CONTENT");
+    expect(rText).toContain("\u203a");
+
+    await killTmuxSession("mcp-codex-filter");
+  });
+
+  // ---------------------------------------------------------------------------
   // start-worker cwd tests
   // ---------------------------------------------------------------------------
 
