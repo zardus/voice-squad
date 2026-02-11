@@ -27,6 +27,7 @@ body {
   padding: 6px 8px;
   background: #16213e;
   border-bottom: 1px solid #0f3460;
+  border-radius: 0;
   flex-shrink: 0;
   width: 100%;
   overflow: hidden;
@@ -51,13 +52,13 @@ body {
   line-height: 1;
   white-space: nowrap;
   text-align: center;
-  border-radius: 999px;
+  border-radius: 0;
   cursor: pointer;
   transition: color 0.15s, background-color 0.15s;
 }
 
 #tab-bar .tab + .tab {
-  box-shadow: -1px 0 0 0 rgba(127, 142, 163, 0.35);
+  border-left: 1px solid rgba(127, 142, 163, 0.35);
 }
 
 #tab-bar .tab.active {
