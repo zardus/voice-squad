@@ -35,6 +35,7 @@ let wantRecording = false; // true while user is holding the mic button
 let recordingStartTime = 0;
 let micStream = null;
 let autoScroll = true;
+let disconnectedFlashTimer = null;
 
 // Persistent audio element — unlocked on first user gesture so TTS can play later
 const ttsAudio = new Audio();
@@ -249,6 +250,24 @@ function sendText() {
   textInput.value = "";
 }
 
+function flashDisconnectedIndicator() {
+  transcriptionEl.textContent = "Disconnected";
+  transcriptionEl.className = "error";
+  voiceTranscriptionEl.textContent = "Disconnected";
+  voiceTranscriptionEl.className = "voice-transcription error";
+  if (disconnectedFlashTimer) clearTimeout(disconnectedFlashTimer);
+  disconnectedFlashTimer = setTimeout(() => {
+    if (transcriptionEl.textContent === "Disconnected") {
+      transcriptionEl.textContent = "";
+      transcriptionEl.className = "";
+    }
+    if (voiceTranscriptionEl.textContent === "Disconnected") {
+      voiceTranscriptionEl.textContent = "";
+      voiceTranscriptionEl.className = "voice-transcription";
+    }
+  }, 1200);
+}
+
 sendBtn.addEventListener("click", sendText);
 textInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") sendText();
@@ -257,6 +276,13 @@ textInput.addEventListener("keydown", (e) => {
 // Mic recording — uses pre-acquired stream for instant start
 function startRecording() {
   unlockAudio();
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    wantRecording = false;
+    playDing(false);
+    flashDisconnectedIndicator();
+    return;
+  }
+
   if (!micStream || !micStream.getTracks().some((t) => t.readyState === "live")) {
     // Stream missing or dead — (re)acquire, then start only if user is still holding
     micStream = null;
