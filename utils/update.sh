@@ -146,6 +146,12 @@ VOICE_PID=$(pgrep -f "node /opt/squad/voice/server.js" | head -1 || true)
 # shellcheck disable=SC1091
 if [ -f /home/ubuntu/env ]; then set -a; . /home/ubuntu/env; set +a; fi
 
+# Normalize legacy underscore-prefixed names to canonical process env names.
+# /home/ubuntu/env currently stores API keys as _OPENAI_API_KEY/_ANTHROPIC_API_KEY.
+OPENAI_API_KEY="${OPENAI_API_KEY:-${_OPENAI_API_KEY:-}}"
+ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-${_ANTHROPIC_API_KEY:-}}"
+VOICE_TOKEN="${VOICE_TOKEN:-${_VOICE_TOKEN:-}}"
+
 # If this script was spawned by the voice server (via /api/update), killing the
 # server closes the read end of our stdout pipe. The next echo would then get
 # SIGPIPE and kill the script before the new server starts. Redirect our output
@@ -182,22 +188,37 @@ if [ -n "$VOICE_PID" ]; then
     echo "    Voice server stopped."
 else
     echo "    No running voice server found — starting fresh."
-    _OAI_KEY="${_OPENAI_API_KEY:-${OPENAI_API_KEY:-}}"
-    _ANT_KEY="${_ANTHROPIC_API_KEY:-${ANTHROPIC_API_KEY:-}}"
-    _V_TOKEN="${VOICE_TOKEN:-}"
+    _OAI_KEY="${OPENAI_API_KEY:-${_OPENAI_API_KEY:-}}"
+    _ANT_KEY="${ANTHROPIC_API_KEY:-${_ANTHROPIC_API_KEY:-}}"
+    _V_TOKEN="${VOICE_TOKEN:-${_VOICE_TOKEN:-}}"
     _S_CAPTAIN="${SQUAD_CAPTAIN:-claude}"
 fi
 
 # Prefer /proc-extracted values when present; otherwise fall back to the env file.
-_OAI_KEY="${_OAI_KEY:-${_OPENAI_API_KEY:-${OPENAI_API_KEY:-}}}"
-_ANT_KEY="${_ANT_KEY:-${_ANTHROPIC_API_KEY:-${ANTHROPIC_API_KEY:-}}}"
-_V_TOKEN="${_V_TOKEN:-${VOICE_TOKEN:-}}"
+_OAI_KEY="${_OAI_KEY:-${OPENAI_API_KEY:-${_OPENAI_API_KEY:-}}}"
+_ANT_KEY="${_ANT_KEY:-${ANTHROPIC_API_KEY:-${_ANTHROPIC_API_KEY:-}}}"
+_V_TOKEN="${_V_TOKEN:-${VOICE_TOKEN:-${_VOICE_TOKEN:-}}}"
 _S_CAPTAIN="${_S_CAPTAIN:-${SQUAD_CAPTAIN:-claude}}"
 
 # Source the env file again immediately before spawning node (explicitly required
 # for env var propagation semantics).
 # shellcheck disable=SC1091
 if [ -f /home/ubuntu/env ]; then set -a; . /home/ubuntu/env; set +a; fi
+
+# Re-apply normalization after the final source step used by the restart launch.
+OPENAI_API_KEY="${OPENAI_API_KEY:-${_OPENAI_API_KEY:-}}"
+ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-${_ANTHROPIC_API_KEY:-}}"
+VOICE_TOKEN="${VOICE_TOKEN:-${_VOICE_TOKEN:-}}"
+
+# Required by /opt/squad/voice/server.js startup guard.
+if [ -z "${_OAI_KEY:-}" ]; then
+    echo "    ERROR: OPENAI_API_KEY is empty after env resolution."
+    exit 1
+fi
+if [ -z "${_V_TOKEN:-}" ]; then
+    echo "    ERROR: VOICE_TOKEN is empty after env resolution."
+    exit 1
+fi
 
 # Launch voice server with the same environment.
 # Output goes to the same log file that the tmux voice window tails.
