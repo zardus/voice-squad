@@ -35,6 +35,7 @@ body {
 #tab-bar .tab {
   position: relative;
   flex: 1 1 0;
+  width: 0;
   min-width: 0;
   padding: 8px 10px 9px;
   border: none;
@@ -53,14 +54,15 @@ body {
 }
 
 #tab-bar .tab + .tab {
-  border-top-left-radius: 0;
-  border-bottom-left-radius: 0;
+  border-top-left-radius: 999px;
+  border-bottom-left-radius: 999px;
 }
 
 #tab-bar .tab + .tab::after {
   content: "";
   position: absolute;
-  left: 0;
+  /* Center divider on the boundary so it doesn't look offset toward either tab. */
+  left: -0.5px;
   top: 6px;
   bottom: 6px;
   width: 1px;
