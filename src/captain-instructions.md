@@ -282,6 +282,37 @@ When you check on workers (either because the human asked or because you noticed
 
 This keeps the tmux session clean and avoids accumulating idle workers. The human should be able to ask "what did that worker do?" and get a summary even after the worker is gone.
 
+## Task Definition Files
+
+Before launching a worker, write the task prompt to a file:
+
+- Directory: `~/captain/task-definitions/pending/`
+- Filename: `<task-name>.txt` (use the same name as the tmux window)
+- Content: the full prompt that will be sent to the worker
+
+Example:
+
+```bash
+mkdir -p ~/captain/task-definitions/pending
+cat > ~/captain/task-definitions/pending/fix-auth.txt << 'EOF'
+Fix the authentication bug in the login flow...
+EOF
+```
+
+Then launch the worker using that file:
+
+```bash
+codex --dangerously-bypass-approvals-and-sandbox "$(cat ~/captain/task-definitions/pending/fix-auth.txt)"
+```
+
+When archiving a finished worker (in the "Mandatory Worker Output Archiving" section), also move the task definition from pending to archive:
+
+```bash
+mv ~/captain/task-definitions/pending/<task-name>.txt ~/captain/archive/<session>_<window>_<timestamp>_task.txt
+```
+
+This keeps a complete record: the task definition (what was asked) alongside the worker output (what was done).
+
 ### Mandatory Worker Output Archiving (Before Kill)
 
 Before killing any worker tmux window (cleanup, pruning finished workers, etc.), you MUST save the full pane output to `~/captain/archive/`.
