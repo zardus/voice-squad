@@ -36,14 +36,15 @@ test.describe("UI", () => {
   // ─── Tab bar ─────────────────────────────────────────────────
 
   test.describe("Tab bar", () => {
-    test("shows four tabs: Terminal, Screens, Summary, Voice", async ({ page }) => {
+    test("shows five tabs: Terminal, Screens, Summary, Completed, Voice", async ({ page }) => {
       await page.goto(pageUrl());
       const tabs = page.locator("#tab-bar .tab");
-      await expect(tabs).toHaveCount(4);
+      await expect(tabs).toHaveCount(5);
       await expect(tabs.nth(0)).toHaveText("Terminal");
       await expect(tabs.nth(1)).toHaveText("Screens");
       await expect(tabs.nth(2)).toHaveText("Summary");
-      await expect(tabs.nth(3)).toHaveText("Voice");
+      await expect(tabs.nth(3)).toHaveText("Completed");
+      await expect(tabs.nth(4)).toHaveText("Voice");
     });
 
     test("Terminal tab is active by default", async ({ page }) => {
@@ -421,6 +422,57 @@ test.describe("UI", () => {
         (el) => getComputedStyle(el).overflowY,
       );
       expect(overflow).toBe("auto");
+    });
+  });
+
+  // ─── Completed tab ──────────────────────────────────────────
+
+  test.describe("Completed tab", () => {
+    test("completed tab loads with header and refresh button", async ({ page }) => {
+      await page.goto(pageUrl());
+      await page.click('[data-tab="completed"]');
+
+      await expect(page.locator("#completed-tab-title")).toHaveText("completed tasks");
+      await expect(page.locator("#refresh-completed-btn")).toBeVisible();
+      await expect(page.locator("#completed-tab-content")).toBeVisible();
+    });
+
+    test("completed task accordion expands and collapses", async ({ page }) => {
+      await page.route("**/api/completed-tasks?**", async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            tasks: [
+              {
+                task_name: "v8-bridging-redo",
+                completed_at: "2026-02-11T09:43:00Z",
+                short_summary: "Refactored bridge and added tests.",
+                detailed_summary: "## Completed\n- Added API route\n```js\nconsole.log('ok')\n```",
+                task_definition: "### Original Task\n- Fix bridge",
+                worker_type: "codex",
+                session: "challenges",
+                window: "v8-redo",
+              },
+            ],
+          }),
+        });
+      });
+
+      await page.goto(pageUrl());
+      await page.click('[data-tab="completed"]');
+      await expect(page.locator(".completed-task-item")).toHaveCount(1);
+      await expect(page.locator(".completed-task-short")).toHaveText("Refactored bridge and added tests.");
+
+      const item = page.locator(".completed-task-item").first();
+      expect(await item.evaluate((el) => el.hasAttribute("open"))).toBe(false);
+
+      await page.locator(".completed-task-summary").first().click();
+      expect(await item.evaluate((el) => el.hasAttribute("open"))).toBe(true);
+      await expect(page.locator(".completed-task-detailed")).toContainText("Added API route");
+
+      await page.locator(".completed-task-summary").first().click();
+      expect(await item.evaluate((el) => el.hasAttribute("open"))).toBe(false);
     });
   });
 

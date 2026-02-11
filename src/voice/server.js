@@ -2,6 +2,7 @@ const express = require("express");
 const http = require("http");
 const https = require("https");
 const path = require("path");
+const fs = require("fs/promises");
 const { WebSocketServer, WebSocket } = require("ws");
 const { sendToCaptain, capturePaneOutputAsync } = require("./tmux-bridge");
 const { transcribe } = require("./stt");
@@ -11,6 +12,8 @@ const statusDaemon = require("./status-daemon");
 const PORT = process.env.VOICE_PORT || 3000;
 let CAPTAIN = process.env.SQUAD_CAPTAIN || "claude";
 const TOKEN = process.env.VOICE_TOKEN;
+const SUMMARIES_DIR =
+  process.env.SQUAD_SUMMARIES_DIR || "/home/ubuntu/captain/archive/summaries";
 
 const REQUIRED_ENV = { VOICE_TOKEN: TOKEN, OPENAI_API_KEY: process.env.OPENAI_API_KEY };
 const missing = Object.entries(REQUIRED_ENV).filter(([, v]) => !v).map(([k]) => k);
@@ -37,6 +40,105 @@ app.get("/api/status", (req, res) => {
   }
   const state = statusDaemon.getLastState();
   res.json(state || { sessions: [] });
+});
+
+function sanitizeTaskName(taskName) {
+  return String(taskName || "task")
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80) || "task";
+}
+
+function fileTimestampFromIso(isoLike) {
+  const dt = isoLike ? new Date(isoLike) : new Date();
+  const safeDate = Number.isFinite(dt.valueOf()) ? dt : new Date();
+  return safeDate.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+}
+
+function completedAtToEpoch(item) {
+  const t = Date.parse(item.completed_at || "");
+  return Number.isFinite(t) ? t : 0;
+}
+
+async function listCompletedTasks() {
+  await fs.mkdir(SUMMARIES_DIR, { recursive: true });
+  const entries = await fs.readdir(SUMMARIES_DIR, { withFileTypes: true });
+  const tasks = [];
+
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
+    const fullPath = path.join(SUMMARIES_DIR, entry.name);
+    try {
+      const raw = await fs.readFile(fullPath, "utf8");
+      const parsed = JSON.parse(raw);
+      tasks.push(parsed);
+    } catch (err) {
+      console.warn(`[completed-tasks] skipping ${entry.name}: ${err.message}`);
+    }
+  }
+
+  tasks.sort((a, b) => completedAtToEpoch(b) - completedAtToEpoch(a));
+  return tasks;
+}
+
+app.get("/api/completed-tasks", async (req, res) => {
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  if (url.searchParams.get("token") !== TOKEN) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  try {
+    const tasks = await listCompletedTasks();
+    res.json({ tasks });
+  } catch (err) {
+    console.error("[completed-tasks] GET error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/completed-tasks", async (req, res) => {
+  const { token, ...summary } = req.body || {};
+  if (token !== TOKEN) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  if (!summary || typeof summary !== "object") {
+    return res.status(400).json({ error: "Missing summary object" });
+  }
+  if (!summary.task_name || typeof summary.task_name !== "string" || !summary.task_name.trim()) {
+    return res.status(400).json({ error: "Missing or empty 'task_name'" });
+  }
+
+  const completedAt = summary.completed_at && typeof summary.completed_at === "string"
+    ? summary.completed_at
+    : new Date().toISOString();
+  const finalSummary = { ...summary, completed_at: completedAt };
+
+  try {
+    await fs.mkdir(SUMMARIES_DIR, { recursive: true });
+    const baseName = `${fileTimestampFromIso(finalSummary.completed_at)}_${sanitizeTaskName(finalSummary.task_name)}`;
+    let candidate = `${baseName}.json`;
+    let suffix = 1;
+    while (true) {
+      try {
+        await fs.access(path.join(SUMMARIES_DIR, candidate));
+        candidate = `${baseName}_${suffix}.json`;
+        suffix++;
+      } catch {
+        break;
+      }
+    }
+
+    await fs.writeFile(
+      path.join(SUMMARIES_DIR, candidate),
+      JSON.stringify(finalSummary, null, 2) + "\n",
+      "utf8"
+    );
+    res.status(201).json({ ok: true, file: candidate });
+  } catch (err) {
+    console.error("[completed-tasks] POST error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.post("/api/speak", async (req, res) => {

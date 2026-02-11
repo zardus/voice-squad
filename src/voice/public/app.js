@@ -20,6 +20,8 @@ const captainToolSelect = document.getElementById("captain-tool-select");
 const restartCaptainBtn = document.getElementById("restart-captain-btn");
 const voiceCaptainToolSelect = document.getElementById("voice-captain-tool-select");
 const voiceRestartCaptainBtn = document.getElementById("voice-restart-captain-btn");
+const completedTabContentEl = document.getElementById("completed-tab-content");
+const refreshCompletedBtn = document.getElementById("refresh-completed-btn");
 let lastTtsAudioData = null;
 let speakAudioQueue = []; // TTS audio received while mic is held down
 
@@ -741,6 +743,7 @@ tabs.forEach((tab) => {
     const wasVoice = document.getElementById("voice-view").classList.contains("active");
     const wasScreens = document.getElementById("screens-view").classList.contains("active");
     const wasSummary = document.getElementById("summary-view").classList.contains("active");
+    const wasCompleted = document.getElementById("completed-view").classList.contains("active");
     tabs.forEach((t) => t.classList.toggle("active", t === tab));
     tabContents.forEach((c) => {
       c.classList.toggle("active", c.id === target + "-view");
@@ -763,6 +766,7 @@ tabs.forEach((tab) => {
 
     // Summary tab: auto-refresh once on tab switch so the user sees fresh data.
     if (target === "summary" && !wasSummary) refreshSummary();
+    if (target === "completed" && !wasCompleted) refreshCompletedTasks();
   });
 });
 
@@ -876,14 +880,46 @@ async function refreshSummary() {
 
 function mdToHtml(md) {
   if (!md) return "";
-  const esc = md.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  const lines = esc.split("\n");
+  const lines = String(md).replace(/\r\n/g, "\n").split("\n");
   const out = [];
   let inUl = false;
+  let inCode = false;
+  let codeLines = [];
+
+  function closeUl() {
+    if (inUl) {
+      out.push("</ul>");
+      inUl = false;
+    }
+  }
+
+  function closeCode() {
+    if (inCode) {
+      out.push(`<pre class="md-code"><code>${escapeHtml(codeLines.join("\n"))}</code></pre>`);
+      inCode = false;
+      codeLines = [];
+    }
+  }
+
   for (const line of lines) {
+    if (line.trim().startsWith("```")) {
+      closeUl();
+      if (inCode) {
+        closeCode();
+      } else {
+        inCode = true;
+        codeLines = [];
+      }
+      continue;
+    }
+    if (inCode) {
+      codeLines.push(line);
+      continue;
+    }
+
     const headerMatch = line.match(/^(#{1,3})\s+(.+)$/);
     if (headerMatch) {
-      if (inUl) { out.push("</ul>"); inUl = false; }
+      closeUl();
       const tag = "h" + Math.min(headerMatch[1].length + 1, 4);
       out.push(`<${tag}>${inlineMd(headerMatch[2])}</${tag}>`);
       continue;
@@ -894,24 +930,141 @@ function mdToHtml(md) {
       out.push(`<li>${inlineMd(liMatch[1])}</li>`);
       continue;
     }
-    if (inUl) { out.push("</ul>"); inUl = false; }
+    closeUl();
     if (line.trim() === "") {
       out.push("<br>");
     } else {
       out.push(`<p>${inlineMd(line)}</p>`);
     }
   }
-  if (inUl) out.push("</ul>");
+  closeUl();
+  closeCode();
   return out.join("");
 }
 
 function inlineMd(s) {
-  return s
+  return escapeHtml(s)
     .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
     .replace(/`([^`]+)`/g, "<code>$1</code>");
 }
 
+function escapeHtml(s) {
+  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function formatCompletedAt(iso) {
+  const dt = new Date(iso || "");
+  if (!Number.isFinite(dt.valueOf())) return "unknown time";
+  return dt.toLocaleString([], {
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function renderCompletedTasks(tasks) {
+  if (!Array.isArray(tasks) || tasks.length === 0) {
+    completedTabContentEl.innerHTML = '<div class="completed-empty">No completed tasks yet.</div>';
+    return;
+  }
+
+  const list = document.createElement("div");
+  list.className = "completed-task-list";
+
+  for (const task of tasks) {
+    const item = document.createElement("details");
+    item.className = "completed-task-item";
+
+    const summary = document.createElement("summary");
+    summary.className = "completed-task-summary";
+
+    const heading = document.createElement("div");
+    heading.className = "completed-task-heading";
+    heading.textContent = `${task.task_name || "unnamed-task"} · ${formatCompletedAt(task.completed_at)}`;
+
+    const shortSummary = document.createElement("div");
+    shortSummary.className = "completed-task-short";
+    shortSummary.textContent = task.short_summary || "(No short summary)";
+
+    summary.appendChild(heading);
+    summary.appendChild(shortSummary);
+    item.appendChild(summary);
+
+    const body = document.createElement("div");
+    body.className = "completed-task-body";
+
+    const meta = document.createElement("div");
+    meta.className = "completed-task-meta";
+    const workerType = task.worker_type || "unknown";
+    const session = task.session || "unknown";
+    const windowName = task.window || "unknown";
+    meta.textContent = `Worker: ${workerType} · Session: ${session} · Window: ${windowName}`;
+    body.appendChild(meta);
+
+    if (task.detailed_summary) {
+      const detailed = document.createElement("div");
+      detailed.className = "completed-task-detailed";
+      detailed.innerHTML = mdToHtml(task.detailed_summary);
+      body.appendChild(detailed);
+    }
+
+    if (task.task_definition) {
+      const defDetails = document.createElement("details");
+      defDetails.className = "task-definition-details";
+      const defSummary = document.createElement("summary");
+      defSummary.textContent = "Task definition";
+      const defBody = document.createElement("div");
+      defBody.className = "task-definition-body";
+      defBody.innerHTML = mdToHtml(task.task_definition);
+      defDetails.appendChild(defSummary);
+      defDetails.appendChild(defBody);
+      body.appendChild(defDetails);
+    }
+
+    item.appendChild(body);
+    list.appendChild(item);
+  }
+
+  completedTabContentEl.innerHTML = "";
+  completedTabContentEl.appendChild(list);
+}
+
+async function refreshCompletedTasks() {
+  if (refreshCompletedBtn.disabled) return;
+
+  refreshCompletedBtn.disabled = true;
+  refreshCompletedBtn.textContent = "Loading...";
+  completedTabContentEl.innerHTML = '<div class="completed-loading">Loading completed tasks...</div>';
+
+  try {
+    const resp = await fetch(`/api/completed-tasks?token=${encodeURIComponent(token)}`);
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ error: "Request failed" }));
+      completedTabContentEl.innerHTML = '<div class="completed-error">Error: ' +
+        escapeHtml(err.error || "Request failed") + "</div>";
+      return;
+    }
+    const data = await resp.json();
+    renderCompletedTasks(data.tasks || []);
+  } catch (err) {
+    completedTabContentEl.innerHTML = '<div class="completed-error">Error: ' +
+      escapeHtml(err.message || "Request failed") + "</div>";
+  } finally {
+    refreshCompletedBtn.disabled = false;
+    refreshCompletedBtn.textContent = "Refresh";
+  }
+}
+
 refreshSummaryBtn.addEventListener("click", refreshSummary);
+refreshCompletedBtn.addEventListener("click", refreshCompletedTasks);
+
+setInterval(() => {
+  if (document.getElementById("completed-view").classList.contains("active")) {
+    refreshCompletedTasks();
+  }
+}, 30000);
 
 renderMessageHistorySelect();
 renderSpeakHistorySelect();

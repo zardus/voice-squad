@@ -4,10 +4,32 @@
  */
 const { test, expect } = require("@playwright/test");
 const { BASE_URL, TOKEN } = require("./helpers/config");
+const fs = require("fs/promises");
+const path = require("path");
+
+const SUMMARIES_DIR =
+  process.env.SQUAD_SUMMARIES_DIR || "/home/ubuntu/captain/archive/summaries";
+const TEST_PREFIX = `playwright-completed-${Date.now()}`;
 
 test.describe("API endpoints", () => {
   test.beforeAll(() => {
     if (!TOKEN) throw new Error("Cannot discover VOICE_TOKEN");
+  });
+
+  async function cleanupTestSummaries() {
+    await fs.mkdir(SUMMARIES_DIR, { recursive: true });
+    const entries = await fs.readdir(SUMMARIES_DIR);
+    await Promise.all(entries
+      .filter((name) => name.includes(TEST_PREFIX))
+      .map((name) => fs.unlink(path.join(SUMMARIES_DIR, name)).catch(() => {})));
+  }
+
+  test.beforeEach(async () => {
+    await cleanupTestSummaries();
+  });
+
+  test.afterEach(async () => {
+    await cleanupTestSummaries();
   });
 
   // --- GET / (static files) ---
@@ -179,5 +201,82 @@ test.describe("API endpoints", () => {
       body: JSON.stringify({ token: TOKEN, text: "   " }),
     });
     expect(resp.status).toBe(400);
+  });
+
+  // --- Completed Tasks API ---
+
+  test("GET /api/completed-tasks returns summaries sorted by completed_at desc", async () => {
+    const older = {
+      task_name: `${TEST_PREFIX}-older`,
+      completed_at: "2026-02-11T09:40:00Z",
+      short_summary: "Older summary",
+      detailed_summary: "Older details",
+      task_definition: "Older definition",
+      worker_type: "codex",
+      session: "alpha",
+      window: "w1",
+    };
+    const newer = {
+      task_name: `${TEST_PREFIX}-newer`,
+      completed_at: "2026-02-11T09:43:00Z",
+      short_summary: "Newer summary",
+      detailed_summary: "Newer details",
+      task_definition: "Newer definition",
+      worker_type: "codex",
+      session: "alpha",
+      window: "w2",
+    };
+
+    await fs.mkdir(SUMMARIES_DIR, { recursive: true });
+    await fs.writeFile(
+      path.join(SUMMARIES_DIR, `20260211T094000Z_${TEST_PREFIX}-older.json`),
+      JSON.stringify(older, null, 2)
+    );
+    await fs.writeFile(
+      path.join(SUMMARIES_DIR, `20260211T094300Z_${TEST_PREFIX}-newer.json`),
+      JSON.stringify(newer, null, 2)
+    );
+
+    const resp = await fetch(`${BASE_URL}/api/completed-tasks?token=${encodeURIComponent(TOKEN)}`);
+    expect(resp.status).toBe(200);
+    const json = await resp.json();
+    expect(Array.isArray(json.tasks)).toBe(true);
+
+    const ours = json.tasks.filter((task) => String(task.task_name || "").startsWith(TEST_PREFIX));
+    expect(ours).toHaveLength(2);
+    expect(ours[0].task_name).toBe(newer.task_name);
+    expect(ours[1].task_name).toBe(older.task_name);
+  });
+
+  test("POST /api/completed-tasks writes summary file", async () => {
+    const taskName = `${TEST_PREFIX}-post`;
+    const payload = {
+      token: TOKEN,
+      task_name: taskName,
+      completed_at: "2026-02-11T10:00:00Z",
+      short_summary: "One-line done summary",
+      detailed_summary: "## Done\n- Added tests",
+      task_definition: "Original task markdown",
+      worker_type: "codex",
+      session: "challenges",
+      window: "v8-redo",
+    };
+
+    const resp = await fetch(`${BASE_URL}/api/completed-tasks`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    expect(resp.status).toBe(201);
+    const json = await resp.json();
+    expect(json.ok).toBe(true);
+    expect(json.file).toContain(taskName);
+
+    const createdPath = path.join(SUMMARIES_DIR, json.file);
+    const raw = await fs.readFile(createdPath, "utf8");
+    const saved = JSON.parse(raw);
+    expect(saved.task_name).toBe(taskName);
+    expect(saved.completed_at).toBe(payload.completed_at);
+    expect(saved.short_summary).toBe(payload.short_summary);
   });
 });
