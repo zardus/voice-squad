@@ -22,35 +22,31 @@ body {
 #tab-bar {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 2px;
   padding: 6px 8px;
   background: #16213e;
   border-bottom: 1px solid #0f3460;
   flex-shrink: 0;
-  overflow-x: auto;
-  overflow-y: hidden;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: none;
-}
-
-#tab-bar::-webkit-scrollbar {
-  display: none;
+  width: 100%;
+  overflow: hidden;
 }
 
 #tab-bar .tab {
   position: relative;
-  flex: 0 0 auto;
-  min-width: 78px;
-  padding: 8px 12px 9px;
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 8px 10px 9px;
   border: none;
   background: transparent;
   color: #8893a8;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
   line-height: 1;
-  white-space: nowrap;
+  white-space: normal;
+  text-align: center;
   border-radius: 999px;
   cursor: pointer;
   transition: color 0.15s, background-color 0.15s;
@@ -82,7 +78,7 @@ body {
 
 #tab-bar .tab.active {
   color: #4ecca3;
-  background: rgba(78, 204, 163, 0.08);
+  background: transparent;
 }
 
 #tab-bar .tab.active::before {
