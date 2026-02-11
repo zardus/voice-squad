@@ -278,12 +278,44 @@ Signs a codex worker is TRULY dead:
 When you check on workers (either because the human asked or because you noticed), and a worker has clearly finished its task:
 
 1. Capture and summarize what the worker accomplished (commits made, files changed, key outcomes).
-2. Store that summary so you can report it to the human if asked.
+2. MANDATORY: record the completion for the Done tab via the voice server API.
 3. MANDATORY: archive the full worker pane output before killing the window. Never kill a worker window without archiving first.
 4. Kill the worker's tmux window to free resources.
 5. Do NOT wait for the human to ask you to clean up. Proactively shut down finished workers after summarizing their work.
 
 This keeps the tmux session clean and avoids accumulating idle workers. The human should be able to ask "what did that worker do?" and get a summary even after the worker is gone.
+
+### Mandatory Done Tab Completion Recording
+
+Every finished worker must create one completion record. The voice UI Done tab reads these records from `GET /api/completed-tasks`.
+
+Use this API call after summarizing a finished worker and before killing its tmux window:
+
+```bash
+curl -sS -X POST http://127.0.0.1:3000/api/completed-tasks \
+  -H 'Content-Type: application/json' \
+  -d "$(cat <<'JSON'
+{
+  "token": "'"$VOICE_TOKEN"'",
+  "task_name": "<short-task-name>",
+  "completed_at": "'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'",
+  "short_summary": "<1-2 sentence outcome>",
+  "detailed_summary": "<key changes, tests, commits>",
+  "worker_type": "<claude|codex>",
+  "session": "<tmux-session>",
+  "window": "<tmux-window>",
+  "task_definition": "<optional original task prompt>"
+}
+JSON
+)"
+```
+
+Rules:
+
+- `task_name` is required and must be non-empty.
+- Keep `short_summary` concise and spoken-language friendly.
+- Include test status and commit hashes in `detailed_summary` when available.
+- If the API call fails, retry once; do not skip completion recording.
 
 ## Task Definition Files
 
