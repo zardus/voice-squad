@@ -734,6 +734,35 @@ body {
   animation: voice-pulse 1s infinite;
 }
 
+/* Voice tab mic + history resend row */
+#voice-mic-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: min(94vw, 420px);
+}
+
+#voice-history-select {
+  flex: 1;
+  min-width: 0;
+  height: 44px;
+  padding: 0 10px;
+  border: 1px solid #0f3460;
+  border-radius: 8px;
+  background: #1a1a2e;
+  color: #c8c8d0;
+  font-size: 14px;
+  font-weight: 600;
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+#voice-history-select:focus {
+  border-color: #4ecca3;
+}
+
 @keyframes voice-pulse {
   0%, 100% { box-shadow: 0 0 0 0 rgba(233, 69, 96, 0.4); }
   50% { box-shadow: 0 0 0 20px rgba(233, 69, 96, 0); }

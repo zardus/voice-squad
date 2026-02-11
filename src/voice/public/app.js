@@ -12,6 +12,7 @@ const voiceReplayBtn = document.getElementById("voice-replay-btn");
 const voiceStatusBtn = document.getElementById("voice-status-btn");
 const voiceTranscriptionEl = document.getElementById("voice-transcription");
 const voiceInterruptBtn = document.getElementById("voice-interrupt-btn");
+const voiceHistorySelect = document.getElementById("voice-history-select");
 const interruptBtn = document.getElementById("interrupt-btn");
 const controlsEl = document.getElementById("controls");
 const captainToolSelect = document.getElementById("captain-tool-select");
@@ -131,6 +132,75 @@ requestAnimationFrame(renderLoop);
 
 const urlParams = new URLSearchParams(location.search);
 const token = urlParams.get("token") || "";
+const MESSAGE_HISTORY_KEY = "message_history";
+const MESSAGE_HISTORY_LIMIT = 20;
+const HISTORY_PREVIEW_MAX = 40;
+let messageHistory = [];
+
+function truncateHistoryPreview(text) {
+  return text.length > HISTORY_PREVIEW_MAX
+    ? text.slice(0, HISTORY_PREVIEW_MAX - 3) + "..."
+    : text;
+}
+
+function loadMessageHistory() {
+  try {
+    const raw = localStorage.getItem(MESSAGE_HISTORY_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return;
+    messageHistory = parsed
+      .filter((item) => typeof item === "string")
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .slice(0, MESSAGE_HISTORY_LIMIT);
+  } catch {
+    messageHistory = [];
+  }
+}
+
+function persistMessageHistory() {
+  try {
+    localStorage.setItem(MESSAGE_HISTORY_KEY, JSON.stringify(messageHistory));
+  } catch {}
+}
+
+function renderMessageHistorySelect() {
+  if (!voiceHistorySelect) return;
+  while (voiceHistorySelect.options.length > 1) {
+    voiceHistorySelect.remove(1);
+  }
+  for (const message of messageHistory) {
+    const option = document.createElement("option");
+    option.value = message;
+    option.textContent = truncateHistoryPreview(message);
+    option.title = message;
+    voiceHistorySelect.appendChild(option);
+  }
+  voiceHistorySelect.value = "";
+}
+
+function addMessageToHistory(text) {
+  const normalized = (text || "").trim();
+  if (!normalized) return;
+  if (messageHistory[0] === normalized) return;
+  messageHistory.unshift(normalized);
+  if (messageHistory.length > MESSAGE_HISTORY_LIMIT) {
+    messageHistory.length = MESSAGE_HISTORY_LIMIT;
+  }
+  persistMessageHistory();
+  renderMessageHistorySelect();
+}
+
+function sendTextCommand(text, opts = {}) {
+  const trimmed = (text || "").trim();
+  if (!trimmed || !ws || ws.readyState !== WebSocket.OPEN) return false;
+  ws.send(JSON.stringify({ type: "text_command", text: trimmed }));
+  if (opts.trackHistory !== false) addMessageToHistory(trimmed);
+  return true;
+}
+
+loadMessageHistory();
 
 terminalEl.addEventListener("scroll", () => {
   const { scrollTop, scrollHeight, clientHeight } = terminalEl;
@@ -197,6 +267,7 @@ function connect() {
         transcriptionEl.className = "";
         voiceTranscriptionEl.textContent = "Sent";
         voiceTranscriptionEl.className = "voice-transcription";
+        addMessageToHistory(msg.text);
         break;
 
       case "transcribing":
@@ -245,8 +316,8 @@ async function ensureMicStream() {
 function sendText() {
   unlockAudio();
   const text = textInput.value.trim();
-  if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
-  ws.send(JSON.stringify({ type: "text_command", text }));
+  if (!text) return;
+  if (!sendTextCommand(text)) return;
   textInput.value = "";
 }
 
@@ -272,6 +343,19 @@ sendBtn.addEventListener("click", sendText);
 textInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") sendText();
 });
+
+if (voiceHistorySelect) {
+  voiceHistorySelect.addEventListener("change", () => {
+    const text = voiceHistorySelect.value;
+    if (!text) return;
+    if (sendTextCommand(text)) {
+      playDing(true);
+    } else {
+      playDing(false);
+    }
+    voiceHistorySelect.value = "";
+  });
+}
 
 // Mic recording — uses pre-acquired stream for instant start
 function startRecording() {
@@ -455,8 +539,7 @@ voiceReplayBtn.addEventListener("click", () => {
 voiceStatusBtn.addEventListener("click", () => {
   audioUnlocked = true; // prevent document click handler from overwriting src
   playDing(true);
-  if (!ws || ws.readyState !== WebSocket.OPEN) return;
-  ws.send(JSON.stringify({ type: "text_command", text: "Give me a status update on all the tasks" }));
+  sendTextCommand("Give me a status update on all the tasks");
 });
 
 // Unlock audio + acquire mic on user interaction.
@@ -475,8 +558,7 @@ document.addEventListener("click", onUserGesture);
 
 // Status button — ask captain for a task status update
 updateBtn.addEventListener("click", () => {
-  if (!ws || ws.readyState !== WebSocket.OPEN) return;
-  ws.send(JSON.stringify({ type: "text_command", text: "Give me a status update on all the tasks" }));
+  sendTextCommand("Give me a status update on all the tasks");
 });
 
 // Interrupt — send Ctrl+C to captain
@@ -738,4 +820,5 @@ function inlineMd(s) {
 
 refreshSummaryBtn.addEventListener("click", refreshSummary);
 
+renderMessageHistorySelect();
 connect();
