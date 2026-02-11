@@ -704,6 +704,35 @@ body {
   transform: scale(1.08);
 }
 
+/* Voice tab replay + output history row */
+#voice-replay-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: min(94vw, 420px);
+}
+
+#voice-output-history-select {
+  flex: 1;
+  min-width: 0;
+  height: 44px;
+  padding: 0 10px;
+  border: 1px solid #0f3460;
+  border-radius: 8px;
+  background: #1a1a2e;
+  color: #c8c8d0;
+  font-size: 14px;
+  font-weight: 600;
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+#voice-output-history-select:focus {
+  border-color: #a78bfa;
+}
+
 #voice-mic-btn {
   width: 140px;
   height: 140px;

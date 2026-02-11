@@ -92,11 +92,16 @@
             </svg>
           </button>
         </div>
-        <button id="voice-replay-btn" title="Replay last response" disabled>
-          <svg viewBox="0 0 24 24" width="64" height="64" fill="currentColor">
-            <polygon points="8,5 19,12 8,19"/>
-          </svg>
-        </button>
+        <div id="voice-replay-row">
+          <button id="voice-replay-btn" title="Replay last response" disabled>
+            <svg viewBox="0 0 24 24" width="64" height="64" fill="currentColor">
+              <polygon points="8,5 19,12 8,19"/>
+            </svg>
+          </button>
+          <select id="voice-output-history-select" aria-label="Replay previous voice summary">
+            <option value="" selected disabled>Replay...</option>
+          </select>
+        </div>
         <div id="voice-mic-row">
           <button id="voice-mic-btn" title="Hold to speak">
             <svg viewBox="0 0 24 24" width="64" height="64" fill="currentColor">

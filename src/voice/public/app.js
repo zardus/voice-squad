@@ -13,6 +13,7 @@ const voiceStatusBtn = document.getElementById("voice-status-btn");
 const voiceTranscriptionEl = document.getElementById("voice-transcription");
 const voiceInterruptBtn = document.getElementById("voice-interrupt-btn");
 const voiceHistorySelect = document.getElementById("voice-history-select");
+const voiceOutputHistorySelect = document.getElementById("voice-output-history-select");
 const interruptBtn = document.getElementById("interrupt-btn");
 const controlsEl = document.getElementById("controls");
 const captainToolSelect = document.getElementById("captain-tool-select");
@@ -133,9 +134,12 @@ requestAnimationFrame(renderLoop);
 const urlParams = new URLSearchParams(location.search);
 const token = urlParams.get("token") || "";
 const MESSAGE_HISTORY_KEY = "message_history";
+const SPEAK_HISTORY_KEY = "speak_history";
 const MESSAGE_HISTORY_LIMIT = 20;
+const SPEAK_HISTORY_LIMIT = 20;
 const HISTORY_PREVIEW_MAX = 40;
 let messageHistory = [];
+let speakHistory = [];
 
 function truncateHistoryPreview(text) {
   return text.length > HISTORY_PREVIEW_MAX
@@ -200,7 +204,72 @@ function sendTextCommand(text, opts = {}) {
   return true;
 }
 
+function loadSpeakHistory() {
+  try {
+    const raw = localStorage.getItem(SPEAK_HISTORY_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return;
+    speakHistory = parsed
+      .filter((item) => typeof item === "string")
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .slice(0, SPEAK_HISTORY_LIMIT);
+  } catch {
+    speakHistory = [];
+  }
+}
+
+function persistSpeakHistory() {
+  try {
+    localStorage.setItem(SPEAK_HISTORY_KEY, JSON.stringify(speakHistory));
+  } catch {}
+}
+
+function renderSpeakHistorySelect() {
+  if (!voiceOutputHistorySelect) return;
+  while (voiceOutputHistorySelect.options.length > 1) {
+    voiceOutputHistorySelect.remove(1);
+  }
+  for (const message of speakHistory) {
+    const option = document.createElement("option");
+    option.value = message;
+    option.textContent = truncateHistoryPreview(message);
+    option.title = message;
+    voiceOutputHistorySelect.appendChild(option);
+  }
+  voiceOutputHistorySelect.value = "";
+}
+
+function addSpeakToHistory(text) {
+  const normalized = (text || "").trim();
+  if (!normalized) return;
+  if (speakHistory[0] === normalized) return;
+  speakHistory.unshift(normalized);
+  if (speakHistory.length > SPEAK_HISTORY_LIMIT) {
+    speakHistory.length = SPEAK_HISTORY_LIMIT;
+  }
+  persistSpeakHistory();
+  renderSpeakHistorySelect();
+}
+
+async function requestSpeak(text) {
+  const trimmed = (text || "").trim();
+  if (!trimmed) return false;
+  try {
+    const resp = await fetch("/api/speak", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token, text: trimmed }),
+    });
+    return resp.ok;
+  } catch {
+    return false;
+  }
+}
+
 loadMessageHistory();
+loadSpeakHistory();
 
 terminalEl.addEventListener("scroll", () => {
   const { scrollTop, scrollHeight, clientHeight } = terminalEl;
@@ -259,6 +328,7 @@ function connect() {
       case "speak_text":
         if (msg.text) {
           summaryEl.textContent = msg.text;
+          addSpeakToHistory(msg.text);
         }
         break;
 
@@ -354,6 +424,16 @@ if (voiceHistorySelect) {
       playDing(false);
     }
     voiceHistorySelect.value = "";
+  });
+}
+
+if (voiceOutputHistorySelect) {
+  voiceOutputHistorySelect.addEventListener("change", async () => {
+    const text = voiceOutputHistorySelect.value;
+    if (!text) return;
+    const ok = await requestSpeak(text);
+    playDing(ok);
+    voiceOutputHistorySelect.value = "";
   });
 }
 
@@ -821,4 +901,5 @@ function inlineMd(s) {
 refreshSummaryBtn.addEventListener("click", refreshSummary);
 
 renderMessageHistorySelect();
+renderSpeakHistorySelect();
 connect();
