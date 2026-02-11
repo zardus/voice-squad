@@ -413,6 +413,13 @@ function showTranscribingIndicator() {
   voiceTranscriptionEl.className = "voice-transcription transcribing";
 }
 
+function showUploadingIndicator() {
+  transcriptionEl.textContent = "Uploading...";
+  transcriptionEl.className = "transcribing";
+  voiceTranscriptionEl.textContent = "Uploading...";
+  voiceTranscriptionEl.className = "voice-transcription transcribing";
+}
+
 sendBtn.addEventListener("click", sendText);
 textInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") sendText();
@@ -493,8 +500,8 @@ function startRecording() {
       return;
     }
 
-    // Show immediate feedback while audio uploads and server-side STT runs.
-    showTranscribingIndicator();
+    // Show upload feedback first; switch to "Transcribing..." when server confirms STT started.
+    showUploadingIndicator();
     playDing(true);
     ws.send(JSON.stringify({ type: "audio_start", mimeType }));
     for (const chunk of recordedChunks) {
