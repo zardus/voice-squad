@@ -187,6 +187,8 @@ app.post("/api/interrupt", (req, res) => {
   }
 });
 
+let restartInProgress = false;
+
 app.post("/api/restart-captain", async (req, res) => {
   const { token, tool } = req.body || {};
   if (token !== TOKEN) {
@@ -195,8 +197,12 @@ app.post("/api/restart-captain", async (req, res) => {
   if (tool !== "claude" && tool !== "codex") {
     return res.status(400).json({ error: "tool must be 'claude' or 'codex'" });
   }
+  if (restartInProgress) {
+    return res.status(409).json({ error: "A restart is already in progress" });
+  }
 
   const { exec } = require("child_process");
+  restartInProgress = true;
 
   console.log(`[restart] launching restart-captain.sh ${tool}...`);
   try {
@@ -221,7 +227,17 @@ app.post("/api/restart-captain", async (req, res) => {
   } catch (err) {
     console.error(`[restart] restart-captain.sh failed: ${err.message}`);
     res.status(500).json({ error: err.message });
+  } finally {
+    restartInProgress = false;
   }
+});
+
+app.get("/api/restart-status", (req, res) => {
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  if (url.searchParams.get("token") !== TOKEN) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  res.json({ restartInProgress, captain: CAPTAIN });
 });
 
 const HAIKU_PROMPT =

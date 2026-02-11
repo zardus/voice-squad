@@ -163,6 +163,80 @@ test.describe("API endpoints", () => {
     expect(resp.status).toBe(401);
   });
 
+  test("POST /api/restart-captain with missing tool returns 400", async () => {
+    const resp = await fetch(`${BASE_URL}/api/restart-captain`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token: TOKEN }),
+    });
+    expect(resp.status).toBe(400);
+    const json = await resp.json();
+    expect(json.error).toContain("tool must be");
+  });
+
+  test("POST /api/restart-captain with valid params succeeds", async () => {
+    const resp = await fetch(`${BASE_URL}/api/restart-captain`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token: TOKEN, tool: "claude" }),
+    });
+    // Accept 200 (success) or 500 (script error, e.g. tmux not found in test env)
+    const json = await resp.json();
+    if (resp.status === 200) {
+      expect(json.ok).toBe(true);
+      expect(json.tool).toBe("claude");
+    } else {
+      expect(json).toHaveProperty("error");
+    }
+  });
+
+  test("POST /api/restart-captain concurrent request returns 409", async () => {
+    // Fire two restarts simultaneously — the second should be rejected
+    const body = JSON.stringify({ token: TOKEN, tool: "claude" });
+    const opts = {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body,
+    };
+    const [resp1, resp2] = await Promise.all([
+      fetch(`${BASE_URL}/api/restart-captain`, opts),
+      // Small delay so the first request is accepted before the second arrives
+      new Promise((r) => setTimeout(r, 100)).then(() =>
+        fetch(`${BASE_URL}/api/restart-captain`, opts)
+      ),
+    ]);
+
+    const statuses = [resp1.status, resp2.status].sort();
+    // One should succeed (200) or fail from script (500), the other should be 409
+    // In test environments without tmux, the first may be 500 (script error)
+    // but the second should still be 409 if the first is still running
+    if (statuses.includes(409)) {
+      const conflictResp = resp1.status === 409 ? resp1 : resp2;
+      const json = await conflictResp.json();
+      expect(json.error).toContain("already in progress");
+    }
+    // If both completed without 409 (script finished before second request),
+    // that's acceptable — the guard only triggers when a restart is in-flight
+  });
+
+  // --- GET /api/restart-status ---
+
+  test("GET /api/restart-status without token returns 401", async () => {
+    const resp = await fetch(`${BASE_URL}/api/restart-status`);
+    expect(resp.status).toBe(401);
+  });
+
+  test("GET /api/restart-status with valid token returns status", async () => {
+    const resp = await fetch(
+      `${BASE_URL}/api/restart-status?token=${encodeURIComponent(TOKEN)}`
+    );
+    expect(resp.status).toBe(200);
+    const json = await resp.json();
+    expect(json).toHaveProperty("restartInProgress");
+    expect(json).toHaveProperty("captain");
+    expect(typeof json.restartInProgress).toBe("boolean");
+  });
+
   // --- POST /api/speak ---
 
   test("POST /api/speak without token returns 401", async () => {

@@ -721,20 +721,36 @@ async function restartCaptain() {
   const tool = captainToolSelect.value;
   const btns = [restartCaptainBtn, voiceRestartCaptainBtn];
   btns.forEach((b) => { b.disabled = true; b.textContent = "Restarting..."; });
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 90000);
+
   try {
     const resp = await fetch("/api/restart-captain", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ token, tool }),
+      signal: controller.signal,
     });
+    clearTimeout(timeout);
     if (resp.ok) {
       playDing(true);
       statusEl.textContent = tool;
+      summaryEl.textContent = "Captain restarted (" + tool + ")";
     } else {
+      const data = await resp.json().catch(() => ({}));
+      const errMsg = data.error || "Restart failed (HTTP " + resp.status + ")";
       playDing(false);
+      summaryEl.textContent = "Restart error: " + errMsg;
     }
-  } catch {
+  } catch (err) {
+    clearTimeout(timeout);
     playDing(false);
+    if (err.name === "AbortError") {
+      summaryEl.textContent = "Restart timed out — captain may still be restarting";
+    } else {
+      summaryEl.textContent = "Restart failed: " + (err.message || "network error");
+    }
   } finally {
     restartCaptainBtn.textContent = "Restart";
     voiceRestartCaptainBtn.textContent = "Restart Captain";

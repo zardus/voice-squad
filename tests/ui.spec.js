@@ -564,6 +564,98 @@ test.describe("UI", () => {
       expect(msg.text).toBe("test-ping");
     });
 
+    test("restart button sends POST /api/restart-captain with correct body", async ({ page }) => {
+      await page.goto(pageUrl());
+      await expect(page.locator("#status")).toHaveClass(/connected/, { timeout: 5000 });
+
+      const [request] = await Promise.all([
+        page.waitForRequest((req) => req.url().includes("/api/restart-captain")),
+        page.click("#restart-captain-btn"),
+      ]);
+
+      expect(request.method()).toBe("POST");
+      const body = request.postDataJSON();
+      expect(body.token).toBe(TOKEN);
+      expect(["claude", "codex"]).toContain(body.tool);
+    });
+
+    test("restart button shows 'Restarting...' while in progress", async ({ page }) => {
+      // Intercept the restart API to add a delay so we can check the button text
+      await page.route("**/api/restart-captain", async (route) => {
+        await new Promise((r) => setTimeout(r, 500));
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ ok: true, tool: "claude" }),
+        });
+      });
+
+      await page.goto(pageUrl());
+      await expect(page.locator("#status")).toHaveClass(/connected/, { timeout: 5000 });
+
+      // Click restart, then immediately check the button text
+      page.click("#restart-captain-btn"); // don't await — we need to check mid-flight
+      await expect(page.locator("#restart-captain-btn")).toHaveText("Restarting...");
+      await expect(page.locator("#restart-captain-btn")).toBeDisabled();
+
+      // Wait for it to finish and re-enable
+      await expect(page.locator("#restart-captain-btn")).toHaveText("Restart", { timeout: 5000 });
+      await expect(page.locator("#restart-captain-btn")).toBeEnabled();
+    });
+
+    test("restart button shows error message on failure", async ({ page }) => {
+      await page.route("**/api/restart-captain", async (route) => {
+        await route.fulfill({
+          status: 500,
+          contentType: "application/json",
+          body: JSON.stringify({ error: "tmux session not found" }),
+        });
+      });
+
+      await page.goto(pageUrl());
+      await expect(page.locator("#status")).toHaveClass(/connected/, { timeout: 5000 });
+
+      await page.click("#restart-captain-btn");
+
+      // Should show the error in the summary area
+      await expect(page.locator("#summary")).toContainText("tmux session not found", { timeout: 5000 });
+      // Button should be re-enabled
+      await expect(page.locator("#restart-captain-btn")).toBeEnabled();
+    });
+
+    test("voice restart button sends POST /api/restart-captain", async ({ page }) => {
+      await page.goto(pageUrl());
+      await expect(page.locator("#status")).toHaveClass(/connected/, { timeout: 5000 });
+      await page.click('[data-tab="voice"]');
+
+      const [request] = await Promise.all([
+        page.waitForRequest((req) => req.url().includes("/api/restart-captain")),
+        page.click("#voice-restart-captain-btn"),
+      ]);
+
+      expect(request.method()).toBe("POST");
+      const body = request.postDataJSON();
+      expect(body.token).toBe(TOKEN);
+      expect(["claude", "codex"]).toContain(body.tool);
+    });
+
+    test("restart button shows success in summary", async ({ page }) => {
+      await page.route("**/api/restart-captain", async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ ok: true, tool: "claude" }),
+        });
+      });
+
+      await page.goto(pageUrl());
+      await expect(page.locator("#status")).toHaveClass(/connected/, { timeout: 5000 });
+
+      await page.click("#restart-captain-btn");
+
+      await expect(page.locator("#summary")).toContainText("Captain restarted", { timeout: 5000 });
+    });
+
     test("Enter key in text input sends command", async ({ page }) => {
       await page.goto(pageUrl());
       await expect(page.locator("#status")).toHaveClass(/connected/, { timeout: 5000 });

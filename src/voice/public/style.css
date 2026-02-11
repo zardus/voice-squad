@@ -887,6 +887,8 @@ body {
   justify-content: center;
   background: #0d0d1a;
   gap: 24px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 #voice-top-row {
