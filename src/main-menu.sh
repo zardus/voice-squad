@@ -149,7 +149,7 @@ restart_voice_server() {
   ANTHROPIC_API_KEY="${_ant}" \
   VOICE_TOKEN="${_tok}" \
   SQUAD_CAPTAIN="${_cap}" \
-    node /opt/squad/voice/server.js > /tmp/voice-server.log 2>&1 &
+    nohup node /opt/squad/voice/server.js > /tmp/voice-server.log 2>&1 &
   new_pid="$!"
 
   sleep 1
