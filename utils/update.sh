@@ -24,6 +24,19 @@
 
 set -euo pipefail
 
+# Find the real voice server process without matching codex processes whose
+# command lines may contain "server.js" in prompt text.
+find_voice_pid() {
+    ps -eo pid=,args= | awk '
+        $2 == "node" && $NF ~ /(^|\/)server\.js$/ {
+            if ($NF == "server.js" || $NF == "/opt/squad/voice/server.js") {
+                print $1;
+                exit;
+            }
+        }
+    '
+}
+
 # ---------------------------------------------------------------------------
 # Parse flags
 # ---------------------------------------------------------------------------
@@ -139,7 +152,7 @@ fi
 echo "==> Restarting voice server..."
 
 # Find the running voice server PID (if any)
-VOICE_PID=$(pgrep -f "node /opt/squad/voice/server.js" | head -1 || true)
+VOICE_PID="$(find_voice_pid || true)"
 
 # Always source the env file so restarts don't depend on reading /proc/<pid>/environ
 # (which may be unreadable if the old server runs under a different UID).

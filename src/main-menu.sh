@@ -30,6 +30,17 @@ have_captain_tmux() {
   tmux has-session -t captain 2>/dev/null
 }
 
+find_voice_pid() {
+  ps -eo pid=,args= | awk '
+    $2 == "node" && $NF ~ /(^|\/)server\.js$/ {
+      if ($NF == "server.js" || $NF == "/opt/squad/voice/server.js") {
+        print $1;
+        exit;
+      }
+    }
+  '
+}
+
 show_web_ui_qr() {
   local url
   url=""
@@ -91,7 +102,7 @@ run_interactive() {
 restart_voice_server() {
   local voice_pid proc_env _oai _ant _tok _cap new_pid
 
-  voice_pid="$(pgrep -f "node /opt/squad/voice/server.js" | head -1 || true)"
+  voice_pid="$(find_voice_pid || true)"
 
   if [[ -n "${voice_pid}" ]] && [[ -r "/proc/${voice_pid}/environ" ]]; then
     proc_env="$(tr '\0' '\n' <"/proc/${voice_pid}/environ" 2>/dev/null || true)"
@@ -103,7 +114,7 @@ restart_voice_server() {
     # Best-effort fallbacks (entrypoint sources /home/ubuntu/env).
     _oai="${OPENAI_API_KEY:-${_OPENAI_API_KEY:-}}"
     _ant="${ANTHROPIC_API_KEY:-${_ANTHROPIC_API_KEY:-}}"
-    _tok="${VOICE_TOKEN:-}"
+    _tok="${VOICE_TOKEN:-${_VOICE_TOKEN:-}}"
     _cap="${SQUAD_CAPTAIN:-claude}"
   fi
 
@@ -198,7 +209,7 @@ run_update_script_if_present() {
 
 status_line() {
   local voice_pid cloud_pid cap="?"
-  voice_pid="$(pgrep -f "node /opt/squad/voice/server.js" | head -1 || true)"
+  voice_pid="$(find_voice_pid || true)"
   cloud_pid="$(pgrep -f "cloudflared tunnel --url http://localhost:3000" | head -1 || true)"
   [[ -n "${SQUAD_CAPTAIN:-}" ]] && cap="${SQUAD_CAPTAIN}"
 
