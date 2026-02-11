@@ -44,10 +44,6 @@ while true; do
         if [[ "$http_code" == "200" ]]; then
             if (( voice_server_was_down == 1 )); then
                 log "HEALTH OK: Voice server recovered at $check_timestamp (url=$VOICE_SERVER_URL)"
-                tmux send-keys -t "$CAPTAIN_PANE" \
-                    'HEALTH OK: Voice server is back up.' 2>/dev/null || true
-                sleep 0.5
-                tmux send-keys -t "$CAPTAIN_PANE" Enter 2>/dev/null || true
                 voice_server_was_down=0
                 voice_last_alert_time=0
             fi
