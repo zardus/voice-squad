@@ -46,7 +46,7 @@ fi
 
 # Start voice server with API keys inline (not exported, so captain CLIs don't see them)
 OPENAI_API_KEY="$_OPENAI_API_KEY" ANTHROPIC_API_KEY="$_ANTHROPIC_API_KEY" \
-    node /opt/squad/voice/server.js > /tmp/voice-server.log 2>&1 &
+    setsid node /opt/squad/voice/server.js > /tmp/voice-server.log 2>&1 &
 VOICE_PID=$!
 
 # Wait for voice server to be listening before starting the tunnel

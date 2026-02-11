@@ -300,16 +300,21 @@ OPENAI_API_KEY="${_OAI_KEY}" \
 ANTHROPIC_API_KEY="${_ANT_KEY}" \
 VOICE_TOKEN="${_V_TOKEN}" \
 SQUAD_CAPTAIN="${_S_CAPTAIN}" \
-    nohup node /opt/squad/voice/server.js > /tmp/voice-server.log 2>&1 &
+    setsid node /opt/squad/voice/server.js > /tmp/voice-server.log 2>&1 &
 
 NEW_PID=$!
 
-# Quick health check — give it a second to initialize
-sleep 1
-if kill -0 "$NEW_PID" 2>/dev/null; then
-    echo "    Voice server running (PID $NEW_PID)."
-else
-    echo "    ERROR: Voice server failed to start! Check /tmp/voice-server.log:"
+# Wait up to 10s for the server to be listening.
+for i in $(seq 1 20); do
+    if curl -s -o /dev/null http://localhost:3000/; then
+        echo "    Voice server running and listening on :3000 (PID $NEW_PID)."
+        break
+    fi
+    sleep 0.5
+done
+
+if ! curl -s -o /dev/null http://localhost:3000/; then
+    echo "    ERROR: Voice server not responding after 10s! Check /tmp/voice-server.log:"
     tail -10 /tmp/voice-server.log 2>/dev/null || true
     exit 1
 fi
