@@ -727,8 +727,18 @@ voiceRestartCaptainBtn.addEventListener("click", restartCaptain);
 // --- Tab switching ---
 const tabs = document.querySelectorAll("#tab-bar .tab");
 const tabContents = document.querySelectorAll(".tab-content");
+const tabBarEl = document.getElementById("tab-bar");
 
 let screensTabActive = false;
+
+function scrollActiveTabIntoView(tab, smooth = false) {
+  if (!tabBarEl || !tab) return;
+  tab.scrollIntoView({
+    block: "nearest",
+    inline: "center",
+    behavior: smooth ? "smooth" : "auto",
+  });
+}
 
 function sendScreensTabState(active) {
   screensTabActive = active;
@@ -740,11 +750,13 @@ function sendScreensTabState(active) {
 tabs.forEach((tab) => {
   tab.addEventListener("click", () => {
     const target = tab.dataset.tab;
+    const smoothScroll = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const wasVoice = document.getElementById("voice-view").classList.contains("active");
     const wasScreens = document.getElementById("screens-view").classList.contains("active");
     const wasSummary = document.getElementById("summary-view").classList.contains("active");
     const wasCompleted = document.getElementById("completed-view").classList.contains("active");
     tabs.forEach((t) => t.classList.toggle("active", t === tab));
+    scrollActiveTabIntoView(tab, smoothScroll);
     tabContents.forEach((c) => {
       c.classList.toggle("active", c.id === target + "-view");
     });
@@ -769,6 +781,8 @@ tabs.forEach((tab) => {
     if (target === "completed" && !wasCompleted) refreshCompletedTasks();
   });
 });
+
+scrollActiveTabIntoView(document.querySelector("#tab-bar .tab.active"));
 
 // --- Screens tab (live streaming) ---
 const statusTimeEl = document.getElementById("status-time");

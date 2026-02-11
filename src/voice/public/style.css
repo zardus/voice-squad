@@ -21,33 +21,86 @@ body {
 /* Tab bar */
 #tab-bar {
   display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 8px;
   background: #16213e;
   border-bottom: 1px solid #0f3460;
   flex-shrink: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+#tab-bar::-webkit-scrollbar {
+  display: none;
 }
 
 #tab-bar .tab {
-  flex: 1;
-  padding: 10px 0;
+  position: relative;
+  flex: 0 0 auto;
+  min-width: 78px;
+  padding: 8px 12px 9px;
   border: none;
   background: transparent;
-  color: #777;
-  font-size: 13px;
+  color: #8893a8;
+  font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 1px;
+  letter-spacing: 0.5px;
+  line-height: 1;
+  white-space: nowrap;
+  border-radius: 999px;
   cursor: pointer;
-  transition: all 0.15s;
-  border-bottom: 2px solid transparent;
+  transition: color 0.15s, background-color 0.15s;
+}
+
+#tab-bar .tab:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  right: -1px;
+  top: 24%;
+  width: 1px;
+  height: 52%;
+  background: rgba(127, 142, 163, 0.35);
+}
+
+#tab-bar .tab::before {
+  content: "";
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 3px;
+  height: 2px;
+  border-radius: 999px;
+  background: #4ecca3;
+  opacity: 0;
+  transform: scaleX(0.5);
+  transition: opacity 0.15s, transform 0.15s;
 }
 
 #tab-bar .tab.active {
   color: #4ecca3;
-  border-bottom-color: #4ecca3;
+  background: rgba(78, 204, 163, 0.08);
+}
+
+#tab-bar .tab.active::before {
+  opacity: 1;
+  transform: scaleX(1);
+}
+
+#tab-bar .tab.active::after {
+  opacity: 0;
 }
 
 #tab-bar .tab:active {
   background: rgba(78, 204, 163, 0.1);
+}
+
+#tab-bar .tab:focus-visible {
+  outline: 1px solid #4ecca3;
+  outline-offset: -1px;
 }
 
 /* Tab content */
