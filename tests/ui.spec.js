@@ -36,14 +36,14 @@ test.describe("UI", () => {
   // ─── Tab bar ─────────────────────────────────────────────────
 
   test.describe("Tab bar", () => {
-    test("shows five tabs: Terminal, Screens, Summary, Completed, Voice", async ({ page }) => {
+    test("shows five tabs: Terminal, Screens, Summary, Done, Voice", async ({ page }) => {
       await page.goto(pageUrl());
       const tabs = page.locator("#tab-bar .tab");
       await expect(tabs).toHaveCount(5);
       await expect(tabs.nth(0)).toHaveText("Terminal");
       await expect(tabs.nth(1)).toHaveText("Screens");
       await expect(tabs.nth(2)).toHaveText("Summary");
-      await expect(tabs.nth(3)).toHaveText("Completed");
+      await expect(tabs.nth(3)).toHaveText("Done");
       await expect(tabs.nth(4)).toHaveText("Voice");
     });
 
