@@ -36,7 +36,6 @@ body {
   position: relative;
   flex: 1 1 0;
   min-width: 0;
-  width: 0;
   padding: 8px 10px 9px;
   border: none;
   background: transparent;
@@ -54,9 +53,19 @@ body {
 }
 
 #tab-bar .tab + .tab {
-  border-left: 1px solid rgba(127, 142, 163, 0.35);
   border-top-left-radius: 0;
   border-bottom-left-radius: 0;
+}
+
+#tab-bar .tab + .tab::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 1px;
+  background: rgba(127, 142, 163, 0.35);
+  pointer-events: none;
 }
 
 #tab-bar .tab::before {
