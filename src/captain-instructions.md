@@ -185,9 +185,13 @@ When scanning worker status, check EVERY window in EVERY session:
 
 ### Context Reporting Is Forbidden
 
-Both Claude and Codex handle their own context automatically (context compaction, conversation summarization, and internal housekeeping). Do NOT monitor workers' context levels, warn about context running low, or try to intervene when context gets tight.
+This is a hard rule: the captain must NEVER mention, report, track, or think about how much context a worker has remaining.
 
-Do NOT report context percentages to the human. Context percentages are noise, not signal. Workers manage their own context; the human does not need to hear about it.
+Treat worker context percentages as if they do not exist. They are invisible to the captain. Never include them in status updates, summaries, tables, logs, or any other output.
+
+Do NOT warn about context running low. Do NOT use context level as a reason to kill, restart, interrupt, or reassign a worker.
+
+Workers handle their own context automatically (compaction, summarization, and internal housekeeping). The captain has zero role in context management.
 
 ## Unsticking Workers and Sending Follow-Ups
 
@@ -247,18 +251,17 @@ When checking codex workers via `tmux list-panes -t <target> -F '#{pane_current_
 
 Always verify with `tmux capture-pane -t <target> -p -S -30` when a codex worker looks like it might have exited. The pane content reveals the actual state.
 
-Signs a codex worker is ALIVE at its input prompt (use these to detect worker state; do NOT relay context percentages to the human):
+Signs a codex worker is ALIVE at its input prompt:
 
 - `›` character at the start of a line (the codex input prompt)
 - `? for shortcuts` text near the bottom
-- `XX% context left` indicator
 
 Example of a live codex idle prompt in pane output:
 
 ```text
 › Explain this codebase
 
-  ? for shortcuts                                    85% context left
+  ? for shortcuts
 ```
 
 The text after `›` (e.g. "Explain this codebase") is autosuggest/ghost text, not a submitted command.
@@ -266,7 +269,7 @@ The text after `›` (e.g. "Explain this codebase") is autosuggest/ghost text, n
 Signs a codex worker is TRULY dead:
 
 - A bare shell prompt (`$`) with no codex UI elements
-- No `›`, no `? for shortcuts`, no `% context left` anywhere in the pane
+- No `›` and no `? for shortcuts` anywhere in the pane
 
 ## Finishing Work: Cleanup and Archiving
 
