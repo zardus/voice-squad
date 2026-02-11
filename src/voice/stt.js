@@ -1,4 +1,6 @@
 const https = require("https");
+const OPENAI_STT_TIMEOUT_MS = Number(process.env.STT_TIMEOUT_MS || 10 * 60 * 1000);
+const OPENAI_STT_MAX_AUDIO_BYTES = Number(process.env.STT_MAX_AUDIO_BYTES || 24 * 1024 * 1024);
 
 /**
  * Detect audio format from file magic bytes, ignoring what the client claims.
@@ -48,6 +50,11 @@ function detectFormat(buf) {
 async function transcribe(audioBuffer, mimeType) {
   if (audioBuffer.length < 1000) {
     throw new Error(`Audio too short (${audioBuffer.length} bytes), skipping`);
+  }
+  if (audioBuffer.length > OPENAI_STT_MAX_AUDIO_BYTES) {
+    throw new Error(
+      `Audio too large for transcription (${audioBuffer.length} bytes). Max is ${OPENAI_STT_MAX_AUDIO_BYTES} bytes.`
+    );
   }
 
   const detected = detectFormat(audioBuffer);
@@ -107,6 +114,9 @@ async function transcribe(audioBuffer, mimeType) {
       }
     );
     req.on("error", reject);
+    req.setTimeout(OPENAI_STT_TIMEOUT_MS, () => {
+      req.destroy(new Error(`Whisper request timed out after ${OPENAI_STT_TIMEOUT_MS}ms`));
+    });
     req.end(body);
   });
 }

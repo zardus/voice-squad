@@ -14,6 +14,8 @@ let CAPTAIN = process.env.SQUAD_CAPTAIN || "claude";
 const TOKEN = process.env.VOICE_TOKEN;
 const SUMMARIES_DIR =
   process.env.SQUAD_SUMMARIES_DIR || "/home/ubuntu/captain/archive/summaries";
+const WS_MAX_PAYLOAD_BYTES = Number(process.env.WS_MAX_PAYLOAD_BYTES || 64 * 1024 * 1024);
+const MAX_AUDIO_UPLOAD_BYTES = Number(process.env.MAX_AUDIO_UPLOAD_BYTES || 24 * 1024 * 1024);
 
 const REQUIRED_ENV = { VOICE_TOKEN: TOKEN, OPENAI_API_KEY: process.env.OPENAI_API_KEY };
 const missing = Object.entries(REQUIRED_ENV).filter(([, v]) => !v).map(([k]) => k);
@@ -295,7 +297,7 @@ app.post("/api/summary", async (req, res) => {
 });
 
 const server = http.createServer(app);
-const wss = new WebSocketServer({ noServer: true });
+const wss = new WebSocketServer({ noServer: true, maxPayload: WS_MAX_PAYLOAD_BYTES });
 
 // Track clients with the status tab active
 const statusClients = new Set();
@@ -326,6 +328,8 @@ wss.on("connection", (ws) => {
 
   let audioChunks = [];
   let audioMimeType = "audio/webm";
+  let audioBytes = 0;
+  let audioTooLarge = false;
 
   ws.send(JSON.stringify({ type: "connected", captain: CAPTAIN }));
 
@@ -358,6 +362,19 @@ wss.on("connection", (ws) => {
 
   ws.on("message", (data, isBinary) => {
     if (isBinary) {
+      if (audioTooLarge) return;
+      audioBytes += data.length;
+      if (audioBytes > MAX_AUDIO_UPLOAD_BYTES) {
+        audioChunks = [];
+        audioTooLarge = true;
+        ws.send(
+          JSON.stringify({
+            type: "stt_error",
+            message: `Audio too large (${audioBytes} bytes). Keep it under ${MAX_AUDIO_UPLOAD_BYTES} bytes.`,
+          })
+        );
+        return;
+      }
       audioChunks.push(Buffer.from(data));
       return;
     }
@@ -374,14 +391,24 @@ wss.on("connection", (ws) => {
       case "audio_start":
         audioChunks = [];
         audioMimeType = msg.mimeType || "audio/webm";
+        audioBytes = 0;
+        audioTooLarge = false;
         console.log(`[audio] recording started, mimeType=${audioMimeType}`);
         break;
 
       case "audio_end": {
+        if (audioTooLarge) {
+          console.log(`[audio] recording dropped for size (${audioBytes} bytes)`);
+          audioChunks = [];
+          audioBytes = 0;
+          audioTooLarge = false;
+          break;
+        }
         const buf = Buffer.concat(audioChunks);
         console.log(`[audio] recording ended, ${audioChunks.length} chunks, ${buf.length} bytes`);
         handleAudioCommand(buf, audioMimeType);
         audioChunks = [];
+        audioBytes = 0;
         break;
       }
 

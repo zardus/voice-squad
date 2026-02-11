@@ -40,6 +40,13 @@ let recordingStartTime = 0;
 let micStream = null;
 let autoScroll = true;
 let disconnectedFlashTimer = null;
+let maxRecordingTimer = null;
+
+const MIN_RECORDING_MS = 300;
+const MIN_AUDIO_BYTES = 1000;
+const MEDIARECORDER_TIMESLICE_MS = 250;
+const MAX_RECORDING_MS = 10 * 60 * 1000; // 10 minutes
+const WS_AUDIO_FRAME_BYTES = 64 * 1024;
 
 // Persistent audio element — unlocked on first user gesture so TTS can play later
 const ttsAudio = new Audio();
@@ -487,8 +494,12 @@ function startRecording() {
   };
 
   mediaRecorder.onstop = async () => {
+    if (maxRecordingTimer) {
+      clearTimeout(maxRecordingTimer);
+      maxRecordingTimer = null;
+    }
     const held = Date.now() - recordingStartTime;
-    if (held < 300) return; // accidental tap — no sound
+    if (held < MIN_RECORDING_MS) return; // accidental tap — no sound
     if (ws.readyState !== WebSocket.OPEN || recordedChunks.length === 0) {
       playDing(false);
       return;
@@ -497,7 +508,7 @@ function startRecording() {
     // Check total size client-side — don't send tiny phantom recordings
     let totalSize = 0;
     for (const chunk of recordedChunks) totalSize += chunk.size;
-    if (totalSize < 1000) {
+    if (totalSize < MIN_AUDIO_BYTES) {
       playDing(false);
       return;
     }
@@ -507,15 +518,21 @@ function startRecording() {
     playDing(true);
     ws.send(JSON.stringify({ type: "audio_start", mimeType }));
     for (const chunk of recordedChunks) {
-      const buf = await chunk.arrayBuffer();
-      ws.send(buf);
+      const chunkBytes = new Uint8Array(await chunk.arrayBuffer());
+      for (let offset = 0; offset < chunkBytes.byteLength; offset += WS_AUDIO_FRAME_BYTES) {
+        ws.send(chunkBytes.slice(offset, offset + WS_AUDIO_FRAME_BYTES));
+      }
     }
     ws.send(JSON.stringify({ type: "audio_end" }));
   };
 
-  mediaRecorder.start(250);
+  mediaRecorder.start(MEDIARECORDER_TIMESLICE_MS);
   recording = true;
   recordingStartTime = Date.now();
+  if (maxRecordingTimer) clearTimeout(maxRecordingTimer);
+  maxRecordingTimer = setTimeout(() => {
+    if (recording || wantRecording) stopRecording();
+  }, MAX_RECORDING_MS);
   micBtn.classList.add("recording");
   voiceMicBtn.classList.add("recording");
 }
@@ -524,6 +541,10 @@ function stopRecording() {
   wantRecording = false;
   if (mediaRecorder && mediaRecorder.state !== "inactive") {
     mediaRecorder.stop();
+  }
+  if (maxRecordingTimer) {
+    clearTimeout(maxRecordingTimer);
+    maxRecordingTimer = null;
   }
   recording = false;
   micBtn.classList.remove("recording");
