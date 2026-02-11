@@ -37,6 +37,66 @@ find_voice_pid() {
     '
 }
 
+resolve_voice_token() {
+    local voice_pid="${1:-}"
+    local token=""
+    local pane_dump=""
+
+    # 1) Already-present env vars
+    token="${VOICE_TOKEN:-${_VOICE_TOKEN:-}}"
+    if [ -n "$token" ]; then
+        printf '%s' "$token"
+        return 0
+    fi
+
+    # 2) Running voice server process env
+    if [ -n "$voice_pid" ] && [ -r "/proc/$voice_pid/environ" ]; then
+        token="$(tr '\0' '\n' < "/proc/$voice_pid/environ" | sed -n 's/^VOICE_TOKEN=//p' | head -1)"
+    fi
+    if [ -n "$token" ]; then
+        printf '%s' "$token"
+        return 0
+    fi
+
+    # 3) launch-squad writes tunnel URL + token here
+    if [ -f /tmp/voice-url.txt ]; then
+        token="$(grep -oE 'token=[A-Za-z0-9_-]+' /tmp/voice-url.txt | head -1 | cut -d= -f2)"
+    fi
+    if [ -n "$token" ]; then
+        printf '%s' "$token"
+        return 0
+    fi
+
+    # 4) Last-resort scrape from tmux voice window content
+    if tmux has-session -t captain 2>/dev/null; then
+        pane_dump="$(tmux capture-pane -t captain:voice -p -S -250 2>/dev/null || true)"
+        token="$(printf '%s' "$pane_dump" | tr -d '\r\n[:space:]' | grep -oE 'token=[A-Za-z0-9_-]+' | head -1 | cut -d= -f2)"
+    fi
+    printf '%s' "$token"
+}
+
+stop_processes_by_pattern() {
+    local pattern="$1"
+    local pids=""
+    local pid=""
+
+    pids="$(pgrep -f "$pattern" || true)"
+    for pid in $pids; do
+        kill "$pid" 2>/dev/null || true
+    done
+
+    for _ in $(seq 1 10); do
+        pids="$(pgrep -f "$pattern" || true)"
+        [ -z "$pids" ] && return 0
+        sleep 0.2
+    done
+
+    pids="$(pgrep -f "$pattern" || true)"
+    for pid in $pids; do
+        kill -9 "$pid" 2>/dev/null || true
+    done
+}
+
 # ---------------------------------------------------------------------------
 # Parse flags
 # ---------------------------------------------------------------------------
@@ -163,7 +223,7 @@ if [ -f /home/ubuntu/env ]; then set -a; . /home/ubuntu/env; set +a; fi
 # /home/ubuntu/env currently stores API keys as _OPENAI_API_KEY/_ANTHROPIC_API_KEY.
 OPENAI_API_KEY="${OPENAI_API_KEY:-${_OPENAI_API_KEY:-}}"
 ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-${_ANTHROPIC_API_KEY:-}}"
-VOICE_TOKEN="${VOICE_TOKEN:-${_VOICE_TOKEN:-}}"
+VOICE_TOKEN="${VOICE_TOKEN:-${_VOICE_TOKEN:-$(resolve_voice_token "$VOICE_PID")}}"
 
 # If this script was spawned by the voice server (via /api/update), killing the
 # server closes the read end of our stdout pipe. The next echo would then get
@@ -207,10 +267,11 @@ else
     _S_CAPTAIN="${SQUAD_CAPTAIN:-claude}"
 fi
 
-# Prefer /proc-extracted values when present; otherwise fall back to the env file.
+# Prefer /proc-extracted values when present; otherwise fall back to env file or
+# launch-time token artifacts.
 _OAI_KEY="${_OAI_KEY:-${OPENAI_API_KEY:-${_OPENAI_API_KEY:-}}}"
 _ANT_KEY="${_ANT_KEY:-${ANTHROPIC_API_KEY:-${_ANTHROPIC_API_KEY:-}}}"
-_V_TOKEN="${_V_TOKEN:-${VOICE_TOKEN:-${_VOICE_TOKEN:-}}}"
+_V_TOKEN="${_V_TOKEN:-${VOICE_TOKEN:-${_VOICE_TOKEN:-$(resolve_voice_token "$VOICE_PID")}}}"
 _S_CAPTAIN="${_S_CAPTAIN:-${SQUAD_CAPTAIN:-claude}}"
 
 # Source the env file again immediately before spawning node (explicitly required
@@ -221,7 +282,7 @@ if [ -f /home/ubuntu/env ]; then set -a; . /home/ubuntu/env; set +a; fi
 # Re-apply normalization after the final source step used by the restart launch.
 OPENAI_API_KEY="${OPENAI_API_KEY:-${_OPENAI_API_KEY:-}}"
 ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-${_ANTHROPIC_API_KEY:-}}"
-VOICE_TOKEN="${VOICE_TOKEN:-${_VOICE_TOKEN:-}}"
+VOICE_TOKEN="${VOICE_TOKEN:-${_VOICE_TOKEN:-$(resolve_voice_token "$VOICE_PID")}}"
 
 # Required by /opt/squad/voice/server.js startup guard.
 if [ -z "${_OAI_KEY:-}" ]; then
@@ -229,7 +290,7 @@ if [ -z "${_OAI_KEY:-}" ]; then
     exit 1
 fi
 if [ -z "${_V_TOKEN:-}" ]; then
-    echo "    ERROR: VOICE_TOKEN is empty after env resolution."
+    echo "    ERROR: VOICE_TOKEN is empty after env/process/tmux/voice-url resolution."
     exit 1
 fi
 
@@ -239,7 +300,7 @@ OPENAI_API_KEY="${_OAI_KEY}" \
 ANTHROPIC_API_KEY="${_ANT_KEY}" \
 VOICE_TOKEN="${_V_TOKEN}" \
 SQUAD_CAPTAIN="${_S_CAPTAIN}" \
-    node /opt/squad/voice/server.js > /tmp/voice-server.log 2>&1 &
+    nohup node /opt/squad/voice/server.js > /tmp/voice-server.log 2>&1 &
 
 NEW_PID=$!
 
@@ -272,9 +333,9 @@ fi
 # Ensure pane monitor is running (unified captain heartbeat + worker idle detection).
 # Kill any old separate monitors first, then (re)start the unified one in a tmux window.
 echo "==> Pane monitor..."
-pkill -f "/opt/squad/heartbeat.sh" 2>/dev/null || true
-pkill -f "/opt/squad/idle-monitor.sh" 2>/dev/null || true
-pkill -f "/opt/squad/pane-monitor.sh" 2>/dev/null || true
+stop_processes_by_pattern "/opt/squad/heartbeat.sh"
+stop_processes_by_pattern "/opt/squad/idle-monitor.sh"
+stop_processes_by_pattern "/opt/squad/pane-monitor.sh"
 sleep 0.5
 
 # Start pane monitor in the captain:idle-monitor tmux window
