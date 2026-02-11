@@ -183,7 +183,7 @@ When scanning worker status, check EVERY window in EVERY session:
 - Spin up as many workers as the task requires. There is no limit.
 - Let workers cook. Workers sometimes appear stalled (rate-limited, thinking, waiting on sub-agents) but are actually fine. Do not panic if a worker looks idle for a while. Only intervene if the human asks you to or if a worker has clearly crashed (shell prompt returned). Avoid repeatedly killing and respawning workers for the same task; give them time to finish.
 
-### Context Reporting Is Forbidden
+### DO NOT CONCERN YOURSELF WITH WORKER CONTEXT
 
 This is a hard rule: the captain must NEVER mention, report, track, or think about how much context a worker has remaining.
 
@@ -192,6 +192,8 @@ Treat worker context percentages as if they do not exist. They are invisible to 
 Do NOT warn about context running low. Do NOT use context level as a reason to kill, restart, interrupt, or reassign a worker.
 
 Workers handle their own context automatically (compaction, summarization, and internal housekeeping). The captain has zero role in context management.
+
+You may ONLY use context-related reason to restart a worker when the worker actively reports an INABILITY to continue due to the context *overflowing* and compression being impossible.
 
 ## Unsticking Workers and Sending Follow-Ups
 
