@@ -341,10 +341,7 @@ function connect() {
         break;
 
       case "transcribing":
-        transcriptionEl.textContent = "Transcribing...";
-        transcriptionEl.className = "transcribing";
-        voiceTranscriptionEl.textContent = "Transcribing...";
-        voiceTranscriptionEl.className = "voice-transcription transcribing";
+        showTranscribingIndicator();
         break;
 
       case "stt_error":
@@ -407,6 +404,13 @@ function flashDisconnectedIndicator() {
       voiceTranscriptionEl.className = "voice-transcription";
     }
   }, 1200);
+}
+
+function showTranscribingIndicator() {
+  transcriptionEl.textContent = "Transcribing...";
+  transcriptionEl.className = "transcribing";
+  voiceTranscriptionEl.textContent = "Transcribing...";
+  voiceTranscriptionEl.className = "voice-transcription transcribing";
 }
 
 sendBtn.addEventListener("click", sendText);
@@ -489,6 +493,8 @@ function startRecording() {
       return;
     }
 
+    // Show immediate feedback while audio uploads and server-side STT runs.
+    showTranscribingIndicator();
     playDing(true);
     ws.send(JSON.stringify({ type: "audio_start", mimeType }));
     for (const chunk of recordedChunks) {
