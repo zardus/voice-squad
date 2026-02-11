@@ -22,8 +22,8 @@ body {
 #tab-bar {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 2px;
+  flex-wrap: nowrap;
+  gap: 0;
   padding: 6px 8px;
   background: #16213e;
   border-bottom: 1px solid #0f3460;
@@ -36,6 +36,7 @@ body {
   position: relative;
   flex: 1 1 0;
   min-width: 0;
+  width: 0;
   padding: 8px 10px 9px;
   border: none;
   background: transparent;
@@ -52,14 +53,8 @@ body {
   transition: color 0.15s, background-color 0.15s;
 }
 
-#tab-bar .tab:not(:last-child)::after {
-  content: "";
-  position: absolute;
-  right: -1px;
-  top: 24%;
-  width: 1px;
-  height: 52%;
-  background: rgba(127, 142, 163, 0.35);
+#tab-bar .tab + .tab {
+  border-left: 1px solid rgba(127, 142, 163, 0.35);
 }
 
 #tab-bar .tab::before {
@@ -84,10 +79,6 @@ body {
 #tab-bar .tab.active::before {
   opacity: 1;
   transform: scaleX(1);
-}
-
-#tab-bar .tab.active::after {
-  opacity: 0;
 }
 
 #tab-bar .tab:active {
