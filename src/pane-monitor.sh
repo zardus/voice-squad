@@ -9,7 +9,7 @@
 # Dynamically discovers new/killed sessions/windows.
 
 CAPTAIN_PANE="captain:0"
-CAPTAIN_THRESHOLD=900   # 15 minutes
+CAPTAIN_THRESHOLD=300   # 5 minutes
 WORKER_THRESHOLD=30     # 30 seconds
 
 LOGFILE="/tmp/pane-monitor.log"
