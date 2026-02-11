@@ -714,8 +714,8 @@ body {
 }
 
 #voice-output-history-select {
-  flex: 1;
-  min-width: 0;
+  width: 140px;
+  flex: none;
   height: 44px;
   padding: 0 10px;
   border: 1px solid #0f3460;
@@ -773,8 +773,8 @@ body {
 }
 
 #voice-history-select {
-  flex: 1;
-  min-width: 0;
+  width: 140px;
+  flex: none;
   height: 44px;
   padding: 0 10px;
   border: 1px solid #0f3460;
