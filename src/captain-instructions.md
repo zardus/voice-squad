@@ -305,13 +305,15 @@ Then launch the worker using that file:
 codex --dangerously-bypass-approvals-and-sandbox "$(cat ~/captain/task-definitions/pending/fix-auth.txt)"
 ```
 
-When archiving a finished worker (in the "Mandatory Worker Output Archiving" section), also move the task definition from pending to archive:
+When a worker is finished and you clean it up, also move its task definition from pending to archived:
 
 ```bash
-mv ~/captain/task-definitions/pending/<task-name>.txt ~/captain/archive/<session>_<window>_<timestamp>_task.txt
+mkdir -p ~/captain/task-definitions/archived
+mv ~/captain/task-definitions/pending/<task-name>.txt ~/captain/task-definitions/archived/<task-name>.txt
 ```
 
-This keeps a complete record: the task definition (what was asked) alongside the worker output (what was done).
+This keeps `~/captain/task-definitions/pending/` clean so it only contains active/upcoming tasks.
+`~/captain/task-definitions/archived/` serves as a history of what was dispatched.
 
 ### Mandatory Worker Output Archiving (Before Kill)
 
