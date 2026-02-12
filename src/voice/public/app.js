@@ -422,10 +422,12 @@ function showTranscribingIndicator() {
   voiceTranscriptionEl.className = "voice-transcription transcribing";
 }
 
-function showUploadingIndicator() {
-  transcriptionEl.textContent = "Uploading...";
+function showUploadingIndicator(pct = 0) {
+  const safePct = Number.isFinite(pct) ? Math.max(0, Math.min(100, Math.round(pct))) : 0;
+  const text = `Uploading... ${safePct}%`;
+  transcriptionEl.textContent = text;
   transcriptionEl.className = "transcribing";
-  voiceTranscriptionEl.textContent = "Uploading...";
+  voiceTranscriptionEl.textContent = text;
   voiceTranscriptionEl.className = "voice-transcription transcribing";
 }
 
@@ -514,15 +516,43 @@ function startRecording() {
     }
 
     // Show upload feedback first; switch to "Transcribing..." when server confirms STT started.
-    showUploadingIndicator();
+    showUploadingIndicator(0);
     playDing(true);
     ws.send(JSON.stringify({ type: "audio_start", mimeType }));
+
+    // This is "upload" over WebSocket. We can't observe actual network send progress, but
+    // we can report how much audio data we've queued into the WS socket buffer.
+    let totalBytes = 0;
+    for (const chunk of recordedChunks) totalBytes += chunk.size;
+    if (totalBytes <= 0) totalBytes = 1;
+
+    let sentBytes = 0;
+    let lastPct = -1;
+    let lastUiUpdate = 0;
+    const maybeUpdatePct = (force = false) => {
+      const pct = Math.round((sentBytes / totalBytes) * 100);
+      const now = Date.now();
+      if (!force) {
+        // Throttle DOM updates to keep UI responsive.
+        if (pct === lastPct) return;
+        if (now - lastUiUpdate < 60 && pct < 100) return;
+      }
+      lastPct = pct;
+      lastUiUpdate = now;
+      showUploadingIndicator(pct);
+    };
+
     for (const chunk of recordedChunks) {
       const chunkBytes = new Uint8Array(await chunk.arrayBuffer());
       for (let offset = 0; offset < chunkBytes.byteLength; offset += WS_AUDIO_FRAME_BYTES) {
-        ws.send(chunkBytes.slice(offset, offset + WS_AUDIO_FRAME_BYTES));
+        const frame = chunkBytes.slice(offset, offset + WS_AUDIO_FRAME_BYTES);
+        ws.send(frame);
+        sentBytes += frame.byteLength;
+        maybeUpdatePct(false);
       }
     }
+    sentBytes = totalBytes;
+    maybeUpdatePct(true);
     ws.send(JSON.stringify({ type: "audio_end" }));
   };
 
