@@ -954,7 +954,8 @@ body.voice-history-open {
 }
 
 #text-input {
-  flex: 1 1 96px;
+  flex: 0 1 88px;
+  width: 0;
   min-width: 0;
   padding: 10px 12px;
   border: 1px solid #0f3460;
@@ -1041,7 +1042,7 @@ body.voice-history-open {
   }
 
   #text-input {
-    flex: 1 1 72px;
+    flex-basis: 56px;
     padding: 10px 8px;
   }
 }

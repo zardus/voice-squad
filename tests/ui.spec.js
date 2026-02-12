@@ -841,6 +841,26 @@ test.describe("UI", () => {
       // All control buttons accessible
       await expect(page.locator("#mic-btn")).toBeVisible();
       await expect(page.locator("#send-btn")).toBeVisible();
+
+      const metrics = await page.evaluate(() => {
+        const controls = document.getElementById("controls");
+        const input = document.getElementById("text-input");
+        const controlsRect = controls.getBoundingClientRect();
+        const childRects = Array.from(controls.children).map((el) => {
+          const r = el.getBoundingClientRect();
+          return { left: r.left, right: r.right };
+        });
+        return {
+          controlsFits: controls.scrollWidth <= controls.clientWidth,
+          inputWidth: input.getBoundingClientRect().width,
+          controlsInsideViewport: controlsRect.left >= 0 && controlsRect.right <= window.innerWidth,
+          childrenInsideControls: childRects.every((r) => r.left >= controlsRect.left && r.right <= controlsRect.right),
+        };
+      });
+      expect(metrics.controlsFits).toBe(true);
+      expect(metrics.controlsInsideViewport).toBe(true);
+      expect(metrics.childrenInsideControls).toBe(true);
+      expect(metrics.inputWidth).toBeGreaterThan(40);
     });
 
     test("voice tab renders correctly on mobile viewport", async ({ page }) => {
@@ -861,6 +881,29 @@ test.describe("UI", () => {
 
       await expect(page.locator("#tab-bar")).toBeVisible();
       await expect(page.locator("#terminal")).toBeVisible();
+      await expect(page.locator("#controls")).toBeVisible();
+      await expect(page.locator("#mic-btn")).toBeVisible();
+      await expect(page.locator("#send-btn")).toBeVisible();
+
+      const metrics = await page.evaluate(() => {
+        const controls = document.getElementById("controls");
+        const input = document.getElementById("text-input");
+        const controlsRect = controls.getBoundingClientRect();
+        const childRects = Array.from(controls.children).map((el) => {
+          const r = el.getBoundingClientRect();
+          return { left: r.left, right: r.right };
+        });
+        return {
+          controlsFits: controls.scrollWidth <= controls.clientWidth,
+          inputWidth: input.getBoundingClientRect().width,
+          controlsInsideViewport: controlsRect.left >= 0 && controlsRect.right <= window.innerWidth,
+          childrenInsideControls: childRects.every((r) => r.left >= controlsRect.left && r.right <= controlsRect.right),
+        };
+      });
+      expect(metrics.controlsFits).toBe(true);
+      expect(metrics.controlsInsideViewport).toBe(true);
+      expect(metrics.childrenInsideControls).toBe(true);
+      expect(metrics.inputWidth).toBeGreaterThan(36);
     });
 
     test("renders correctly on tablet viewport (768x1024)", async ({ page }) => {
