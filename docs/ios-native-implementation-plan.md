@@ -262,6 +262,23 @@ Practical notes:
   - keep an `AVAudioSession` active
   - sometimes have an active playback item (this is the uncomfortable part: iOS is optimized for media playback apps)
 
+### Which AirPods gestures map to which commands?
+
+There is no guaranteed, public “gesture identity” signal. What you typically see is the resulting remote command action iOS chooses to send.
+
+Common default media mappings (varies by AirPods model and user settings):
+
+| User action on headset | iOS-level action you may receive | Typical handler |
+|---|---|---|
+| Single press / single squeeze | Toggle play/pause | `togglePlayPauseCommand` (or play/pause commands) |
+| Double press / double squeeze | Next track | `nextTrackCommand` |
+| Triple press / triple squeeze | Previous track | `previousTrackCommand` |
+| Press-and-hold | Siri / Noise control | Often not delivered to 3P apps as a distinct remote command |
+
+Treat this as “best effort” and expect variability:
+- user-customized AirPods settings can change what gestures do
+- iOS may route remote commands to whichever app/session it considers “now playing”
+
 ### Concrete implementation details (conceptual; no code)
 
 1. Enter “hands-free mode”
