@@ -954,7 +954,8 @@ body.voice-history-open {
 }
 
 #text-input {
-  flex: 1;
+  flex: 1 1 96px;
+  min-width: 0;
   padding: 10px 12px;
   border: 1px solid #0f3460;
   border-radius: 8px;
@@ -1031,6 +1032,18 @@ body.voice-history-open {
 
 #mic-btn.recording {
   animation: pulse 1s infinite;
+}
+
+@media (max-width: 420px) {
+  #controls {
+    gap: 6px;
+    padding: 8px 8px;
+  }
+
+  #text-input {
+    flex: 1 1 72px;
+    padding: 10px 8px;
+  }
 }
 
 @keyframes pulse {
@@ -1229,6 +1242,43 @@ body.voice-history-open {
 
 .media-session-status.unsupported {
   color: #666;
+}
+
+#media-session-debug {
+  width: min(94vw, 540px);
+  border: 1px solid #20314f;
+  border-radius: 8px;
+  background: rgba(15, 22, 37, 0.9);
+  padding: 8px 10px;
+}
+
+#media-session-debug-header {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11px;
+  color: #9fb3ce;
+  letter-spacing: 0.3px;
+}
+
+#media-session-state.active {
+  color: #4ecca3;
+}
+
+#media-session-state.inactive {
+  color: #e6a463;
+}
+
+#media-debug-log {
+  margin-top: 6px;
+  max-height: 130px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: "SF Mono", "Cascadia Code", "Fira Code", Consolas, monospace;
+  font-size: 10px;
+  line-height: 1.32;
+  color: #b4becf;
 }
 
 .voice-transcription {

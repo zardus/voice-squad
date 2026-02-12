@@ -127,6 +127,13 @@
         </div>
         <span id="voice-hint">Hold mic or spacebar to speak</span>
         <span id="airpod-status" class="media-session-status unsupported">AirPod squeeze unavailable in this browser</span>
+        <div id="media-session-debug" aria-live="polite">
+          <div id="media-session-debug-header">
+            <span>Media Session: <strong id="media-session-state" class="inactive">inactive</strong></span>
+            <span id="media-audio-state">keepalive:idle tts:idle mediaState:none</span>
+          </div>
+          <pre id="media-debug-log">Media debug log initializing...</pre>
+        </div>
         <div id="voice-transcription" class="voice-transcription"></div>
         <div id="voice-captain-switch">
           <select id="voice-captain-tool-select">
