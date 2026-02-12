@@ -220,7 +220,7 @@ app.post("/api/completed-tasks", async (req, res) => {
 });
 
 app.post("/api/speak", async (req, res) => {
-  const { text, token } = req.body || {};
+  const { text, token, playbackOnly } = req.body || {};
   if (token !== TOKEN) {
     return res.status(401).json({ error: "Unauthorized" });
   }
@@ -229,10 +229,16 @@ app.post("/api/speak", async (req, res) => {
   }
   try {
     const trimmed = text.trim();
-    const entry = await addVoiceSummaryEntry(trimmed);
     console.log(`[speak] "${trimmed.slice(0, 100)}${trimmed.length > 100 ? "..." : ""}"`);
     const audio = await synthesize(trimmed);
     console.log(`[speak] synthesized ${audio.length} bytes`);
+    if (playbackOnly === true) {
+      res.setHeader("Content-Type", "audio/ogg");
+      res.setHeader("Cache-Control", "no-store");
+      res.send(audio);
+      return;
+    }
+    const entry = await addVoiceSummaryEntry(trimmed);
     let sent = 0;
     for (const client of wss.clients) {
       if (client.readyState === 1) {

@@ -137,6 +137,23 @@ function stopTtsPlayback() {
   } catch {}
 }
 
+function handleIncomingTtsAudio(data, opts = {}) {
+  lastTtsAudioData = data;
+  voiceReplayBtn.disabled = false;
+  const autoplay = opts.autoplay !== false;
+  if (!autoplay) return;
+  // Respect the auto-read toggle for autoplay; replay is always available.
+  const shouldPlay = autoreadCb.checked;
+  if (shouldPlay) {
+    if (recording || wantRecording) {
+      // Mic is active — hold audio until recording stops
+      speakAudioQueue.push(data);
+    } else {
+      playAudio(data);
+    }
+  }
+}
+
 function playAudio(data) {
   const blob = new Blob([data], { type: "audio/ogg" });
   const url = URL.createObjectURL(blob);
@@ -257,7 +274,7 @@ function formatVoiceHistoryTimestamp(isoLike) {
 }
 
 async function handleVoiceHistoryEntryClick(text) {
-  const ok = await requestSpeak(text);
+  const ok = await replayHistoricalSpeak(text);
   playDing(ok);
 }
 
@@ -342,6 +359,27 @@ async function requestSpeak(text) {
   }
 }
 
+async function replayHistoricalSpeak(text) {
+  const trimmed = (text || "").trim();
+  if (!trimmed) return false;
+  try {
+    const resp = await fetch("/api/speak", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token, text: trimmed, playbackOnly: true }),
+    });
+    if (!resp.ok) return false;
+    const audio = await resp.arrayBuffer();
+    if (!audio || audio.byteLength === 0) return false;
+    handleIncomingTtsAudio(audio, { autoplay: false });
+    // Explicit replay should play regardless of auto-read toggle.
+    playAudio(audio);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 loadMessageHistory();
 
 async function loadVoiceSummaryHistory() {
@@ -372,25 +410,25 @@ function connect() {
     }
   };
 
-  ws.onmessage = (evt) => {
-    // Any binary frame from server = TTS audio, store for replay and play
+  ws.onmessage = async (evt) => {
+    // Any binary frame from server = TTS audio, store for replay and maybe autoplay.
     if (evt.data instanceof ArrayBuffer) {
-      lastTtsAudioData = evt.data;
-      voiceReplayBtn.disabled = false;
-      // Respect the auto-read toggle for autoplay; replay is always available.
-      const shouldPlay = autoreadCb.checked;
-      if (shouldPlay) {
-        if (recording || wantRecording) {
-          // Mic is active — hold audio until recording stops
-          speakAudioQueue.push(evt.data);
-        } else {
-          playAudio(evt.data);
-        }
-      }
+      handleIncomingTtsAudio(evt.data);
+      return;
+    }
+    if (evt.data instanceof Blob) {
+      const buf = await evt.data.arrayBuffer().catch(() => null);
+      if (!buf) return;
+      handleIncomingTtsAudio(buf);
       return;
     }
 
-    const msg = JSON.parse(evt.data);
+    let msg;
+    try {
+      msg = JSON.parse(evt.data);
+    } catch {
+      return;
+    }
 
     switch (msg.type) {
       case "connected":

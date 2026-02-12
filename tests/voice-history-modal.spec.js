@@ -53,6 +53,15 @@ test.describe("Voice history modal", () => {
     });
 
     await page.route("**/api/speak", async (route) => {
+      const body = route.request().postDataJSON();
+      if (body && body.playbackOnly === true) {
+        await route.fulfill({
+          status: 200,
+          contentType: "audio/ogg",
+          body: Buffer.from([79, 103, 103, 83]), // tiny ogg header bytes for test-only playback path
+        });
+        return;
+      }
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -148,5 +157,20 @@ test.describe("Voice history modal", () => {
     const body = req.postDataJSON();
     expect(body.token).toBe(TOKEN);
     expect(body.text).toBe("Latest summary line");
+  });
+
+  test("clicking a history entry does not duplicate it in the modal list", async ({ page }) => {
+    await page.goto(pageUrl());
+    await page.click('[data-tab="voice"]');
+    await page.click("#voice-history-modal-btn");
+
+    await expect(page.locator(".voice-history-entry")).toHaveCount(2);
+
+    await Promise.all([
+      page.waitForRequest((r) => r.url().includes("/api/speak")),
+      page.click(".voice-history-entry"),
+    ]);
+
+    await expect(page.locator(".voice-history-entry")).toHaveCount(2);
   });
 });

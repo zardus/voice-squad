@@ -60,15 +60,21 @@ test.describe("Auto-read", () => {
     });
     await expect.poll(async () => page.evaluate(() => window.__playCount)).toBe(0);
 
-    // Toggle auto-read ON and inject another audio message; it should autoplay once.
+    // Toggle auto-read ON and inject another summary + Blob audio; it should autoplay once.
     await page.locator("#autoread-toggle").click();
     await expect(cb).toBeChecked();
     const before = await page.evaluate(() => window.__playCount);
 
     await page.evaluate(() => {
       const ws = window.__testWs;
-      ws.onmessage({ data: JSON.stringify({ type: "speak_text", text: "Hello again" }) });
-      ws.onmessage({ data: new ArrayBuffer(16) });
+      ws.onmessage({
+        data: JSON.stringify({
+          type: "speak_text",
+          text: "Auto-read summary should speak",
+          timestamp: "2026-02-12T21:00:00.000Z",
+        }),
+      });
+      ws.onmessage({ data: new Blob([new Uint8Array([79, 103, 103, 83])], { type: "audio/ogg" }) });
     });
 
     await expect
