@@ -82,8 +82,11 @@ let webAudioKeepaliveNode = null;
 let silentKeepaliveUrl = null;
 let mediaPrimingClickPlayed = false;
 let ttsActivationInProgress = false;
+let keepaliveInternalEventBudget = 0;
+let keepaliveControlToggleCooldownUntil = 0;
 const MEDIA_DEBUG_LOG_MAX = 24;
 const mediaDebugEntries = [];
+const KEEPALIVE_CONTROL_TOGGLE_DEBOUNCE_MS = 900;
 
 ["play", "playing", "pause", "ended", "canplay", "stalled", "error"].forEach((eventName) => {
   ttsAudio.addEventListener(eventName, () => {
@@ -100,7 +103,12 @@ const mediaDebugEntries = [];
 function getAudioContext() {
   const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
   if (!AudioContextCtor) return null;
-  if (!audioCtx) audioCtx = new AudioContextCtor();
+  if (!audioCtx) {
+    audioCtx = new AudioContextCtor();
+    audioCtx.addEventListener("statechange", () => {
+      appendMediaDebug(`audioCtx statechange -> ${audioCtx.state}`);
+    });
+  }
   if (audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
   return audioCtx;
 }
@@ -226,6 +234,52 @@ function supportsMediaSession() {
   return typeof navigator !== "undefined" && !!navigator.mediaSession;
 }
 
+function isLikelyIosWebKit() {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent || "";
+  const isIosDevice = /iPad|iPhone|iPod/.test(ua)
+    || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  if (!isIosDevice) return false;
+  return /WebKit/.test(ua);
+}
+
+function shouldUseKeepaliveHardwareControlBridge() {
+  return supportsMediaSession() && isLikelyIosWebKit();
+}
+
+function markInternalKeepaliveTransition(reason, budget = 1) {
+  keepaliveInternalEventBudget = Math.max(keepaliveInternalEventBudget, budget);
+  appendMediaDebug(`keepalive internal transition (${reason}) budget=${keepaliveInternalEventBudget}`);
+}
+
+function shouldIgnoreKeepaliveControlEvent(eventName) {
+  if (eventName !== "play" && eventName !== "pause") return true;
+  if (keepaliveInternalEventBudget > 0) {
+    keepaliveInternalEventBudget -= 1;
+    appendMediaDebug(`ignore keepalive ${eventName}: internal budget now ${keepaliveInternalEventBudget}`);
+    return true;
+  }
+  const now = Date.now();
+  if (now < keepaliveControlToggleCooldownUntil) {
+    appendMediaDebug(`ignore keepalive ${eventName}: cooldown active`);
+    return true;
+  }
+  keepaliveControlToggleCooldownUntil = now + KEEPALIVE_CONTROL_TOGGLE_DEBOUNCE_MS;
+  return false;
+}
+
+function handleKeepaliveControlEvent(eventName) {
+  if (!shouldUseKeepaliveHardwareControlBridge()) return;
+  if (isAudioElementPlaying(ttsAudio)) {
+    appendMediaDebug(`ignore keepalive ${eventName}: tts currently active`);
+    return;
+  }
+  if (shouldIgnoreKeepaliveControlEvent(eventName)) return;
+  appendMediaDebug(`keepalive ${eventName} treated as headset control -> toggle recording`);
+  toggleRecordingFromMediaSession();
+  updateMediaSessionDebugState(`keepalive ${eventName} headset toggle`);
+}
+
 function updateMediaSessionPlaybackState() {
   if (!supportsMediaSession()) return;
   try {
@@ -326,6 +380,7 @@ function ensureMediaKeepaliveAudio() {
     ["play", "playing", "pause", "ended", "canplay", "stalled", "error"].forEach((eventName) => {
       mediaKeepaliveAudio.addEventListener(eventName, () => {
         appendMediaDebug(`${eventName} -> ${formatAudioState(mediaKeepaliveAudio, "keepalive")}`);
+        handleKeepaliveControlEvent(eventName);
         updateMediaSessionDebugState(`keepalive ${eventName}`);
       });
     });
@@ -372,23 +427,36 @@ async function startMediaKeepalive({ requireUserGesture = false } = {}) {
   if (mediaKeepaliveStarted && !keepalive.paused) return true;
   if (mediaKeepalivePlayPromise) return mediaKeepalivePlayPromise;
   if (requireUserGesture && !mediaSessionPrimedByGesture) {
-    setAirpodStatus("Tap screen once to enable AirPod squeeze", "inactive");
+    if (shouldUseKeepaliveHardwareControlBridge()) {
+      setAirpodStatus("Tap screen once to enable AirPod squeeze bridge", "inactive");
+    } else {
+      setAirpodStatus("Tap screen once to enable AirPod squeeze", "inactive");
+    }
     updateMediaSessionDebugState("waiting for gesture");
     return false;
   }
 
+  markInternalKeepaliveTransition("start keepalive play()", 2);
   mediaKeepalivePlayPromise = keepalive.play().then(() => {
     mediaKeepaliveStarted = true;
     mediaKeepalivePlayPromise = null;
     startWebAudioKeepalive();
-    setAirpodStatus("AirPod squeeze-to-talk active", "active");
+    if (shouldUseKeepaliveHardwareControlBridge()) {
+      setAirpodStatus("AirPod squeeze via audio play/pause bridge", "active");
+    } else {
+      setAirpodStatus("AirPod squeeze-to-talk active", "active");
+    }
     appendMediaDebug(`keepalive play resolved -> ${formatAudioState(keepalive, "keepalive")}`);
     updateMediaSessionDebugState("keepalive started");
     return true;
   }).catch((err) => {
     mediaKeepaliveStarted = false;
     mediaKeepalivePlayPromise = null;
-    setAirpodStatus("Tap screen once to enable AirPod squeeze", "inactive");
+    if (shouldUseKeepaliveHardwareControlBridge()) {
+      setAirpodStatus("AirPod squeeze bridge blocked, use mic button", "inactive");
+    } else {
+      setAirpodStatus("Tap screen once to enable AirPod squeeze", "inactive");
+    }
     appendMediaDebug(`keepalive play blocked: ${err && err.message ? err.message : "unknown"}`);
     updateMediaSessionDebugState("keepalive blocked");
     return false;
@@ -414,32 +482,36 @@ function registerMediaSessionHandlers() {
     appendMediaDebug(`media metadata failed: ${err && err.message ? err.message : "unknown"}`);
   }
 
-  try {
-    navigator.mediaSession.setActionHandler("play", () => {
-      appendMediaDebug("Media Session action fired: play");
-      toggleRecordingFromMediaSession();
-      updateMediaSessionDebugState("play action");
-    });
-  } catch (err) {
-    appendMediaDebug(`setActionHandler(play) failed: ${err && err.message ? err.message : "unknown"}`);
-  }
-  try {
-    navigator.mediaSession.setActionHandler("pause", () => {
-      appendMediaDebug("Media Session action fired: pause");
-      toggleRecordingFromMediaSession();
-      updateMediaSessionDebugState("pause action");
-    });
-  } catch (err) {
-    appendMediaDebug(`setActionHandler(pause) failed: ${err && err.message ? err.message : "unknown"}`);
-  }
-  try {
-    navigator.mediaSession.setActionHandler("stop", () => {
-      appendMediaDebug("Media Session action fired: stop");
-      if (recording || wantRecording) stopRecording();
-      updateMediaSessionDebugState("stop action");
-    });
-  } catch (err) {
-    appendMediaDebug(`setActionHandler(stop) failed: ${err && err.message ? err.message : "unknown"}`);
+  if (shouldUseKeepaliveHardwareControlBridge()) {
+    appendMediaDebug("iOS WebKit detected: using keepalive play/pause bridge instead of Media Session action handlers");
+  } else {
+    try {
+      navigator.mediaSession.setActionHandler("play", () => {
+        appendMediaDebug("Media Session action fired: play");
+        toggleRecordingFromMediaSession();
+        updateMediaSessionDebugState("play action");
+      });
+    } catch (err) {
+      appendMediaDebug(`setActionHandler(play) failed: ${err && err.message ? err.message : "unknown"}`);
+    }
+    try {
+      navigator.mediaSession.setActionHandler("pause", () => {
+        appendMediaDebug("Media Session action fired: pause");
+        toggleRecordingFromMediaSession();
+        updateMediaSessionDebugState("pause action");
+      });
+    } catch (err) {
+      appendMediaDebug(`setActionHandler(pause) failed: ${err && err.message ? err.message : "unknown"}`);
+    }
+    try {
+      navigator.mediaSession.setActionHandler("stop", () => {
+        appendMediaDebug("Media Session action fired: stop");
+        if (recording || wantRecording) stopRecording();
+        updateMediaSessionDebugState("stop action");
+      });
+    } catch (err) {
+      appendMediaDebug(`setActionHandler(stop) failed: ${err && err.message ? err.message : "unknown"}`);
+    }
   }
   mediaSessionReady = true;
   updateMediaSessionDebugState("handlers registered");
@@ -447,7 +519,7 @@ function registerMediaSessionHandlers() {
 
 async function setupMediaSession({ requireUserGesture = false } = {}) {
   if (!supportsMediaSession()) {
-    setAirpodStatus("AirPod squeeze unavailable in this browser", "unsupported");
+    setAirpodStatus("AirPod squeeze unavailable in this browser, use mic button", "unsupported");
     updateMediaSessionDebugState("media session unsupported");
     return;
   }
@@ -462,6 +534,7 @@ async function setupMediaSession({ requireUserGesture = false } = {}) {
 function pauseMediaKeepaliveForTts() {
   if (!mediaKeepaliveAudio || mediaKeepaliveAudio.paused) return;
   try {
+    markInternalKeepaliveTransition("pause for tts", 2);
     mediaKeepaliveAudio.pause();
     mediaKeepaliveStarted = false;
     appendMediaDebug("keepalive paused so TTS becomes active media source");
@@ -752,10 +825,15 @@ async function replayHistoricalSpeak(text) {
 loadMessageHistory();
 appendMediaDebug(`mediaSession API present: ${supportsMediaSession()}`);
 appendMediaDebug(`display-mode standalone=${window.matchMedia("(display-mode: standalone)").matches} navigator.standalone=${!!navigator.standalone}`);
+appendMediaDebug(`iosWebKit=${isLikelyIosWebKit()} keepaliveBridge=${shouldUseKeepaliveHardwareControlBridge()}`);
 if (supportsMediaSession()) {
-  setAirpodStatus("Tap screen once to enable AirPod squeeze", "inactive");
+  if (shouldUseKeepaliveHardwareControlBridge()) {
+    setAirpodStatus("Tap screen once to enable AirPod squeeze bridge", "inactive");
+  } else {
+    setAirpodStatus("Tap screen once to enable AirPod squeeze", "inactive");
+  }
 } else {
-  setAirpodStatus("AirPod squeeze unavailable in this browser", "unsupported");
+  setAirpodStatus("AirPod squeeze unavailable in this browser, use mic button", "unsupported");
 }
 updateMediaSessionDebugState("initial state");
 
@@ -1210,6 +1288,7 @@ function stopRecording() {
     playAudio(latest);
   } else {
     speakAudioQueue = [];
+    resumeMediaKeepaliveAfterTts();
   }
 }
 
