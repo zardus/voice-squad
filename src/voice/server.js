@@ -3,8 +3,15 @@ const http = require("http");
 const https = require("https");
 const path = require("path");
 const fs = require("fs/promises");
+const { execSync } = require("child_process");
 const { WebSocketServer, WebSocket } = require("ws");
-const { sendToCaptain, capturePaneOutputAsync, sendTextToPaneTarget, sendCtrlCToPaneTarget } = require("./tmux-bridge");
+const {
+  sendToCaptain,
+  capturePaneOutputAsync,
+  sendTextToPaneTarget,
+  sendCtrlCToPaneTarget,
+  sendCtrlCSequenceToPaneTarget,
+} = require("./tmux-bridge");
 const { transcribe } = require("./stt");
 const { synthesize } = require("./tts");
 const statusDaemon = require("./status-daemon");
@@ -15,7 +22,7 @@ const TOKEN = process.env.VOICE_TOKEN;
 const SUMMARIES_DIR =
   process.env.SQUAD_SUMMARIES_DIR || "/home/ubuntu/captain/archive/summaries";
 const WS_MAX_PAYLOAD_BYTES = Number(process.env.WS_MAX_PAYLOAD_BYTES || 64 * 1024 * 1024);
-const MAX_AUDIO_UPLOAD_BYTES = Number(process.env.MAX_AUDIO_UPLOAD_BYTES || 24 * 1024 * 1024);
+const MAX_AUDIO_UPLOAD_BYTES = Number(process.env.MAX_AUDIO_UPLOAD_BYTES || 64 * 1024 * 1024);
 
 const REQUIRED_ENV = { VOICE_TOKEN: TOKEN, OPENAI_API_KEY: process.env.OPENAI_API_KEY };
 const missing = Object.entries(REQUIRED_ENV).filter(([, v]) => !v).map(([k]) => k);
@@ -178,8 +185,11 @@ app.post("/api/interrupt", (req, res) => {
     return res.status(401).json({ error: "Unauthorized" });
   }
   try {
-    require("child_process").execSync("tmux send-keys -t %0 C-c", { timeout: 5000 });
-    console.log("[interrupt] sent Ctrl+C to captain pane %0");
+    // Some captain runs need multiple SIGINT attempts before returning to prompt.
+    for (let i = 0; i < 3; i++) {
+      execSync("tmux send-keys -t %0 C-c", { timeout: 5000 });
+    }
+    console.log("[interrupt] sent Ctrl+C x3 to captain pane %0");
     res.json({ ok: true });
   } catch (err) {
     console.error("[interrupt] error:", err.message);
@@ -474,13 +484,20 @@ wss.on("connection", (ws) => {
 
       case "pane_interrupt":
         if (msg.target) {
-          try {
-            sendCtrlCToPaneTarget(msg.target);
-            ws.send(JSON.stringify({ type: "pane_action_ok", action: "interrupt", target: msg.target }));
-          } catch (err) {
-            console.error(`[pane_interrupt] failed for ${msg.target}: ${err.message}`);
-            ws.send(JSON.stringify({ type: "error", message: "Pane interrupt failed: " + err.message }));
-          }
+          (async () => {
+            try {
+              const repeat = Math.max(1, Math.min(5, Number(msg.times) || 1));
+              if (repeat > 1) {
+                await sendCtrlCSequenceToPaneTarget(msg.target, { times: repeat, intervalMs: 700 });
+              } else {
+                sendCtrlCToPaneTarget(msg.target);
+              }
+              ws.send(JSON.stringify({ type: "pane_action_ok", action: "interrupt", target: msg.target }));
+            } catch (err) {
+              console.error(`[pane_interrupt] failed for ${msg.target}: ${err.message}`);
+              ws.send(JSON.stringify({ type: "error", message: "Pane interrupt failed: " + err.message }));
+            }
+          })();
         }
         break;
 

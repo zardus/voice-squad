@@ -52,7 +52,7 @@ let maxRecordingTimer = null;
 const MIN_RECORDING_MS = 300;
 const MIN_AUDIO_BYTES = 1000;
 const MEDIARECORDER_TIMESLICE_MS = 250;
-const MAX_RECORDING_MS = 10 * 60 * 1000; // 10 minutes
+const MAX_RECORDING_MS = 15 * 60 * 1000; // 15 minutes
 const WS_AUDIO_FRAME_BYTES = 64 * 1024;
 
 // Persistent audio element — unlocked on first user gesture so TTS can play later

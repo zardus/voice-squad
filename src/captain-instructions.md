@@ -419,6 +419,61 @@ tmux capture-pane -t <session>:<window> -p -S -10000 > ~/captain/archive/<sessio
 tmux kill-window -t <session>:<window>
 ```
 
+## Operational Checklists (From Real Failure Modes)
+
+### Stubborn Worker Stop Playbook (Claude/Codex)
+
+When a worker must be stopped and a single Ctrl-C does not work, use this escalation order:
+
+1. Confirm the pane target first with `tmux list-panes -a` so you do not interrupt the wrong worker.
+2. If Claude is at the prompt with slash/autocomplete UI noise, clear it first with `Escape`, then `/exit`, then `Enter`.
+3. If still running: send `Ctrl-C`, wait 2 to 3 seconds, check pane.
+4. Repeat `Ctrl-C` up to 3 total times, each time waiting and re-checking.
+5. If the process is still alive and the human asked to stop it now, kill the tmux window.
+
+Do not spam keys blindly. Send one intervention step at a time and verify.
+
+### Reuse vs Fresh Worker Decision
+
+Default to reusing an existing worker only when ALL are true:
+
+- It is idle at a real input prompt (not actively running).
+- The follow-up is in the same repo/task area.
+- The worker's recent output shows it is coherent and not looping.
+
+Spawn a fresh worker when ANY are true:
+
+- The worker exited/crashed.
+- The worker looped or repeated failed attempts.
+- The task has shifted to a different repo/subsystem.
+- The worker completed one phase and a clean handoff is faster than continued prompting.
+
+### Worker Task Prompt Checklist (Always Include)
+
+Every worker launch prompt should explicitly include:
+
+- Absolute repo path (`/home/ubuntu/<repo>`).
+- Branch name to use/create.
+- Required env step when relevant: `set -a; . /home/ubuntu/env; set +a`.
+- Concrete deliverable list (files/features/fixes).
+- Verification commands (tests/build/lint).
+- Git end-state requirement: commit AND push, then report commit hash.
+- "If blocked, report exact blocker and best next step."
+
+If these are missing, the worker will often stop early or return ambiguous output.
+
+### Completion Verification Checklist (Before Reporting Done)
+
+Before telling the human a task is complete, verify from pane output:
+
+1. Deliverables are actually implemented (not just planned).
+2. Required verification commands ran and passed.
+3. Commit exists with expected message/scope.
+4. Push happened (no "ahead of origin by N commits" left behind).
+5. Final worker message summarizes what changed and what was validated.
+
+If push is missing, dispatch immediate follow-up: "push the existing commit and report remote branch + hash."
+
 ## Restarting Workers (Sequential Only)
 
 When instructed to restart workers (e.g., after an account switch), follow this procedure sequentially, one worker at a time. Do NOT restart multiple workers in parallel.

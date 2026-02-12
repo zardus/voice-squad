@@ -1,6 +1,8 @@
 const { execSync, execFile, execFileSync } = require("child_process");
 
 const TARGET = "captain:0";
+const ENTER_RETRY_COUNT = 2;
+const ENTER_RETRY_DELAY_MS = 400;
 
 function validatePaneTarget(target) {
   const t = String(target || "").trim();
@@ -145,12 +147,12 @@ async function sendToCaptain(text) {
   execSync(`tmux send-keys -t ${TARGET} -l ${shellEscape(text)}`, {
     timeout: 5000,
   });
-  // Delay so Claude Code processes the pasted text before receiving Enter,
-  // preventing bracketed-paste from swallowing the submission.
-  await sleep(1000);
-  execSync(`tmux send-keys -t ${TARGET} Enter`, { timeout: 5000 });
-  await sleep(1000);
-  execSync(`tmux send-keys -t ${TARGET} Enter`, { timeout: 5000 });
+  // Delay + repeated Enter reduces "typed but not submitted" failures caused by prompt UI/autocomplete.
+  await sleep(ENTER_RETRY_DELAY_MS);
+  for (let i = 0; i < ENTER_RETRY_COUNT; i++) {
+    execSync(`tmux send-keys -t ${TARGET} Enter`, { timeout: 5000 });
+    if (i < ENTER_RETRY_COUNT - 1) await sleep(ENTER_RETRY_DELAY_MS);
+  }
 }
 
 function normalizeOneLineText(text) {
@@ -165,11 +167,22 @@ function sendTextToPaneTarget(target, text) {
 
   execFileSync("tmux", ["send-keys", "-t", t, "-l", line], { timeout: 5000 });
   execFileSync("tmux", ["send-keys", "-t", t, "Enter"], { timeout: 5000 });
+  execFileSync("tmux", ["send-keys", "-t", t, "Enter"], { timeout: 5000 });
 }
 
 function sendCtrlCToPaneTarget(target) {
   const t = validatePaneTarget(target);
   execFileSync("tmux", ["send-keys", "-t", t, "C-c"], { timeout: 5000 });
+}
+
+async function sendCtrlCSequenceToPaneTarget(target, options = {}) {
+  const t = validatePaneTarget(target);
+  const times = Math.max(1, Math.min(5, Number(options.times) || 3));
+  const intervalMs = Math.max(0, Math.min(3000, Number(options.intervalMs) || 700));
+  for (let i = 0; i < times; i++) {
+    execFileSync("tmux", ["send-keys", "-t", t, "C-c"], { timeout: 5000 });
+    if (i < times - 1 && intervalMs > 0) await sleep(intervalMs);
+  }
 }
 
 function shellEscape(str) {
@@ -182,4 +195,5 @@ module.exports = {
   capturePaneOutputAsync,
   sendTextToPaneTarget,
   sendCtrlCToPaneTarget,
+  sendCtrlCSequenceToPaneTarget,
 };
