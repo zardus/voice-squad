@@ -37,6 +37,10 @@ let autoreadBeforeVoice = null; // saved state when entering Voice tab
 autoreadCb.checked = localStorage.getItem("autoread") === "true";
 autoreadCb.addEventListener("change", () => {
   localStorage.setItem("autoread", autoreadCb.checked);
+  if (!autoreadCb.checked) {
+    stopTtsPlayback();
+    speakAudioQueue = [];
+  }
 });
 
 let ws = null;
@@ -117,9 +121,16 @@ function playDing(success) {
 
 function unlockAudio() {
   if (audioUnlocked) return;
-  ttsAudio.src = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=";
-  ttsAudio.play().then(() => { audioUnlocked = true; }).catch(() => {});
+  const primer = new Audio("data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=");
+  primer.play().then(() => { audioUnlocked = true; }).catch(() => {});
   getAudioContext(); // warm up AudioContext during user gesture
+}
+
+function stopTtsPlayback() {
+  try {
+    ttsAudio.pause();
+    ttsAudio.currentTime = 0;
+  } catch {}
 }
 
 function playAudio(data) {
@@ -699,10 +710,12 @@ function stopRecording() {
   // Play the most recent speak audio that arrived while recording.
   // Only the latest is played to avoid a cascade of stale messages.
   // Audio in the queue already passed the shouldPlay check when it was queued.
-  if (speakAudioQueue.length > 0) {
+  if (autoreadCb.checked && speakAudioQueue.length > 0) {
     const latest = speakAudioQueue[speakAudioQueue.length - 1];
     speakAudioQueue = [];
     playAudio(latest);
+  } else {
+    speakAudioQueue = [];
   }
 }
 
