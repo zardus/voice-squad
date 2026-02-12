@@ -768,6 +768,28 @@ const tabBarEl = document.getElementById("tab-bar");
 
 let screensTabActive = false;
 
+let activePaneInteract = null; // { key, panel, overlay, input, statusEl, target }
+let activePaneSpeech = null;
+
+function stopActivePaneSpeech() {
+  if (activePaneSpeech) {
+    try { activePaneSpeech.onresult = null; activePaneSpeech.onerror = null; activePaneSpeech.onend = null; } catch {}
+    try { activePaneSpeech.stop(); } catch {}
+    activePaneSpeech = null;
+  }
+}
+
+function closeActivePaneInteract() {
+  stopActivePaneSpeech();
+  if (!activePaneInteract) return;
+  try {
+    activePaneInteract.overlay.classList.add("hidden");
+    activePaneInteract.panel.classList.remove("pane-interact-active");
+  } catch {}
+  activePaneInteract = null;
+}
+
+
 function scrollActiveTabIntoView(tab, smooth = false) {
   if (!tabBarEl || !tab) return;
   tab.scrollIntoView({
@@ -799,7 +821,7 @@ tabs.forEach((tab) => {
     });
     // Notify server about screens tab activation/deactivation
     if (target === "screens" && !wasScreens) sendScreensTabState(true);
-    if (target !== "screens" && wasScreens) sendScreensTabState(false);
+    if (target !== "screens" && wasScreens) { sendScreensTabState(false); closeActivePaneInteract(); }
     // Voice tab: force auto-read on, hide controls
     if (target === "voice") {
       autoreadBeforeVoice = autoreadCb.checked;
@@ -827,19 +849,239 @@ const statusPanesEl = document.getElementById("status-panes");
 
 const panelMap = new Map();
 
+function sendPaneText(target, text) {
+  const trimmed = (text || "").trim();
+  if (!trimmed || !ws || ws.readyState !== WebSocket.OPEN) return false;
+  ws.send(JSON.stringify({ type: "pane_send_text", target, text: trimmed }));
+  return true;
+}
+
+function sendPaneInterrupt(target) {
+  if (!target || !ws || ws.readyState !== WebSocket.OPEN) return false;
+  ws.send(JSON.stringify({ type: "pane_interrupt", target }));
+  return true;
+}
+
+function ensurePaneOverlay(entry, label) {
+  if (entry.overlay) return;
+
+  entry.panel.classList.add("pane-interact-host");
+
+  const overlay = document.createElement("div");
+  overlay.className = "pane-interact-overlay hidden";
+
+  const topRow = document.createElement("div");
+  topRow.className = "pane-interact-top";
+
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "pane-interact-input";
+  input.placeholder = "Type a command...";
+  input.autocomplete = "off";
+  input.autocapitalize = "off";
+  input.spellcheck = false;
+  input.enterKeyHint = "send";
+
+  const send = document.createElement("button");
+  send.className = "pane-interact-btn pane-interact-send";
+  send.textContent = "Send";
+
+  topRow.appendChild(input);
+  topRow.appendChild(send);
+
+  const btnRow = document.createElement("div");
+  btnRow.className = "pane-interact-actions";
+
+  const voice = document.createElement("button");
+  voice.className = "pane-interact-btn pane-interact-voice";
+  voice.textContent = "Voice";
+
+  const interrupt = document.createElement("button");
+  interrupt.className = "pane-interact-btn pane-interact-interrupt";
+  interrupt.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><rect x="5" y="4" width="5" height="16" rx="1"/><rect x="14" y="4" width="5" height="16" rx="1"/></svg> Interrupt';
+
+  const close = document.createElement("button");
+  close.className = "pane-interact-btn pane-interact-close";
+  close.textContent = "Close";
+
+  btnRow.appendChild(voice);
+  btnRow.appendChild(interrupt);
+  btnRow.appendChild(close);
+
+  const status = document.createElement("div");
+  status.className = "pane-interact-status";
+  status.textContent = label || "";
+
+  overlay.appendChild(topRow);
+  overlay.appendChild(btnRow);
+  overlay.appendChild(status);
+  entry.panel.appendChild(overlay);
+
+  function doSend() {
+    unlockAudio();
+    const ok = sendPaneText(entry.target, input.value);
+    if (ok) {
+      playDing(true);
+      input.value = "";
+      input.focus();
+    } else {
+      playDing(false);
+      status.textContent = "Disconnected";
+    }
+  }
+
+  send.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    doSend();
+  });
+
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      doSend();
+    }
+    if (e.key === "Escape") {
+      e.preventDefault();
+      closeActivePaneInteract();
+    }
+  });
+
+  close.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    closeActivePaneInteract();
+  });
+
+  interrupt.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    unlockAudio();
+    const ok = sendPaneInterrupt(entry.target);
+    playDing(ok);
+  });
+
+  voice.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      status.textContent = "Speech-to-text not supported in this browser";
+      playDing(false);
+      return;
+    }
+
+    // Toggle off if already listening.
+    if (activePaneSpeech) {
+      stopActivePaneSpeech();
+      status.textContent = "Stopped";
+      return;
+    }
+
+    unlockAudio();
+    const rec = new SpeechRecognition();
+    activePaneSpeech = rec;
+
+    rec.lang = navigator.language || "en-US";
+    rec.interimResults = true;
+    rec.continuous = false;
+
+    status.textContent = "Listening...";
+
+    rec.onresult = (evt) => {
+      let finalText = "";
+      let interim = "";
+      for (let i = evt.resultIndex; i < evt.results.length; i++) {
+        const res = evt.results[i];
+        const text = (res[0] && res[0].transcript) ? res[0].transcript : "";
+        if (res.isFinal) finalText += text;
+        else interim += text;
+      }
+
+      const live = (finalText || interim).trim();
+      if (live) input.value = live;
+
+      if (finalText && finalText.trim()) {
+        status.textContent = "Sending...";
+        const ok = sendPaneText(entry.target, finalText);
+        playDing(ok);
+        input.value = "";
+        input.focus();
+      }
+    };
+
+    rec.onerror = (err) => {
+      status.textContent = "Voice error: " + (err && err.error ? err.error : "unknown");
+      playDing(false);
+    };
+
+    rec.onend = () => {
+      if (activePaneSpeech === rec) activePaneSpeech = null;
+      status.textContent = label || "";
+    };
+
+    try {
+      rec.start();
+    } catch {
+      activePaneSpeech = null;
+      status.textContent = "Voice start failed";
+      playDing(false);
+    }
+  });
+
+  entry.overlay = overlay;
+  entry.input = input;
+  entry.statusEl = status;
+}
+
+function openPaneInteract(entry, label) {
+  closeActivePaneInteract();
+  ensurePaneOverlay(entry, label);
+
+  entry.panel.classList.add("pane-interact-active");
+  entry.overlay.classList.remove("hidden");
+
+  activePaneInteract = {
+    key: entry.key,
+    panel: entry.panel,
+    overlay: entry.overlay,
+    input: entry.input,
+    statusEl: entry.statusEl,
+    target: entry.target,
+  };
+
+  // Autofocus on open (mobile-friendly)
+  setTimeout(() => {
+    try {
+      entry.input.focus();
+    } catch {}
+  }, 0);
+}
+
+document.addEventListener("pointerdown", (e) => {
+  if (!document.getElementById("screens-view").classList.contains("active")) return;
+  if (!activePaneInteract) return;
+  const t = e.target;
+  if (activePaneInteract.overlay && activePaneInteract.overlay.contains(t)) return;
+  if (activePaneInteract.panel && activePaneInteract.panel.contains(t)) return;
+  closeActivePaneInteract();
+});
+
 function renderStreamUpdate(data) {
   if (!data.sessions || data.sessions.length === 0) {
     statusTimeEl.textContent = "no sessions";
     statusTimeEl.className = "";
     for (const [, entry] of panelMap) entry.panel.remove();
     panelMap.clear();
+    closeActivePaneInteract();
     if (!statusPanesEl.querySelector(".status-empty")) {
       statusPanesEl.innerHTML = '<div class="status-empty">No tmux sessions found</div>';
     }
     return;
   }
 
-  statusTimeEl.textContent = "\u25cf LIVE";
+  statusTimeEl.textContent = "● LIVE";
   statusTimeEl.className = "live-indicator";
 
   const emptyMsg = statusPanesEl.querySelector(".status-empty");
@@ -848,39 +1090,66 @@ function renderStreamUpdate(data) {
   const currentKeys = new Set();
 
   for (const session of data.sessions) {
-    for (const win of session.windows) {
-      const key = `${session.name}\t${win.name}`;
-      currentKeys.add(key);
+    for (const win of (session.windows || [])) {
+      const panes = Array.isArray(win.panes) && win.panes.length
+        ? win.panes
+        : [{ index: 0, target: `${session.name}:0.0`, content: win.content || "" }];
 
-      let entry = panelMap.get(key);
-      if (!entry) {
-        const panel = document.createElement("div");
-        panel.className = "stream-panel collapsed";
+      for (const pane of panes) {
+        const key = `${session.name}	${win.name}	${pane.target || pane.id || pane.index}`;
+        currentKeys.add(key);
 
-        const header = document.createElement("div");
-        header.className = "stream-panel-header";
-        header.textContent = `${session.name} / ${win.name}`;
-        header.addEventListener("click", () => {
-          panel.classList.toggle("collapsed");
-        });
-        panel.appendChild(header);
+        let entry = panelMap.get(key);
+        if (!entry) {
+          const panel = document.createElement("div");
+          panel.className = "stream-panel collapsed";
 
-        const pre = document.createElement("pre");
-        pre.className = "stream-panel-content";
-        panel.appendChild(pre);
+          const header = document.createElement("div");
+          header.className = "stream-panel-header";
+          header.textContent = `${session.name} / ${win.name} · pane ${pane.index}`;
+          header.title = pane.target || "";
+          header.addEventListener("click", () => {
+            panel.classList.toggle("collapsed");
+          });
+          panel.appendChild(header);
 
-        statusPanesEl.appendChild(panel);
-        entry = { panel, pre, lastContent: "" };
-        panelMap.set(key, entry);
-      }
+          const pre = document.createElement("pre");
+          pre.className = "stream-panel-content";
+          pre.addEventListener("click", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const current = panelMap.get(key);
+            if (current) {
+              openPaneInteract(current, `${session.name} / ${win.name} · ${current.target || ""}`);
+            }
+          });
+          panel.appendChild(pre);
 
-      if (win.content !== entry.lastContent) {
-        const wasAtBottom =
-          entry.pre.scrollHeight - entry.pre.scrollTop - entry.pre.clientHeight < 40;
-        entry.pre.textContent = win.content;
-        entry.lastContent = win.content;
-        if (wasAtBottom) {
-          entry.pre.scrollTop = entry.pre.scrollHeight;
+          statusPanesEl.appendChild(panel);
+          entry = {
+            key,
+            panel,
+            pre,
+            target: pane.target,
+            lastContent: "",
+            overlay: null,
+            input: null,
+            statusEl: null,
+          };
+          panelMap.set(key, entry);
+        } else {
+          entry.target = pane.target;
+        }
+
+        const content = pane.content || "";
+        if (content !== entry.lastContent) {
+          const wasAtBottom =
+            entry.pre.scrollHeight - entry.pre.scrollTop - entry.pre.clientHeight < 40;
+          entry.pre.textContent = content;
+          entry.lastContent = content;
+          if (wasAtBottom) {
+            entry.pre.scrollTop = entry.pre.scrollHeight;
+          }
         }
       }
     }
@@ -888,12 +1157,12 @@ function renderStreamUpdate(data) {
 
   for (const [key, entry] of panelMap) {
     if (!currentKeys.has(key)) {
+      if (activePaneInteract && activePaneInteract.key === key) closeActivePaneInteract();
       entry.panel.remove();
       panelMap.delete(key);
     }
   }
 }
-
 // --- Summary tab ---
 const summaryTabContentEl = document.getElementById("summary-tab-content");
 const refreshSummaryBtn = document.getElementById("refresh-summary-btn");

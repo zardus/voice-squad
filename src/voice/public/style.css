@@ -397,6 +397,134 @@ body {
   margin: 0;
 }
 
+/* Pane interaction overlay (Screens tab) */
+.pane-interact-host {
+  position: relative;
+}
+
+.stream-panel.pane-interact-active {
+  border-color: #4ecca3;
+}
+
+.pane-interact-overlay {
+  border-top: 1px solid #0f3460;
+  background: rgba(22, 33, 62, 0.92);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  padding: 10px;
+  position: sticky;
+  bottom: 0;
+}
+
+.pane-interact-overlay.hidden {
+  display: none;
+}
+
+.pane-interact-top {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.pane-interact-input {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid #0f3460;
+  border-radius: 8px;
+  background: #1a1a2e;
+  color: #e0e0e0;
+  font-size: 16px;
+  outline: none;
+}
+
+.pane-interact-input:focus {
+  border-color: #4ecca3;
+}
+
+.pane-interact-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.pane-interact-btn {
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid #0f3460;
+  background: #1a1a2e;
+  color: #e0e0e0;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  flex: 1 1 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.pane-interact-send {
+  flex: 0 0 auto;
+  background: #0f3460;
+  border-color: #0f3460;
+  color: #4ecca3;
+}
+
+.pane-interact-send:active {
+  background: #4ecca3;
+  border-color: #4ecca3;
+  color: #1a1a2e;
+}
+
+.pane-interact-voice {
+  border-color: #a78bfa;
+  color: #a78bfa;
+}
+
+.pane-interact-voice:active {
+  background: #a78bfa;
+  color: #1a1a2e;
+}
+
+.pane-interact-interrupt {
+  border-color: #e94560;
+  background: #e94560;
+  color: #fff;
+}
+
+.pane-interact-interrupt:active {
+  filter: brightness(1.1);
+}
+
+.pane-interact-close {
+  border-color: rgba(127, 142, 163, 0.5);
+  color: #8893a8;
+}
+
+.pane-interact-close:active {
+  background: rgba(127, 142, 163, 0.25);
+  color: #e0e0e0;
+}
+
+.pane-interact-status {
+  margin-top: 8px;
+  font-size: 11px;
+  color: #7f8ea3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 520px) {
+  .pane-interact-actions {
+    flex-wrap: wrap;
+  }
+  .pane-interact-btn {
+    flex: 1 1 30%;
+  }
+}
+
 .live-indicator {
   color: #4ecca3;
   font-weight: 600;

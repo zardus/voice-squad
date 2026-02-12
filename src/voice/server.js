@@ -4,7 +4,7 @@ const https = require("https");
 const path = require("path");
 const fs = require("fs/promises");
 const { WebSocketServer, WebSocket } = require("ws");
-const { sendToCaptain, capturePaneOutputAsync } = require("./tmux-bridge");
+const { sendToCaptain, capturePaneOutputAsync, sendTextToPaneTarget, sendCtrlCToPaneTarget } = require("./tmux-bridge");
 const { transcribe } = require("./stt");
 const { synthesize } = require("./tts");
 const statusDaemon = require("./status-daemon");
@@ -299,7 +299,16 @@ app.post("/api/summary", async (req, res) => {
     let dump = "";
     for (const session of sessions) {
       for (const win of session.windows) {
-        dump += `=== Session: ${session.name} | Window: ${win.name} ===\n${win.content}\n\n`;
+        dump += `=== Session: ${session.name} | Window: ${win.name} ===\n`;
+        if (Array.isArray(win.panes) && win.panes.length) {
+          for (const pane of win.panes) {
+            dump += `--- Pane: ${pane.target || pane.id || pane.index} ---\n${pane.content || ""}\n\n`;
+          }
+        } else if (typeof win.content === "string") {
+          dump += `${win.content}\n\n`;
+        } else {
+          dump += "(no content)\n\n";
+        }
       }
     }
     console.log(`[summary] captured ${sessions.length} sessions, ${dump.length} chars, calling Haiku...`);
@@ -448,6 +457,30 @@ wss.on("connection", (ws) => {
         console.log(`[status] client deactivated status tab (${statusClients.size} watching)`);
         if (statusClients.size === 0 && statusDaemon.isRunning()) {
           statusDaemon.stop();
+        }
+        break;
+
+      case "pane_send_text":
+        if (msg.target && msg.text && msg.text.trim()) {
+          try {
+            sendTextToPaneTarget(msg.target, msg.text);
+            ws.send(JSON.stringify({ type: "pane_action_ok", action: "send_text", target: msg.target }));
+          } catch (err) {
+            console.error(`[pane_send_text] failed for ${msg.target}: ${err.message}`);
+            ws.send(JSON.stringify({ type: "error", message: "Pane send failed: " + err.message }));
+          }
+        }
+        break;
+
+      case "pane_interrupt":
+        if (msg.target) {
+          try {
+            sendCtrlCToPaneTarget(msg.target);
+            ws.send(JSON.stringify({ type: "pane_action_ok", action: "interrupt", target: msg.target }));
+          } catch (err) {
+            console.error(`[pane_interrupt] failed for ${msg.target}: ${err.message}`);
+            ws.send(JSON.stringify({ type: "error", message: "Pane interrupt failed: " + err.message }));
+          }
         }
         break;
 

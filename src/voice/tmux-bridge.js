@@ -1,6 +1,16 @@
-const { execSync, execFile } = require("child_process");
+const { execSync, execFile, execFileSync } = require("child_process");
 
 const TARGET = "captain:0";
+
+function validatePaneTarget(target) {
+  const t = String(target || "").trim();
+  // Expected: session:window.pane (we use numeric window/pane indexes)
+  if (!/^[-a-zA-Z0-9._]+:\d+\.\d+$/.test(t)) {
+    throw new Error("Invalid tmux pane target: " + t);
+  }
+  return t;
+}
+
 // Strip Claude/Codex interactive input chrome (textbox + autosuggest) from a captured pane.
 // This keeps the UI's "Terminal" view focused on conversation/log output.
 function stripInputBox(output) {
@@ -143,8 +153,33 @@ async function sendToCaptain(text) {
   execSync(`tmux send-keys -t ${TARGET} Enter`, { timeout: 5000 });
 }
 
+function normalizeOneLineText(text) {
+  return String(text || "").replace(/[\r\n]+/g, " ").trim();
+}
+
+function sendTextToPaneTarget(target, text) {
+  const t = validatePaneTarget(target);
+  const line = normalizeOneLineText(text);
+  if (!line) return;
+  if (line.length > 4000) throw new Error("Text too long");
+
+  execFileSync("tmux", ["send-keys", "-t", t, "-l", line], { timeout: 5000 });
+  execFileSync("tmux", ["send-keys", "-t", t, "Enter"], { timeout: 5000 });
+}
+
+function sendCtrlCToPaneTarget(target) {
+  const t = validatePaneTarget(target);
+  execFileSync("tmux", ["send-keys", "-t", t, "C-c"], { timeout: 5000 });
+}
+
 function shellEscape(str) {
   return "'" + str.replace(/'/g, "'\\''") + "'";
 }
 
-module.exports = { sendToCaptain, capturePaneOutput, capturePaneOutputAsync };
+module.exports = {
+  sendToCaptain,
+  capturePaneOutput,
+  capturePaneOutputAsync,
+  sendTextToPaneTarget,
+  sendCtrlCToPaneTarget,
+};

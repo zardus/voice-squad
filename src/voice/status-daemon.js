@@ -10,6 +10,11 @@ function tmuxExecAsync(args) {
   });
 }
 
+function safeInt(s, fallback) {
+  const n = Number.parseInt(String(s || ""), 10);
+  return Number.isFinite(n) ? n : fallback;
+}
+
 function stripInputBox(output) {
   const lines = output.split("\n");
   while (lines.length && lines[lines.length - 1] === "") lines.pop();
@@ -110,20 +115,50 @@ async function collectPanes() {
     const sessionId = sLine.slice(tabIdx + 1);
     if (!sessionName) return null;
 
-    const windowsRaw = await tmuxExecAsync(["list-windows", "-t", sessionId || sessionName, "-F", "#{window_name}\t#{window_id}"]);
+    const windowsRaw = await tmuxExecAsync([
+      "list-windows",
+      "-t",
+      sessionId || sessionName,
+      "-F",
+      "#{window_name}\t#{window_id}\t#{window_index}",
+    ]);
     if (!windowsRaw.trim()) return null;
 
     const windowLines = windowsRaw.trim().split("\n");
     const windows = (await Promise.all(windowLines.map(async (wLine) => {
-      const wTabIdx = wLine.indexOf("\t");
-      if (wTabIdx < 0) return null;
-      const windowName = wLine.slice(0, wTabIdx);
-      const windowId = wLine.slice(wTabIdx + 1);
+      const parts = wLine.split("\t");
+      if (parts.length < 2) return null;
+      const windowName = parts[0];
+      const windowId = parts[1];
+      const windowIndex = safeInt(parts[2], null);
       if (!windowName) return null;
 
-      const raw = await tmuxExecAsync(["capture-pane", "-t", windowId || `${sessionName}:${windowName}`, "-p", "-S", "-200"]);
-      const content = stripInputBox(raw);
-      return { name: windowName, content: content.trim().slice(-3000) };
+      const panesRaw = await tmuxExecAsync([
+        "list-panes",
+        "-t",
+        windowId || `${sessionName}:${windowName}`,
+        "-F",
+        "#{pane_index}\t#{pane_id}",
+      ]);
+
+      const paneLines = panesRaw.trim() ? panesRaw.trim().split("\n") : [];
+      const panes = (await Promise.all(paneLines.map(async (pLine) => {
+        const pParts = pLine.split("\t");
+        if (pParts.length < 2) return null;
+        const paneIndex = safeInt(pParts[0], null);
+        const paneId = pParts[1];
+        if (paneIndex === null || !paneId) return null;
+
+        const raw = await tmuxExecAsync(["capture-pane", "-t", paneId, "-p", "-S", "-200"]);
+        const content = stripInputBox(raw).trim().slice(-3000);
+
+        const winIdx = windowIndex === null ? 0 : windowIndex;
+        const target = `${sessionName}:${winIdx}.${paneIndex}`;
+        return { index: paneIndex, id: paneId, target, content };
+      }))).filter(Boolean);
+
+      panes.sort((a, b) => a.index - b.index);
+      return { name: windowName, index: windowIndex, panes };
     }))).filter(Boolean);
 
     return { name: sessionName, windows };
