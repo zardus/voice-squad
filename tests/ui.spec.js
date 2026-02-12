@@ -300,6 +300,7 @@ test.describe("UI", () => {
           handlers: {},
           playbackState: "",
           metadataTitle: "",
+          keepalivePlayCount: 0,
         };
         const fakeSession = {
           setActionHandler: (action, handler) => {
@@ -327,6 +328,9 @@ test.describe("UI", () => {
 
         const originalPlay = HTMLMediaElement.prototype.play;
         HTMLMediaElement.prototype.play = function patchedPlay() {
+          if (this && this.id === "media-keepalive-audio") {
+            state.keepalivePlayCount += 1;
+          }
           return Promise.resolve();
         };
         window.__restorePlay = () => {
@@ -342,7 +346,9 @@ test.describe("UI", () => {
       expect(mediaState.handlers.play).toBe(true);
       expect(mediaState.handlers.pause).toBe(true);
       expect(mediaState.metadataTitle).toBe("Voice Squad");
+      expect(mediaState.keepalivePlayCount).toBeGreaterThan(0);
       await expect(page.locator("#airpod-status")).toHaveClass(/active|inactive/);
+      await expect(page.locator("#media-keepalive-audio")).toBeAttached();
 
       await page.evaluate(() => {
         if (window.__restorePlay) window.__restorePlay();

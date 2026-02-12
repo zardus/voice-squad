@@ -70,20 +70,26 @@ ttsAudio.setAttribute("playsinline", "");
 ttsAudio.setAttribute("webkit-playsinline", "");
 let audioUnlocked = false;
 let audioCtx = null;
-const SILENT_AUDIO_DATA_URI = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=";
 let mediaSessionReady = false;
 let mediaKeepaliveAudio = null;
 let mediaKeepaliveStarted = false;
+let mediaSessionPrimedByGesture = false;
+let mediaKeepalivePlayPromise = null;
+let webAudioKeepaliveNode = null;
+let silentKeepaliveUrl = null;
 
 function getAudioContext() {
-  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  if (audioCtx.state === "suspended") audioCtx.resume();
+  const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextCtor) return null;
+  if (!audioCtx) audioCtx = new AudioContextCtor();
+  if (audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
   return audioCtx;
 }
 
 function playChime() {
   try {
     const ctx = getAudioContext();
+    if (!ctx) return;
     const now = ctx.currentTime;
     // Pleasant bell: a short sine at 830 Hz with a gentle decay
     const osc = ctx.createOscillator();
@@ -103,6 +109,7 @@ function playChime() {
 function playDing(success) {
   try {
     const ctx = getAudioContext();
+    if (!ctx) return;
     const now = ctx.currentTime;
     if (success) {
       [660, 880].forEach((freq, i) => {
@@ -132,8 +139,17 @@ function playDing(success) {
 
 function unlockAudio() {
   if (audioUnlocked) return;
-  const primer = new Audio(SILENT_AUDIO_DATA_URI);
-  primer.play().then(() => { audioUnlocked = true; }).catch(() => {});
+  const primer = new Audio();
+  primer.src = getSilentKeepaliveAudioUrl();
+  primer.setAttribute("playsinline", "");
+  primer.setAttribute("webkit-playsinline", "");
+  primer.play().then(() => {
+    audioUnlocked = true;
+    try {
+      primer.pause();
+      primer.currentTime = 0;
+    } catch {}
+  }).catch(() => {});
   getAudioContext(); // warm up AudioContext during user gesture
 }
 
@@ -164,52 +180,133 @@ function toggleRecordingFromMediaSession() {
   startRecording();
 }
 
+function createSilentWavUrl(durationSeconds = 8) {
+  // iOS needs an actual, non-trivial media stream for media controls.
+  const sampleRate = 8000;
+  const channels = 1;
+  const bitsPerSample = 16;
+  const sampleCount = Math.max(1, Math.floor(durationSeconds * sampleRate));
+  const dataSize = sampleCount * channels * (bitsPerSample / 8);
+  const buffer = new ArrayBuffer(44 + dataSize);
+  const view = new DataView(buffer);
+
+  let offset = 0;
+  const writeString = (text) => {
+    for (let i = 0; i < text.length; i++) {
+      view.setUint8(offset++, text.charCodeAt(i));
+    }
+  };
+
+  writeString("RIFF");
+  view.setUint32(offset, 36 + dataSize, true); offset += 4;
+  writeString("WAVE");
+  writeString("fmt ");
+  view.setUint32(offset, 16, true); offset += 4; // PCM chunk size
+  view.setUint16(offset, 1, true); offset += 2; // PCM
+  view.setUint16(offset, channels, true); offset += 2;
+  view.setUint32(offset, sampleRate, true); offset += 4;
+  view.setUint32(offset, sampleRate * channels * (bitsPerSample / 8), true); offset += 4;
+  view.setUint16(offset, channels * (bitsPerSample / 8), true); offset += 2;
+  view.setUint16(offset, bitsPerSample, true); offset += 2;
+  writeString("data");
+  view.setUint32(offset, dataSize, true);
+
+  return URL.createObjectURL(new Blob([buffer], { type: "audio/wav" }));
+}
+
+function getSilentKeepaliveAudioUrl() {
+  if (!silentKeepaliveUrl) silentKeepaliveUrl = createSilentWavUrl();
+  return silentKeepaliveUrl;
+}
+
+function startWebAudioKeepalive() {
+  if (webAudioKeepaliveNode) return;
+  const ctx = getAudioContext();
+  if (!ctx) return;
+  try {
+    const source = ctx.createConstantSource();
+    const gain = ctx.createGain();
+    gain.gain.value = 0;
+    source.offset.value = 0;
+    source.connect(gain);
+    gain.connect(ctx.destination);
+    source.start();
+    webAudioKeepaliveNode = source;
+  } catch {}
+}
+
 function ensureMediaKeepaliveAudio() {
   if (!mediaKeepaliveAudio) {
-    mediaKeepaliveAudio = new Audio(SILENT_AUDIO_DATA_URI);
+    mediaKeepaliveAudio = document.getElementById("media-keepalive-audio") || new Audio();
     mediaKeepaliveAudio.loop = true;
     mediaKeepaliveAudio.preload = "auto";
-    mediaKeepaliveAudio.volume = 0.0001;
+    mediaKeepaliveAudio.volume = 0.00001;
     mediaKeepaliveAudio.setAttribute("playsinline", "");
     mediaKeepaliveAudio.setAttribute("webkit-playsinline", "");
+    if (!mediaKeepaliveAudio.src) mediaKeepaliveAudio.src = getSilentKeepaliveAudioUrl();
     mediaKeepaliveAudio.addEventListener("pause", () => {
       mediaKeepaliveStarted = false;
     });
+    mediaKeepaliveAudio.addEventListener("ended", () => {
+      mediaKeepaliveStarted = false;
+    });
   }
-
-  if (mediaKeepaliveStarted) return;
-  mediaKeepaliveAudio.play().then(() => {
-    mediaKeepaliveStarted = true;
-    setAirpodStatus("AirPod squeeze-to-talk active", "active");
-  }).catch(() => {
-    mediaKeepaliveStarted = false;
-    setAirpodStatus("Tap screen once to enable AirPod squeeze", "inactive");
-  });
+  return mediaKeepaliveAudio;
 }
 
-function setupMediaSession() {
+async function startMediaKeepalive({ requireUserGesture = false } = {}) {
+  const keepalive = ensureMediaKeepaliveAudio();
+  if (mediaKeepaliveStarted && !keepalive.paused) return true;
+  if (mediaKeepalivePlayPromise) return mediaKeepalivePlayPromise;
+  if (requireUserGesture && !mediaSessionPrimedByGesture) {
+    setAirpodStatus("Tap screen once to enable AirPod squeeze", "inactive");
+    return false;
+  }
+
+  mediaKeepalivePlayPromise = keepalive.play().then(() => {
+    mediaKeepaliveStarted = true;
+    mediaKeepalivePlayPromise = null;
+    startWebAudioKeepalive();
+    setAirpodStatus("AirPod squeeze-to-talk active", "active");
+    return true;
+  }).catch(() => {
+    mediaKeepaliveStarted = false;
+    mediaKeepalivePlayPromise = null;
+    setAirpodStatus("Tap screen once to enable AirPod squeeze", "inactive");
+    return false;
+  });
+  return mediaKeepalivePlayPromise;
+}
+
+function registerMediaSessionHandlers() {
+  if (mediaSessionReady) return;
+  try {
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: "Voice Squad",
+      artist: "Push-to-talk",
+      album: "AirPod Controls",
+      artwork: [
+        { src: "icon-192.png", sizes: "192x192", type: "image/png" },
+        { src: "icon-512.png", sizes: "512x512", type: "image/png" },
+      ],
+    });
+  } catch {}
+
+  try { navigator.mediaSession.setActionHandler("play", toggleRecordingFromMediaSession); } catch {}
+  try { navigator.mediaSession.setActionHandler("pause", toggleRecordingFromMediaSession); } catch {}
+  try { navigator.mediaSession.setActionHandler("stop", () => { if (recording || wantRecording) stopRecording(); }); } catch {}
+  mediaSessionReady = true;
+}
+
+async function setupMediaSession({ requireUserGesture = false } = {}) {
   if (!supportsMediaSession()) {
     setAirpodStatus("AirPod squeeze unavailable in this browser", "unsupported");
     return;
   }
 
-  if (!mediaSessionReady) {
-    try {
-      navigator.mediaSession.metadata = new MediaMetadata({
-        title: "Voice Squad",
-        artist: "Push-to-talk",
-        album: "AirPod Controls",
-      });
-    } catch {}
-
-    try { navigator.mediaSession.setActionHandler("play", toggleRecordingFromMediaSession); } catch {}
-    try { navigator.mediaSession.setActionHandler("pause", toggleRecordingFromMediaSession); } catch {}
-    try { navigator.mediaSession.setActionHandler("stop", () => { if (recording || wantRecording) stopRecording(); }); } catch {}
-    mediaSessionReady = true;
-  }
-
+  const keepaliveReady = await startMediaKeepalive({ requireUserGesture });
+  if (keepaliveReady) registerMediaSessionHandlers();
   updateMediaSessionPlaybackState();
-  ensureMediaKeepaliveAudio();
 }
 
 function stopTtsPlayback() {
@@ -1022,14 +1119,16 @@ voiceStatusBtn.addEventListener("click", () => {
 // gestures to re-prime the Audio element for autoplay.
 let micStreamAcquired = false;
 function onUserGesture() {
+  mediaSessionPrimedByGesture = true;
   if (!audioUnlocked) unlockAudio();
   if (audioCtx && audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
-  setupMediaSession();
+  setupMediaSession({ requireUserGesture: true });
   if (!micStreamAcquired) {
     ensureMicStream().then(() => { micStreamAcquired = true; }).catch(() => {});
   }
 }
 document.addEventListener("touchstart", onUserGesture, { passive: true });
+document.addEventListener("pointerdown", onUserGesture, { passive: true });
 document.addEventListener("click", onUserGesture);
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden) setupMediaSession();
