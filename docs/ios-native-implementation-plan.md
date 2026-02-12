@@ -63,6 +63,17 @@ Scope: RESEARCH ONLY (no code).
 
 In practice: **you can’t produce a shippable iOS `.ipa` entirely on Linux** because Apple’s iOS SDK tooling is tied to Xcode/macOS.
 
+### Cross-platform frameworks: can they “build iOS from Linux”?
+
+In practice: you can do substantial app development on Linux, but **the iOS build step still requires macOS/Xcode** (locally or in CI).
+
+- React Native:
+  - You can write JS/TS on Linux, but the iOS target uses Xcode toolchains.
+- Flutter:
+  - Flutter tooling is cross-platform, but iOS builds require macOS/Xcode.
+- Capacitor:
+  - Your web code is portable, but the iOS shell is an Xcode project; building/signing is macOS-bound.
+
 ### Cloud Mac options (practical)
 
 You can treat macOS as a “build appliance”:
@@ -169,6 +180,25 @@ If you want AirPods remote commands to work reliably and allow “hands-free” 
 App Review risk:
 - Background audio/recording must have a clear user benefit and obvious UI state (“Recording” indicator, explicit permission prompts).
 
+### Recommended iOS client implementation sketch (no code, but concrete APIs)
+
+- WebSocket:
+  - `URLSessionWebSocketTask` to connect to `wss://HOST/?token=...`
+  - Receive loop must handle:
+    - text frames (JSON)
+    - binary frames (audio)
+  - Send loop must send:
+    - `audio_start` JSON
+    - binary audio frames
+    - `audio_end` JSON
+
+- Recording:
+  - `AVAudioSession` configured once; re-activated per session.
+  - `AVAudioRecorder` recording to an `.m4a` file (AAC) is simplest.
+
+- Playback:
+  - Prefer server returning MP3 or AAC/M4A so playback can use AVFoundation without custom codecs.
+
 ### Push notifications + worker status updates
 
 Two complementary channels:
@@ -231,6 +261,28 @@ Practical notes:
   - set `MPNowPlayingInfoCenter.default().nowPlayingInfo`
   - keep an `AVAudioSession` active
   - sometimes have an active playback item (this is the uncomfortable part: iOS is optimized for media playback apps)
+
+### Concrete implementation details (conceptual; no code)
+
+1. Enter “hands-free mode”
+   - Configure and activate `AVAudioSession` (likely `.playAndRecord`).
+   - Populate `MPNowPlayingInfoCenter.default().nowPlayingInfo` with a minimal dictionary:
+     - title: “VoiceSquad”
+     - artist: “Push-to-talk”
+     - playback rate: 0 or 1 depending on whether you are “playing” a response
+   - Register handlers in `MPRemoteCommandCenter.shared()`:
+     - `togglePlayPauseCommand`
+     - optionally `nextTrackCommand`, `previousTrackCommand`
+
+2. Remote command handler logic
+   - Treat each remote command as a state machine transition (Idle <-> Recording <-> PlayingBack).
+   - Make transitions idempotent and resilient:
+     - ignore “start recording” if you’re already recording
+     - ignore “stop recording” if not recording
+
+3. Keep it user-controlled
+   - Provide a visible toggle “Enable headset controls”.
+   - Explain limitations explicitly (you’re reacting to media commands, not reading “raw squeeze”).
 
 ### Can we distinguish squeeze vs double-squeeze vs long-press?
 
@@ -415,3 +467,21 @@ Blocking risk to resolve here:
    - borrow/rent Mac for initial setup vs straight to cloud Mac
    - choose CI upload tool (fastlane vs Codemagic vs Xcode Cloud)
 
+---
+
+## Sources / Reference Links
+
+Apple (primary):
+- TestFlight overview: https://developer.apple.com/testflight/
+- App Store Connect Help: Add internal testers: https://developer.apple.com/help/app-store-connect/test-a-beta-version/add-internal-testers
+- ActivityKit Live Activities: https://developer.apple.com/documentation/activitykit
+- ActivityKit push updates: https://developer.apple.com/documentation/activitykit/starting-and-updating-live-activities-with-activitykit-push-notifications
+- AVAudioSession: https://developer.apple.com/documentation/avfaudio/avaudiosession
+- MPRemoteCommandCenter: https://developer.apple.com/documentation/mediaplayer/mpremotecommandcenter
+- MPNowPlayingInfoCenter: https://developer.apple.com/documentation/mediaplayer/mpnowplayinginfocenter
+- AirPods controls (user-facing behavior and gesture mappings): https://support.apple.com/guide/airpods/airpods-controls-devb2c431317/web
+
+Framework/platform requirements (useful for “Linux vs Mac” decisions):
+- Swift on Linux (toolchains): https://www.swift.org/download/
+- Flutter iOS setup (macOS/Xcode requirement): https://docs.flutter.dev/platform-integration/ios/setup
+- Capacitor iOS build requirement (macOS/Xcode unless using a hosted build service): https://ionic.io/blog/capacitor-app-development-workflow
