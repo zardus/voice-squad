@@ -109,9 +109,11 @@
               <polygon points="8,5 19,12 8,19"/>
             </svg>
           </button>
-          <select id="voice-output-history-select" aria-label="Replay previous voice summary">
-            <option value="" selected disabled>Replay...</option>
-          </select>
+          <button id="voice-history-modal-btn" title="Open voice history" aria-label="Open voice history">
+            <svg viewBox="0 0 24 24" width="54" height="54" fill="currentColor" aria-hidden="true">
+              <path d="M4 5h16v2H4zm0 6h16v2H4zm0 6h16v2H4z"/>
+            </svg>
+          </button>
         </div>
         <div id="voice-mic-row">
           <button id="voice-mic-btn" title="Hold to speak">
@@ -163,6 +165,17 @@
           <button id="text-popout-cancel-btn">Close</button>
           <button id="text-popout-send-btn">Send</button>
         </div>
+      </div>
+    </div>
+
+    <div id="voice-history-modal" class="hidden" aria-hidden="true">
+      <div id="voice-history-backdrop"></div>
+      <div id="voice-history-dialog" role="dialog" aria-modal="true" aria-labelledby="voice-history-title">
+        <div id="voice-history-header">
+          <span id="voice-history-title">Voice History</span>
+          <button id="voice-history-close-btn" title="Close history" aria-label="Close history">&times;</button>
+        </div>
+        <div id="voice-history-list" aria-live="polite"></div>
       </div>
     </div>
   </div>

@@ -87,6 +87,22 @@ test.describe("API endpoints", () => {
     expect(resp.status).toBe(401);
   });
 
+  // --- GET /api/voice-history ---
+
+  test("GET /api/voice-history with valid token returns entries array", async () => {
+    const resp = await fetch(`${BASE_URL}/api/voice-history?token=${encodeURIComponent(TOKEN)}`);
+    expect(resp.status).toBe(200);
+    const json = await resp.json();
+    expect(Array.isArray(json.entries)).toBe(true);
+  });
+
+  test("GET /api/voice-history without token returns 401", async () => {
+    const resp = await fetch(`${BASE_URL}/api/voice-history`);
+    expect(resp.status).toBe(401);
+    const json = await resp.json();
+    expect(json.error).toBe("Unauthorized");
+  });
+
   // --- POST /api/interrupt ---
 
   test("POST /api/interrupt with valid token returns ok", async () => {

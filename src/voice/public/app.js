@@ -12,6 +12,11 @@ const textPopoutTextarea = document.getElementById("text-popout-textarea");
 const textPopoutSendBtn = document.getElementById("text-popout-send-btn");
 const textPopoutCloseBtn = document.getElementById("text-popout-close-btn");
 const textPopoutCancelBtn = document.getElementById("text-popout-cancel-btn");
+const voiceHistoryModal = document.getElementById("voice-history-modal");
+const voiceHistoryBackdrop = document.getElementById("voice-history-backdrop");
+const voiceHistoryCloseBtn = document.getElementById("voice-history-close-btn");
+const voiceHistoryList = document.getElementById("voice-history-list");
+const voiceHistoryModalBtn = document.getElementById("voice-history-modal-btn");
 const updateBtn = document.getElementById("update-btn");
 const autoreadCb = document.getElementById("autoread-cb");
 const voiceMicBtn = document.getElementById("voice-mic-btn");
@@ -20,7 +25,6 @@ const voiceStatusBtn = document.getElementById("voice-status-btn");
 const voiceTranscriptionEl = document.getElementById("voice-transcription");
 const voiceInterruptBtn = document.getElementById("voice-interrupt-btn");
 const voiceHistorySelect = document.getElementById("voice-history-select");
-const voiceOutputHistorySelect = document.getElementById("voice-output-history-select");
 const interruptBtn = document.getElementById("interrupt-btn");
 const controlsEl = document.getElementById("controls");
 const captainToolSelect = document.getElementById("captain-tool-select");
@@ -161,12 +165,10 @@ requestAnimationFrame(renderLoop);
 const urlParams = new URLSearchParams(location.search);
 const token = urlParams.get("token") || "";
 const MESSAGE_HISTORY_KEY = "message_history";
-const SPEAK_HISTORY_KEY = "speak_history";
 const MESSAGE_HISTORY_LIMIT = 20;
-const SPEAK_HISTORY_LIMIT = 20;
 const HISTORY_PREVIEW_MAX = 40;
 let messageHistory = [];
-let speakHistory = [];
+let voiceSummaryHistory = [];
 
 function truncateHistoryPreview(text) {
   return text.length > HISTORY_PREVIEW_MAX
@@ -231,53 +233,98 @@ function sendTextCommand(text, opts = {}) {
   return true;
 }
 
-function loadSpeakHistory() {
-  try {
-    const raw = localStorage.getItem(SPEAK_HISTORY_KEY);
-    if (!raw) return;
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return;
-    speakHistory = parsed
-      .filter((item) => typeof item === "string")
-      .map((item) => item.trim())
-      .filter(Boolean)
-      .slice(0, SPEAK_HISTORY_LIMIT);
-  } catch {
-    speakHistory = [];
+function isVoiceHistoryModalOpen() {
+  return voiceHistoryModal && !voiceHistoryModal.classList.contains("hidden");
+}
+
+function closeVoiceHistoryModal() {
+  if (!voiceHistoryModal) return;
+  voiceHistoryModal.classList.add("hidden");
+  voiceHistoryModal.setAttribute("aria-hidden", "true");
+  document.body.classList.remove("voice-history-open");
+}
+
+function formatVoiceHistoryTimestamp(isoLike) {
+  const dt = new Date(isoLike || "");
+  if (!Number.isFinite(dt.valueOf())) return "Unknown time";
+  return dt.toLocaleString([], {
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
+async function handleVoiceHistoryEntryClick(text) {
+  const ok = await requestSpeak(text);
+  playDing(ok);
+}
+
+function renderVoiceHistoryModal() {
+  if (!voiceHistoryList) return;
+  voiceHistoryList.innerHTML = "";
+
+  if (!voiceSummaryHistory.length) {
+    const empty = document.createElement("div");
+    empty.className = "voice-history-empty";
+    empty.textContent = "No voice summaries yet.";
+    voiceHistoryList.appendChild(empty);
+    return;
+  }
+
+  for (const entry of voiceSummaryHistory) {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = "voice-history-entry";
+    item.dataset.summaryText = entry.text;
+
+    const ts = document.createElement("div");
+    ts.className = "voice-history-entry-time";
+    ts.textContent = formatVoiceHistoryTimestamp(entry.timestamp);
+
+    const txt = document.createElement("div");
+    txt.className = "voice-history-entry-text";
+    txt.textContent = entry.text;
+
+    item.appendChild(ts);
+    item.appendChild(txt);
+    item.addEventListener("click", () => {
+      handleVoiceHistoryEntryClick(entry.text);
+    });
+    voiceHistoryList.appendChild(item);
   }
 }
 
-function persistSpeakHistory() {
-  try {
-    localStorage.setItem(SPEAK_HISTORY_KEY, JSON.stringify(speakHistory));
-  } catch {}
+function openVoiceHistoryModal() {
+  if (!voiceHistoryModal) return;
+  renderVoiceHistoryModal();
+  voiceHistoryModal.classList.remove("hidden");
+  voiceHistoryModal.setAttribute("aria-hidden", "false");
+  document.body.classList.add("voice-history-open");
 }
 
-function renderSpeakHistorySelect() {
-  if (!voiceOutputHistorySelect) return;
-  while (voiceOutputHistorySelect.options.length > 1) {
-    voiceOutputHistorySelect.remove(1);
-  }
-  for (const message of speakHistory) {
-    const option = document.createElement("option");
-    option.value = message;
-    option.textContent = truncateHistoryPreview(message);
-    option.title = message;
-    voiceOutputHistorySelect.appendChild(option);
-  }
-  voiceOutputHistorySelect.value = "";
+function setVoiceSummaryHistory(entries) {
+  if (!Array.isArray(entries)) return;
+  voiceSummaryHistory = entries
+    .filter((item) => item && typeof item === "object")
+    .map((item) => ({
+      text: typeof item.text === "string" ? item.text.trim() : "",
+      timestamp: typeof item.timestamp === "string" ? item.timestamp : new Date().toISOString(),
+    }))
+    .filter((item) => item.text);
+  renderVoiceHistoryModal();
 }
 
-function addSpeakToHistory(text) {
-  const normalized = (text || "").trim();
-  if (!normalized) return;
-  if (speakHistory[0] === normalized) return;
-  speakHistory.unshift(normalized);
-  if (speakHistory.length > SPEAK_HISTORY_LIMIT) {
-    speakHistory.length = SPEAK_HISTORY_LIMIT;
-  }
-  persistSpeakHistory();
-  renderSpeakHistorySelect();
+function prependVoiceSummaryEntry(entry) {
+  if (!entry || typeof entry !== "object") return;
+  const text = typeof entry.text === "string" ? entry.text.trim() : "";
+  if (!text) return;
+  voiceSummaryHistory.unshift({
+    text,
+    timestamp: typeof entry.timestamp === "string" ? entry.timestamp : new Date().toISOString(),
+  });
+  renderVoiceHistoryModal();
 }
 
 async function requestSpeak(text) {
@@ -296,7 +343,15 @@ async function requestSpeak(text) {
 }
 
 loadMessageHistory();
-loadSpeakHistory();
+
+async function loadVoiceSummaryHistory() {
+  try {
+    const resp = await fetch(`/api/voice-history?token=${encodeURIComponent(token)}`);
+    if (!resp.ok) return;
+    const data = await resp.json();
+    setVoiceSummaryHistory(data.entries || []);
+  } catch {}
+}
 
 terminalEl.addEventListener("scroll", () => {
   const { scrollTop, scrollHeight, clientHeight } = terminalEl;
@@ -355,7 +410,16 @@ function connect() {
       case "speak_text":
         if (msg.text) {
           summaryEl.textContent = msg.text;
-          addSpeakToHistory(msg.text);
+          prependVoiceSummaryEntry({
+            text: msg.text,
+            timestamp: msg.timestamp,
+          });
+        }
+        break;
+      case "voice_history":
+        setVoiceSummaryHistory(msg.entries || []);
+        if (!summaryEl.textContent && voiceSummaryHistory[0]) {
+          summaryEl.textContent = voiceSummaryHistory[0].text;
         }
         break;
 
@@ -523,6 +587,11 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && isTextPopoutOpen()) {
     e.preventDefault();
     closeTextPopout();
+    return;
+  }
+  if (e.key === "Escape" && isVoiceHistoryModalOpen()) {
+    e.preventDefault();
+    closeVoiceHistoryModal();
   }
 });
 
@@ -539,14 +608,17 @@ if (voiceHistorySelect) {
   });
 }
 
-if (voiceOutputHistorySelect) {
-  voiceOutputHistorySelect.addEventListener("change", async () => {
-    const text = voiceOutputHistorySelect.value;
-    if (!text) return;
-    const ok = await requestSpeak(text);
-    playDing(ok);
-    voiceOutputHistorySelect.value = "";
-  });
+if (voiceHistoryModalBtn) {
+  voiceHistoryModalBtn.addEventListener("click", openVoiceHistoryModal);
+}
+if (summaryEl) {
+  summaryEl.addEventListener("click", openVoiceHistoryModal);
+}
+if (voiceHistoryCloseBtn) {
+  voiceHistoryCloseBtn.addEventListener("click", closeVoiceHistoryModal);
+}
+if (voiceHistoryBackdrop) {
+  voiceHistoryBackdrop.addEventListener("click", closeVoiceHistoryModal);
 }
 
 // Mic recording — uses pre-acquired stream for instant start
@@ -1547,5 +1619,5 @@ setInterval(() => {
 }, 30000);
 
 renderMessageHistorySelect();
-renderSpeakHistorySelect();
 connect();
+loadVoiceSummaryHistory();

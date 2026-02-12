@@ -3,6 +3,7 @@ const http = require("http");
 const https = require("https");
 const path = require("path");
 const fs = require("fs/promises");
+const fsSync = require("fs");
 const { execSync } = require("child_process");
 const { WebSocketServer, WebSocket } = require("ws");
 const {
@@ -23,6 +24,8 @@ const SUMMARIES_DIR =
   process.env.SQUAD_SUMMARIES_DIR || "/home/ubuntu/captain/archive/summaries";
 const WS_MAX_PAYLOAD_BYTES = Number(process.env.WS_MAX_PAYLOAD_BYTES || 64 * 1024 * 1024);
 const MAX_AUDIO_UPLOAD_BYTES = Number(process.env.MAX_AUDIO_UPLOAD_BYTES || 64 * 1024 * 1024);
+const VOICE_HISTORY_FILE = process.env.VOICE_HISTORY_FILE || "/tmp/voice-summary-history.json";
+const VOICE_HISTORY_LIMIT = Number(process.env.VOICE_HISTORY_LIMIT || 1000);
 
 const REQUIRED_ENV = { VOICE_TOKEN: TOKEN, OPENAI_API_KEY: process.env.OPENAI_API_KEY };
 const missing = Object.entries(REQUIRED_ENV).filter(([, v]) => !v).map(([k]) => k);
@@ -31,6 +34,64 @@ if (missing.length) {
   process.exit(1);
 }
 console.log("[voice] env OK: VOICE_TOKEN, OPENAI_API_KEY all set");
+
+let voiceSummaryHistory = [];
+
+function normalizeVoiceHistoryEntries(entries) {
+  if (!Array.isArray(entries)) return [];
+  return entries
+    .filter((item) => item && typeof item === "object")
+    .map((item) => {
+      const text = typeof item.text === "string" ? item.text.trim() : "";
+      const timestamp = typeof item.timestamp === "string" && item.timestamp
+        ? item.timestamp
+        : new Date().toISOString();
+      return { text, timestamp };
+    })
+    .filter((item) => item.text)
+    .slice(0, VOICE_HISTORY_LIMIT);
+}
+
+async function loadVoiceSummaryHistory() {
+  try {
+    if (!fsSync.existsSync(VOICE_HISTORY_FILE)) {
+      voiceSummaryHistory = [];
+      return;
+    }
+    const raw = await fs.readFile(VOICE_HISTORY_FILE, "utf8");
+    const parsed = JSON.parse(raw);
+    voiceSummaryHistory = normalizeVoiceHistoryEntries(parsed.entries);
+    console.log(`[voice-history] loaded ${voiceSummaryHistory.length} entries`);
+  } catch (err) {
+    console.warn(`[voice-history] failed to load history: ${err.message}`);
+    voiceSummaryHistory = [];
+  }
+}
+
+async function persistVoiceSummaryHistory() {
+  try {
+    await fs.mkdir(path.dirname(VOICE_HISTORY_FILE), { recursive: true });
+    await fs.writeFile(
+      VOICE_HISTORY_FILE,
+      JSON.stringify({ entries: voiceSummaryHistory }, null, 2) + "\n",
+      "utf8"
+    );
+  } catch (err) {
+    console.warn(`[voice-history] failed to persist history: ${err.message}`);
+  }
+}
+
+async function addVoiceSummaryEntry(text) {
+  const trimmed = (text || "").trim();
+  if (!trimmed) return null;
+  const entry = { text: trimmed, timestamp: new Date().toISOString() };
+  voiceSummaryHistory.unshift(entry);
+  if (voiceSummaryHistory.length > VOICE_HISTORY_LIMIT) {
+    voiceSummaryHistory.length = VOICE_HISTORY_LIMIT;
+  }
+  await persistVoiceSummaryHistory();
+  return entry;
+}
 
 function checkToken(req) {
   const url = new URL(req.url, `http://${req.headers.host}`);
@@ -49,6 +110,14 @@ app.get("/api/status", (req, res) => {
   }
   const state = statusDaemon.getLastState();
   res.json(state || { sessions: [] });
+});
+
+app.get("/api/voice-history", (req, res) => {
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  if (url.searchParams.get("token") !== TOKEN) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  res.json({ entries: voiceSummaryHistory });
 });
 
 function sanitizeTaskName(taskName) {
@@ -160,13 +229,18 @@ app.post("/api/speak", async (req, res) => {
   }
   try {
     const trimmed = text.trim();
+    const entry = await addVoiceSummaryEntry(trimmed);
     console.log(`[speak] "${trimmed.slice(0, 100)}${trimmed.length > 100 ? "..." : ""}"`);
     const audio = await synthesize(trimmed);
     console.log(`[speak] synthesized ${audio.length} bytes`);
     let sent = 0;
     for (const client of wss.clients) {
       if (client.readyState === 1) {
-        client.send(JSON.stringify({ type: "speak_text", text: trimmed }));
+        client.send(JSON.stringify({
+          type: "speak_text",
+          text: trimmed,
+          timestamp: entry ? entry.timestamp : new Date().toISOString(),
+        }));
         client.send(audio);
         sent++;
       }
@@ -367,6 +441,7 @@ wss.on("connection", (ws) => {
   let audioTooLarge = false;
 
   ws.send(JSON.stringify({ type: "connected", captain: CAPTAIN }));
+  ws.send(JSON.stringify({ type: "voice_history", entries: voiceSummaryHistory }));
 
   let lastSnapshot = null;
   let snapshotInFlight = false;
@@ -551,6 +626,8 @@ wss.on("connection", (ws) => {
   }
 });
 
-server.listen(PORT, () => {
-  console.log(`[voice] server listening on :${PORT}`);
+loadVoiceSummaryHistory().finally(() => {
+  server.listen(PORT, () => {
+    console.log(`[voice] server listening on :${PORT}`);
+  });
 });

@@ -16,6 +16,10 @@ body.text-popout-open {
   overflow: hidden;
 }
 
+body.voice-history-open {
+  overflow: hidden;
+}
+
 #app {
   display: flex;
   flex-direction: column;
@@ -259,6 +263,12 @@ body.text-popout-open {
   min-height: 0;
   flex: 1;
   font-style: italic;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+#summary:hover {
+  color: #f2f5fc;
 }
 
 #summary:empty::after {
@@ -1099,7 +1109,7 @@ body.text-popout-open {
   transform: scale(1.08);
 }
 
-/* Voice tab replay + output history row */
+/* Voice tab replay + history row */
 #voice-replay-row {
   display: flex;
   align-items: center;
@@ -1108,24 +1118,28 @@ body.text-popout-open {
   width: min(94vw, 420px);
 }
 
-#voice-output-history-select {
+#voice-history-modal-btn {
   width: 140px;
-  flex: none;
-  height: 44px;
-  padding: 0 10px;
-  border: 1px solid #0f3460;
-  border-radius: 8px;
+  height: 140px;
+  border: 3px solid #0f3460;
+  border-radius: 50%;
   background: #1a1a2e;
-  color: #c8c8d0;
-  font-size: 14px;
-  font-weight: 600;
-  outline: none;
-  -webkit-appearance: none;
-  appearance: none;
+  color: #6ba8ff;
+  cursor: pointer;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
-#voice-output-history-select:focus {
-  border-color: #a78bfa;
+#voice-history-modal-btn:active {
+  background: #6ba8ff;
+  border-color: #6ba8ff;
+  color: #1a1a2e;
+  transform: scale(1.08);
 }
 
 #voice-mic-btn {
@@ -1434,6 +1448,123 @@ body.text-popout-open {
   color: #1a1a2e;
 }
 
+/* Voice history modal */
+#voice-history-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+}
+
+#voice-history-modal.hidden {
+  display: none;
+}
+
+#voice-history-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(8, 10, 16, 0.72);
+}
+
+#voice-history-dialog {
+  position: relative;
+  width: min(760px, calc(100vw - 36px));
+  max-height: min(78dvh, 780px);
+  border: 1px solid #0f3460;
+  border-radius: 12px;
+  background: #16213e;
+  display: flex;
+  flex-direction: column;
+  padding: 14px;
+  gap: 12px;
+  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.45);
+}
+
+#voice-history-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+#voice-history-title {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #6ba8ff;
+  font-weight: 700;
+}
+
+#voice-history-close-btn {
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(127, 142, 163, 0.45);
+  border-radius: 8px;
+  background: #1a1a2e;
+  color: #c8c8d0;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+#voice-history-close-btn:active {
+  background: rgba(127, 142, 163, 0.25);
+}
+
+#voice-history-list {
+  overflow-y: auto;
+  min-height: 120px;
+  max-height: min(64dvh, 680px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.voice-history-empty {
+  text-align: center;
+  color: #96a6bf;
+  font-size: 14px;
+  padding: 24px 12px;
+}
+
+.voice-history-entry {
+  width: 100%;
+  border: 1px solid #24456f;
+  background: #0d1a33;
+  border-radius: 10px;
+  padding: 10px 12px;
+  color: #d6deee;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.voice-history-entry:hover {
+  border-color: #6ba8ff;
+}
+
+.voice-history-entry:active {
+  transform: translateY(1px);
+}
+
+.voice-history-entry-time {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: #8aa0bf;
+}
+
+.voice-history-entry-text {
+  font-size: 14px;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  color: #e3e9f5;
+}
+
 @media (max-width: 700px) {
   #text-popout-modal {
     padding: 10px;
@@ -1447,5 +1578,15 @@ body.text-popout-open {
 
   #text-popout-textarea {
     font-size: 16px;
+  }
+
+  #voice-history-modal {
+    padding: 10px;
+  }
+
+  #voice-history-dialog {
+    width: calc(100vw - 20px);
+    max-height: min(84dvh, 920px);
+    padding: 12px;
   }
 }

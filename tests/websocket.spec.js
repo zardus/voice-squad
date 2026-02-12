@@ -35,6 +35,30 @@ test.describe("WebSocket", () => {
     expect(["claude", "codex"]).toContain(msg.captain);
   });
 
+  test("new connections receive voice history payload", async ({ page }) => {
+    await page.goto(pageUrl());
+
+    const msg = await page.evaluate(async (params) => {
+      return new Promise((resolve, reject) => {
+        const ws = new WebSocket(`ws://localhost:${location.port}?token=${params.token}`);
+        ws.onmessage = (evt) => {
+          if (typeof evt.data === "string") {
+            const m = JSON.parse(evt.data);
+            if (m.type === "voice_history") {
+              ws.close();
+              resolve(m);
+            }
+          }
+        };
+        ws.onerror = () => reject(new Error("ws error"));
+        setTimeout(() => reject(new Error("timeout")), 5000);
+      });
+    }, { token: TOKEN });
+
+    expect(msg.type).toBe("voice_history");
+    expect(Array.isArray(msg.entries)).toBe(true);
+  });
+
   test("rejects connection without token", async ({ page }) => {
     await page.goto(pageUrl());
 
