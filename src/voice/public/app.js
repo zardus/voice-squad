@@ -520,40 +520,77 @@ function startRecording() {
     playDing(true);
     ws.send(JSON.stringify({ type: "audio_start", mimeType }));
 
-    // This is "upload" over WebSocket. We can't observe actual network send progress, but
-    // we can report how much audio data we've queued into the WS socket buffer.
+    // This is "upload" over WebSocket. There's no true per-byte upload progress API for
+    // WebSockets, but we *can* track `ws.bufferedAmount` draining, which reflects how many
+    // bytes are still queued to be sent from the browser to the server.
     let totalBytes = 0;
     for (const chunk of recordedChunks) totalBytes += chunk.size;
     if (totalBytes <= 0) totalBytes = 1;
 
-    let sentBytes = 0;
     let lastPct = -1;
     let lastUiUpdate = 0;
-    const maybeUpdatePct = (force = false) => {
-      const pct = Math.round((sentBytes / totalBytes) * 100);
+    const maybeUpdatePct = (pct, force = false) => {
+      const safePct = Number.isFinite(pct) ? Math.max(0, Math.min(100, Math.round(pct))) : 0;
       const now = Date.now();
       if (!force) {
         // Throttle DOM updates to keep UI responsive.
-        if (pct === lastPct) return;
-        if (now - lastUiUpdate < 60 && pct < 100) return;
+        if (safePct === lastPct) return;
+        if (now - lastUiUpdate < 60 && safePct < 100) return;
       }
-      lastPct = pct;
+      lastPct = safePct;
       lastUiUpdate = now;
-      showUploadingIndicator(pct);
+      showUploadingIndicator(safePct);
     };
 
-    for (const chunk of recordedChunks) {
-      const chunkBytes = new Uint8Array(await chunk.arrayBuffer());
-      for (let offset = 0; offset < chunkBytes.byteLength; offset += WS_AUDIO_FRAME_BYTES) {
-        const frame = chunkBytes.slice(offset, offset + WS_AUDIO_FRAME_BYTES);
-        ws.send(frame);
-        sentBytes += frame.byteLength;
-        maybeUpdatePct(false);
+    const baseBufferedAmount = ws.bufferedAmount;
+    let queuedBytes = 0;
+    let doneQueueing = false;
+    const DRAIN_EPSILON_BYTES = 16 * 1024; // allow for small control frames and measurement jitter
+    const DRAIN_TIMEOUT_MS = 120 * 1000;
+
+    const computePctFromBufferedAmount = () => {
+      const bufferedDelta = Math.max(0, ws.bufferedAmount - baseBufferedAmount);
+      const uploadedBytes = Math.max(0, queuedBytes - bufferedDelta);
+      // Hold at 99% until the socket buffer has actually drained.
+      if (!doneQueueing) {
+        return Math.min(99, (uploadedBytes / totalBytes) * 100);
       }
+      if (bufferedDelta > DRAIN_EPSILON_BYTES) {
+        return Math.min(99, (uploadedBytes / totalBytes) * 100);
+      }
+      return 100;
+    };
+
+    let monitorTimer = null;
+    try {
+      // Periodically update UI from `bufferedAmount` drain (actual bytes leaving the browser).
+      monitorTimer = setInterval(() => {
+        maybeUpdatePct(computePctFromBufferedAmount(), false);
+      }, 50);
+      maybeUpdatePct(0, true);
+
+      for (const chunk of recordedChunks) {
+        const chunkBytes = new Uint8Array(await chunk.arrayBuffer());
+        for (let offset = 0; offset < chunkBytes.byteLength; offset += WS_AUDIO_FRAME_BYTES) {
+          const frame = chunkBytes.slice(offset, offset + WS_AUDIO_FRAME_BYTES);
+          ws.send(frame);
+          queuedBytes += frame.byteLength;
+        }
+      }
+      doneQueueing = true;
+      ws.send(JSON.stringify({ type: "audio_end" }));
+
+      // Wait until the WS send buffer drains so 100% reflects real upload completion.
+      const deadline = Date.now() + DRAIN_TIMEOUT_MS;
+      while (Date.now() < deadline) {
+        const bufferedDelta = Math.max(0, ws.bufferedAmount - baseBufferedAmount);
+        if (bufferedDelta <= DRAIN_EPSILON_BYTES) break;
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      maybeUpdatePct(100, true);
+    } finally {
+      if (monitorTimer) clearInterval(monitorTimer);
     }
-    sentBytes = totalBytes;
-    maybeUpdatePct(true);
-    ws.send(JSON.stringify({ type: "audio_end" }));
   };
 
   mediaRecorder.start(MEDIARECORDER_TIMESLICE_MS);
