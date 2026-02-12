@@ -286,69 +286,49 @@ test.describe("UI", () => {
       await expect(page.locator("#voice-hint")).toHaveText("Hold mic or spacebar to speak");
     });
 
-    test("AirPod status indicator is visible on voice tab", async ({ page }) => {
+    test("no media session / AirPod diagnostics UI is present", async ({ page }) => {
       await page.goto(pageUrl());
       await page.click('[data-tab="voice"]');
-      const status = page.locator("#airpod-status");
-      await expect(status).toBeVisible();
-      await expect(status).toHaveText(/AirPod squeeze/i);
+      await expect(page.locator("#airpod-status")).toHaveCount(0);
+      await expect(page.locator("#media-session-debug")).toHaveCount(0);
+      await expect(page.locator("#media-keepalive-audio")).toHaveCount(0);
     });
 
-    test("registers Media Session play/pause handlers when supported", async ({ page }) => {
+    test("replay triggers TTS audio playback (no media session interference)", async ({ page }) => {
       await page.addInitScript(() => {
         const state = {
-          handlers: {},
-          playbackState: "",
-          metadataTitle: "",
-          keepalivePlayCount: 0,
+          playCount: 0,
         };
-        const fakeSession = {
-          setActionHandler: (action, handler) => {
-            state.handlers[action] = typeof handler === "function";
-          },
-          get playbackState() {
-            return state.playbackState;
-          },
-          set playbackState(value) {
-            state.playbackState = value;
-          },
-          get metadata() {
-            return null;
-          },
-          set metadata(value) {
-            state.metadataTitle = value && value.title ? String(value.title) : "";
-          },
-        };
-        Object.defineProperty(navigator, "mediaSession", {
-          configurable: true,
-          writable: true,
-          value: fakeSession,
-        });
-        window.__mediaSessionState = state;
 
         const originalPlay = HTMLMediaElement.prototype.play;
         HTMLMediaElement.prototype.play = function patchedPlay() {
-          if (this && this.id === "media-keepalive-audio") {
-            state.keepalivePlayCount += 1;
-          }
+          state.playCount += 1;
           return Promise.resolve();
         };
         window.__restorePlay = () => {
           HTMLMediaElement.prototype.play = originalPlay;
         };
+        window.__audioPlayState = state;
       });
 
       await page.goto(pageUrl());
       await page.click("body");
       await page.click('[data-tab="voice"]');
 
-      const mediaState = await page.evaluate(() => window.__mediaSessionState);
-      expect(mediaState.handlers.play).toBe(true);
-      expect(mediaState.handlers.pause).toBe(true);
-      expect(mediaState.metadataTitle).toBe("Voice Squad");
-      expect(mediaState.keepalivePlayCount).toBeGreaterThan(0);
-      await expect(page.locator("#airpod-status")).toHaveClass(/active|inactive/);
-      await expect(page.locator("#media-keepalive-audio")).toBeAttached();
+      // Seed "last received" audio and enable replay.
+      await page.evaluate(() => {
+        // Top-level `let` bindings in app.js are in the global lexical env (not window),
+        // but are still addressable by name from injected scripts.
+        // eslint-disable-next-line no-undef
+        lastTtsAudioData = new Uint8Array([1, 2, 3, 4]).buffer;
+        // eslint-disable-next-line no-undef
+        voiceReplayBtn.disabled = false;
+      });
+
+      await page.click("#voice-replay-btn");
+
+      const audioState = await page.evaluate(() => window.__audioPlayState);
+      expect(audioState.playCount).toBeGreaterThan(0);
 
       await page.evaluate(() => {
         if (window.__restorePlay) window.__restorePlay();

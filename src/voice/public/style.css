@@ -1225,61 +1225,6 @@ body.voice-history-open {
   color: #555;
 }
 
-.media-session-status {
-  font-size: 11px;
-  letter-spacing: 0.8px;
-  text-transform: uppercase;
-}
-
-.media-session-status.active {
-  color: #4ecca3;
-}
-
-.media-session-status.inactive {
-  color: #7f8ea3;
-}
-
-.media-session-status.unsupported {
-  color: #666;
-}
-
-#media-session-debug {
-  width: min(94vw, 540px);
-  border: 1px solid #20314f;
-  border-radius: 8px;
-  background: rgba(15, 22, 37, 0.9);
-  padding: 8px 10px;
-}
-
-#media-session-debug-header {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  font-size: 11px;
-  color: #9fb3ce;
-  letter-spacing: 0.3px;
-}
-
-#media-session-state.active {
-  color: #4ecca3;
-}
-
-#media-session-state.inactive {
-  color: #e6a463;
-}
-
-#media-debug-log {
-  margin-top: 6px;
-  max-height: 130px;
-  overflow-y: auto;
-  white-space: pre-wrap;
-  word-break: break-word;
-  font-family: "SF Mono", "Cascadia Code", "Fira Code", Consolas, monospace;
-  font-size: 10px;
-  line-height: 1.32;
-  color: #b4becf;
-}
-
 .voice-transcription {
   font-size: 14px;
   color: #999;
