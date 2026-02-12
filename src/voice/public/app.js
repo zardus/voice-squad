@@ -4,7 +4,14 @@ const transcriptionEl = document.getElementById("transcription");
 const statusEl = document.getElementById("status");
 const micBtn = document.getElementById("mic-btn");
 const textInput = document.getElementById("text-input");
+const textPopoutBtn = document.getElementById("text-popout-btn");
 const sendBtn = document.getElementById("send-btn");
+const textPopoutModal = document.getElementById("text-popout-modal");
+const textPopoutBackdrop = document.getElementById("text-popout-backdrop");
+const textPopoutTextarea = document.getElementById("text-popout-textarea");
+const textPopoutSendBtn = document.getElementById("text-popout-send-btn");
+const textPopoutCloseBtn = document.getElementById("text-popout-close-btn");
+const textPopoutCancelBtn = document.getElementById("text-popout-cancel-btn");
 const updateBtn = document.getElementById("update-btn");
 const autoreadCb = document.getElementById("autoread-cb");
 const voiceMicBtn = document.getElementById("voice-mic-btn");
@@ -397,6 +404,44 @@ function sendText() {
   textInput.value = "";
 }
 
+function isTextPopoutOpen() {
+  return textPopoutModal && !textPopoutModal.classList.contains("hidden");
+}
+
+function closeTextPopout({ sent = false } = {}) {
+  if (!textPopoutModal || !textPopoutTextarea) return;
+  if (!sent) {
+    textInput.value = textPopoutTextarea.value;
+  } else {
+    textInput.value = "";
+  }
+  textPopoutModal.classList.add("hidden");
+  textPopoutModal.setAttribute("aria-hidden", "true");
+  document.body.classList.remove("text-popout-open");
+}
+
+function openTextPopout() {
+  if (!textPopoutModal || !textPopoutTextarea) return;
+  textPopoutTextarea.value = textInput.value;
+  textPopoutModal.classList.remove("hidden");
+  textPopoutModal.setAttribute("aria-hidden", "false");
+  document.body.classList.add("text-popout-open");
+  setTimeout(() => {
+    textPopoutTextarea.focus();
+    textPopoutTextarea.selectionStart = textPopoutTextarea.value.length;
+    textPopoutTextarea.selectionEnd = textPopoutTextarea.value.length;
+  }, 0);
+}
+
+function sendTextFromPopout() {
+  if (!textPopoutTextarea) return;
+  unlockAudio();
+  const text = textPopoutTextarea.value.trim();
+  if (!text) return;
+  if (!sendTextCommand(text)) return;
+  closeTextPopout({ sent: true });
+}
+
 function flashDisconnectedIndicator() {
   transcriptionEl.textContent = "Disconnected";
   transcriptionEl.className = "error";
@@ -434,6 +479,40 @@ function showUploadingIndicator(pct = 0) {
 sendBtn.addEventListener("click", sendText);
 textInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") sendText();
+});
+if (textPopoutBtn) {
+  textPopoutBtn.addEventListener("click", openTextPopout);
+}
+if (textPopoutSendBtn) {
+  textPopoutSendBtn.addEventListener("click", sendTextFromPopout);
+}
+if (textPopoutCloseBtn) {
+  textPopoutCloseBtn.addEventListener("click", () => closeTextPopout());
+}
+if (textPopoutCancelBtn) {
+  textPopoutCancelBtn.addEventListener("click", () => closeTextPopout());
+}
+if (textPopoutBackdrop) {
+  textPopoutBackdrop.addEventListener("click", () => closeTextPopout());
+}
+if (textPopoutTextarea) {
+  textPopoutTextarea.addEventListener("keydown", (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+      e.preventDefault();
+      sendTextFromPopout();
+      return;
+    }
+    if (e.key === "Escape") {
+      e.preventDefault();
+      closeTextPopout();
+    }
+  });
+}
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && isTextPopoutOpen()) {
+    e.preventDefault();
+    closeTextPopout();
+  }
 });
 
 if (voiceHistorySelect) {
@@ -891,6 +970,7 @@ tabs.forEach((tab) => {
     if (target !== "screens" && wasScreens) { sendScreensTabState(false); closeActivePaneInteract(); }
     // Voice tab: force auto-read on, hide controls
     if (target === "voice") {
+      if (isTextPopoutOpen()) closeTextPopout();
       autoreadBeforeVoice = autoreadCb.checked;
       autoreadCb.checked = true;
       controlsEl.classList.add("hidden");

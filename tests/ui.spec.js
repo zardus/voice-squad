@@ -192,6 +192,11 @@ test.describe("UI", () => {
       await expect(page.locator("#text-input")).toHaveAttribute("placeholder", "Type a command...");
     });
 
+    test("text popout button exists", async ({ page }) => {
+      await page.goto(pageUrl());
+      await expect(page.locator("#text-popout-btn")).toBeVisible();
+    });
+
     test("auto-read toggle checkbox works", async ({ page }) => {
       await page.goto(pageUrl());
       const cb = page.locator("#autoread-cb");
@@ -692,6 +697,58 @@ test.describe("UI", () => {
       await page.click("#send-btn");
 
       // Input should be cleared
+      await expect(page.locator("#text-input")).toHaveValue("");
+    });
+
+    test("popout opens with current input and closes preserving text", async ({ page }) => {
+      await page.goto(pageUrl());
+
+      await page.fill("#text-input", "draft text");
+      await page.click("#text-popout-btn");
+
+      await expect(page.locator("#text-popout-modal")).toBeVisible();
+      await expect(page.locator("#text-popout-textarea")).toHaveValue("draft text");
+
+      await page.fill("#text-popout-textarea", "updated draft");
+      await page.click("#text-popout-cancel-btn");
+
+      await expect(page.locator("#text-popout-modal")).toBeHidden();
+      await expect(page.locator("#text-input")).toHaveValue("updated draft");
+    });
+
+    test("Ctrl+Enter in popout sends command and closes modal", async ({ page, browserName }) => {
+      await page.goto(pageUrl());
+      await expect(page.locator("#status")).toHaveClass(/connected/, { timeout: 5000 });
+
+      const sent = page.evaluate(() => {
+        return new Promise((resolve) => {
+          const origSend = WebSocket.prototype.send;
+          WebSocket.prototype.send = function (data) {
+            if (typeof data === "string") {
+              try {
+                const msg = JSON.parse(data);
+                if (msg.type === "text_command" && msg.text === "popout-send") {
+                  WebSocket.prototype.send = origSend;
+                  resolve(msg);
+                }
+              } catch {}
+            }
+            return origSend.call(this, data);
+          };
+        });
+      });
+
+      await page.click("#text-popout-btn");
+      await page.fill("#text-popout-textarea", "popout-send");
+      if (browserName === "webkit") {
+        await page.press("#text-popout-textarea", "Meta+Enter");
+      } else {
+        await page.press("#text-popout-textarea", "Control+Enter");
+      }
+
+      const msg = await sent;
+      expect(msg.text).toBe("popout-send");
+      await expect(page.locator("#text-popout-modal")).toBeHidden();
       await expect(page.locator("#text-input")).toHaveValue("");
     });
   });

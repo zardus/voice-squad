@@ -12,6 +12,10 @@ body {
   overflow: hidden;
 }
 
+body.text-popout-open {
+  overflow: hidden;
+}
+
 #app {
   display: flex;
   flex-direction: column;
@@ -954,6 +958,24 @@ body {
   border-color: #4ecca3;
 }
 
+#text-popout-btn {
+  width: 42px;
+  height: 42px;
+  border: 1px solid #0f3460;
+  border-radius: 8px;
+  background: #1a1a2e;
+  color: #8893a8;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+#text-popout-btn:active {
+  background: #0f3460;
+  color: #4ecca3;
+}
+
 #send-btn {
   padding: 10px 14px;
   border: none;
@@ -1290,4 +1312,140 @@ body {
 
 #controls.hidden {
   display: none;
+}
+
+#text-popout-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+}
+
+#text-popout-modal.hidden {
+  display: none;
+}
+
+#text-popout-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(8, 10, 16, 0.72);
+}
+
+#text-popout-dialog {
+  position: relative;
+  width: min(920px, calc(100vw - 36px));
+  height: min(78dvh, 720px);
+  border: 1px solid #0f3460;
+  border-radius: 12px;
+  background: #16213e;
+  display: flex;
+  flex-direction: column;
+  padding: 14px;
+  gap: 10px;
+  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.45);
+}
+
+#text-popout-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+#text-popout-title {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #4ecca3;
+  font-weight: 700;
+}
+
+#text-popout-close-btn {
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(127, 142, 163, 0.45);
+  border-radius: 8px;
+  background: #1a1a2e;
+  color: #c8c8d0;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+#text-popout-close-btn:active {
+  background: rgba(127, 142, 163, 0.25);
+}
+
+#text-popout-textarea {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  resize: none;
+  padding: 14px;
+  border: 1px solid #0f3460;
+  border-radius: 10px;
+  background: #0d0d1a;
+  color: #e0e0e0;
+  font-size: 17px;
+  line-height: 1.45;
+  font-family: inherit;
+  outline: none;
+}
+
+#text-popout-textarea:focus {
+  border-color: #4ecca3;
+}
+
+#text-popout-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+#text-popout-cancel-btn,
+#text-popout-send-btn {
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+#text-popout-cancel-btn {
+  border: 1px solid rgba(127, 142, 163, 0.5);
+  background: #1a1a2e;
+  color: #c8c8d0;
+}
+
+#text-popout-send-btn {
+  border: 1px solid #0f3460;
+  background: #0f3460;
+  color: #4ecca3;
+}
+
+#text-popout-cancel-btn:active {
+  background: rgba(127, 142, 163, 0.25);
+}
+
+#text-popout-send-btn:active {
+  background: #4ecca3;
+  color: #1a1a2e;
+}
+
+@media (max-width: 700px) {
+  #text-popout-modal {
+    padding: 10px;
+  }
+
+  #text-popout-dialog {
+    width: calc(100vw - 20px);
+    height: min(86dvh, 920px);
+    padding: 12px;
+  }
+
+  #text-popout-textarea {
+    font-size: 16px;
+  }
 }

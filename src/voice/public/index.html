@@ -147,7 +147,23 @@
         </svg>
       </button>
       <input type="text" id="text-input" placeholder="Type a command..." autocomplete="off">
+      <button id="text-popout-btn" title="Expand editor" aria-label="Expand editor">&#x2922;</button>
       <button id="send-btn" title="Send">&#x27A4;</button>
+    </div>
+
+    <div id="text-popout-modal" class="hidden" aria-hidden="true">
+      <div id="text-popout-backdrop"></div>
+      <div id="text-popout-dialog" role="dialog" aria-modal="true" aria-labelledby="text-popout-title">
+        <div id="text-popout-header">
+          <span id="text-popout-title">Edit message</span>
+          <button id="text-popout-close-btn" title="Close editor" aria-label="Close editor">&times;</button>
+        </div>
+        <textarea id="text-popout-textarea" placeholder="Type a command..." autocomplete="off" spellcheck="false"></textarea>
+        <div id="text-popout-actions">
+          <button id="text-popout-cancel-btn">Close</button>
+          <button id="text-popout-send-btn">Send</button>
+        </div>
+      </div>
     </div>
   </div>
 
