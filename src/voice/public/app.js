@@ -31,6 +31,7 @@ const captainToolSelect = document.getElementById("captain-tool-select");
 const restartCaptainBtn = document.getElementById("restart-captain-btn");
 const voiceCaptainToolSelect = document.getElementById("voice-captain-tool-select");
 const voiceRestartCaptainBtn = document.getElementById("voice-restart-captain-btn");
+const airpodStatusEl = document.getElementById("airpod-status");
 const completedTabContentEl = document.getElementById("completed-tab-content");
 const refreshCompletedBtn = document.getElementById("refresh-completed-btn");
 let lastTtsAudioData = null;
@@ -65,8 +66,14 @@ const WS_AUDIO_FRAME_BYTES = 64 * 1024;
 
 // Persistent audio element — unlocked on first user gesture so TTS can play later
 const ttsAudio = new Audio();
+ttsAudio.setAttribute("playsinline", "");
+ttsAudio.setAttribute("webkit-playsinline", "");
 let audioUnlocked = false;
 let audioCtx = null;
+const SILENT_AUDIO_DATA_URI = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=";
+let mediaSessionReady = false;
+let mediaKeepaliveAudio = null;
+let mediaKeepaliveStarted = false;
 
 function getAudioContext() {
   if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -125,9 +132,84 @@ function playDing(success) {
 
 function unlockAudio() {
   if (audioUnlocked) return;
-  const primer = new Audio("data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=");
+  const primer = new Audio(SILENT_AUDIO_DATA_URI);
   primer.play().then(() => { audioUnlocked = true; }).catch(() => {});
   getAudioContext(); // warm up AudioContext during user gesture
+}
+
+function setAirpodStatus(text, state) {
+  if (!airpodStatusEl) return;
+  airpodStatusEl.textContent = text;
+  airpodStatusEl.classList.remove("active", "inactive", "unsupported");
+  if (state) airpodStatusEl.classList.add(state);
+}
+
+function supportsMediaSession() {
+  return typeof navigator !== "undefined" && !!navigator.mediaSession;
+}
+
+function updateMediaSessionPlaybackState() {
+  if (!supportsMediaSession()) return;
+  try {
+    navigator.mediaSession.playbackState = recording || wantRecording ? "playing" : "paused";
+  } catch {}
+}
+
+function toggleRecordingFromMediaSession() {
+  if (recording || wantRecording) {
+    stopRecording();
+    return;
+  }
+  wantRecording = true;
+  startRecording();
+}
+
+function ensureMediaKeepaliveAudio() {
+  if (!mediaKeepaliveAudio) {
+    mediaKeepaliveAudio = new Audio(SILENT_AUDIO_DATA_URI);
+    mediaKeepaliveAudio.loop = true;
+    mediaKeepaliveAudio.preload = "auto";
+    mediaKeepaliveAudio.volume = 0.0001;
+    mediaKeepaliveAudio.setAttribute("playsinline", "");
+    mediaKeepaliveAudio.setAttribute("webkit-playsinline", "");
+    mediaKeepaliveAudio.addEventListener("pause", () => {
+      mediaKeepaliveStarted = false;
+    });
+  }
+
+  if (mediaKeepaliveStarted) return;
+  mediaKeepaliveAudio.play().then(() => {
+    mediaKeepaliveStarted = true;
+    setAirpodStatus("AirPod squeeze-to-talk active", "active");
+  }).catch(() => {
+    mediaKeepaliveStarted = false;
+    setAirpodStatus("Tap screen once to enable AirPod squeeze", "inactive");
+  });
+}
+
+function setupMediaSession() {
+  if (!supportsMediaSession()) {
+    setAirpodStatus("AirPod squeeze unavailable in this browser", "unsupported");
+    return;
+  }
+
+  if (!mediaSessionReady) {
+    try {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: "Voice Squad",
+        artist: "Push-to-talk",
+        album: "AirPod Controls",
+      });
+    } catch {}
+
+    try { navigator.mediaSession.setActionHandler("play", toggleRecordingFromMediaSession); } catch {}
+    try { navigator.mediaSession.setActionHandler("pause", toggleRecordingFromMediaSession); } catch {}
+    try { navigator.mediaSession.setActionHandler("stop", () => { if (recording || wantRecording) stopRecording(); }); } catch {}
+    mediaSessionReady = true;
+  }
+
+  updateMediaSessionPlaybackState();
+  ensureMediaKeepaliveAudio();
 }
 
 function stopTtsPlayback() {
@@ -381,6 +463,11 @@ async function replayHistoricalSpeak(text) {
 }
 
 loadMessageHistory();
+if (supportsMediaSession()) {
+  setAirpodStatus("Tap screen once to enable AirPod squeeze", "inactive");
+} else {
+  setAirpodStatus("AirPod squeeze unavailable in this browser", "unsupported");
+}
 
 async function loadVoiceSummaryHistory() {
   try {
@@ -664,6 +751,7 @@ function startRecording() {
   unlockAudio();
   if (!ws || ws.readyState !== WebSocket.OPEN) {
     wantRecording = false;
+    updateMediaSessionPlaybackState();
     playDing(false);
     flashDisconnectedIndicator();
     return;
@@ -796,6 +884,7 @@ function startRecording() {
   mediaRecorder.start(MEDIARECORDER_TIMESLICE_MS);
   recording = true;
   recordingStartTime = Date.now();
+  updateMediaSessionPlaybackState();
   if (maxRecordingTimer) clearTimeout(maxRecordingTimer);
   maxRecordingTimer = setTimeout(() => {
     if (recording || wantRecording) stopRecording();
@@ -814,6 +903,7 @@ function stopRecording() {
     maxRecordingTimer = null;
   }
   recording = false;
+  updateMediaSessionPlaybackState();
   micBtn.classList.remove("recording");
   voiceMicBtn.classList.remove("recording");
 
@@ -934,12 +1024,16 @@ let micStreamAcquired = false;
 function onUserGesture() {
   if (!audioUnlocked) unlockAudio();
   if (audioCtx && audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
+  setupMediaSession();
   if (!micStreamAcquired) {
     ensureMicStream().then(() => { micStreamAcquired = true; }).catch(() => {});
   }
 }
 document.addEventListener("touchstart", onUserGesture, { passive: true });
 document.addEventListener("click", onUserGesture);
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) setupMediaSession();
+});
 
 // Status button — ask captain for a task status update
 updateBtn.addEventListener("click", () => {

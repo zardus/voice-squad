@@ -286,6 +286,69 @@ test.describe("UI", () => {
       await expect(page.locator("#voice-hint")).toHaveText("Hold mic or spacebar to speak");
     });
 
+    test("AirPod status indicator is visible on voice tab", async ({ page }) => {
+      await page.goto(pageUrl());
+      await page.click('[data-tab="voice"]');
+      const status = page.locator("#airpod-status");
+      await expect(status).toBeVisible();
+      await expect(status).toHaveText(/AirPod squeeze/i);
+    });
+
+    test("registers Media Session play/pause handlers when supported", async ({ page }) => {
+      await page.addInitScript(() => {
+        const state = {
+          handlers: {},
+          playbackState: "",
+          metadataTitle: "",
+        };
+        const fakeSession = {
+          setActionHandler: (action, handler) => {
+            state.handlers[action] = typeof handler === "function";
+          },
+          get playbackState() {
+            return state.playbackState;
+          },
+          set playbackState(value) {
+            state.playbackState = value;
+          },
+          get metadata() {
+            return null;
+          },
+          set metadata(value) {
+            state.metadataTitle = value && value.title ? String(value.title) : "";
+          },
+        };
+        Object.defineProperty(navigator, "mediaSession", {
+          configurable: true,
+          writable: true,
+          value: fakeSession,
+        });
+        window.__mediaSessionState = state;
+
+        const originalPlay = HTMLMediaElement.prototype.play;
+        HTMLMediaElement.prototype.play = function patchedPlay() {
+          return Promise.resolve();
+        };
+        window.__restorePlay = () => {
+          HTMLMediaElement.prototype.play = originalPlay;
+        };
+      });
+
+      await page.goto(pageUrl());
+      await page.click("body");
+      await page.click('[data-tab="voice"]');
+
+      const mediaState = await page.evaluate(() => window.__mediaSessionState);
+      expect(mediaState.handlers.play).toBe(true);
+      expect(mediaState.handlers.pause).toBe(true);
+      expect(mediaState.metadataTitle).toBe("Voice Squad");
+      await expect(page.locator("#airpod-status")).toHaveClass(/active|inactive/);
+
+      await page.evaluate(() => {
+        if (window.__restorePlay) window.__restorePlay();
+      });
+    });
+
     test("voice captain switch exists", async ({ page }) => {
       await page.goto(pageUrl());
       await page.click('[data-tab="voice"]');

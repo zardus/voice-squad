@@ -1213,6 +1213,24 @@ body.voice-history-open {
   color: #555;
 }
 
+.media-session-status {
+  font-size: 11px;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+}
+
+.media-session-status.active {
+  color: #4ecca3;
+}
+
+.media-session-status.inactive {
+  color: #7f8ea3;
+}
+
+.media-session-status.unsupported {
+  color: #666;
+}
+
 .voice-transcription {
   font-size: 14px;
   color: #999;
