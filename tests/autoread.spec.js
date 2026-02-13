@@ -11,6 +11,11 @@ const { pageUrl } = require("./helpers/config");
 
 test.describe("Auto-read", () => {
   test("auto-read toggle controls whether incoming TTS audio autoplays", async ({ page }) => {
+    if (process.env.PW_PAGE_DEBUG) {
+      page.on("console", (msg) => console.log(`[browser:${msg.type()}] ${msg.text()}`));
+      page.on("pageerror", (err) => console.log(`[pageerror] ${err && err.stack ? err.stack : String(err)}`));
+    }
+
     await page.addInitScript(() => {
       // Ensure a known starting value before app.js reads localStorage.
       localStorage.setItem("autoread", "false");

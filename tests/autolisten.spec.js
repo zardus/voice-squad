@@ -11,6 +11,11 @@ const { pageUrl } = require("./helpers/config");
 
 test.describe("Auto Listen", () => {
   test("autolisten=false does not pre-acquire mic (even after user gestures)", async ({ page }) => {
+    if (process.env.PW_PAGE_DEBUG) {
+      page.on("console", (msg) => console.log(`[browser:${msg.type()}] ${msg.text()}`));
+      page.on("pageerror", (err) => console.log(`[pageerror] ${err && err.stack ? err.stack : String(err)}`));
+    }
+
     await page.addInitScript(() => {
       localStorage.setItem("autolisten", "false");
 
@@ -56,6 +61,11 @@ test.describe("Auto Listen", () => {
   });
 
   test("turning Auto Listen OFF stops tracks and prevents background re-acquire", async ({ page }) => {
+    if (process.env.PW_PAGE_DEBUG) {
+      page.on("console", (msg) => console.log(`[browser:${msg.type()}] ${msg.text()}`));
+      page.on("pageerror", (err) => console.log(`[pageerror] ${err && err.stack ? err.stack : String(err)}`));
+    }
+
     await page.addInitScript(() => {
       localStorage.setItem("autolisten", "true");
 

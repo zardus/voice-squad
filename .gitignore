@@ -2,3 +2,5 @@ home
 node_modules
 test-results
 playwright-report
+_pw_artifacts
+_pw_artifacts3

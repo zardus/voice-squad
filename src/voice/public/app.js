@@ -42,6 +42,17 @@ let speakAudioQueue = []; // TTS audio received while mic is held down
 let ttsFormat = "opus";
 let ttsMime = "audio/ogg";
 
+// ── TTS Playback Queue (FIFO) ────────────────────────────────────────────────
+// Declared early because Auto-read is initialized before the Audio element is created,
+// and disabling auto-read calls stopTtsPlayback() during initial script evaluation.
+const TTS_PLAYBACK_QUEUE_LIMIT = 50;
+let ttsPlaybackQueue = []; // [{ id, data:ArrayBuffer, enqueuedAt:number }]
+let ttsPlaybackNextId = 1;
+let ttsPlaybackPlaying = false;
+let ttsPlaybackDrainScheduled = false;
+let ttsPlaybackCurrentUrl = null;
+let ttsPlaybackPlayBlockedAt = 0; // throttle logs if autoplay is blocked
+
 // Core runtime state (declared early so localStorage-driven toggles can safely run on load).
 let ws = null;
 let mediaRecorder = null;
@@ -305,6 +316,8 @@ function unlockAudio() {
       primer.pause();
       primer.currentTime = 0;
     } catch {}
+    // If any TTS was queued while autoplay was locked, try draining now.
+    drainTtsPlaybackQueueSoon();
   }).catch((err) => {
     // Best-effort only: user can still tap replay, and subsequent gestures may unlock.
     console.warn("Audio unlock primer blocked:", err && err.message ? err.message : "unknown");
@@ -317,7 +330,114 @@ function stopTtsPlayback() {
     ttsAudio.pause();
     ttsAudio.currentTime = 0;
   } catch {}
+  ttsPlaybackPlaying = false;
+  ttsPlaybackQueue = [];
+  ttsPlaybackDrainScheduled = false;
+  if (ttsPlaybackCurrentUrl) {
+    try { URL.revokeObjectURL(ttsPlaybackCurrentUrl); } catch {}
+  }
+  ttsPlaybackCurrentUrl = null;
 }
+
+function onTtsPlaybackFinished(reason) {
+  // Release current blob URL to avoid leaking.
+  if (ttsPlaybackCurrentUrl) {
+    try { URL.revokeObjectURL(ttsPlaybackCurrentUrl); } catch {}
+  }
+  ttsPlaybackCurrentUrl = null;
+  ttsPlaybackPlaying = false;
+  drainTtsPlaybackQueueSoon();
+}
+
+ttsAudio.addEventListener("ended", () => onTtsPlaybackFinished("ended"));
+ttsAudio.addEventListener("error", () => onTtsPlaybackFinished("error"));
+
+function enqueueTtsPlayback(data, { reason = "tts" } = {}) {
+  if (!data) return;
+  ttsPlaybackQueue.push({
+    id: ttsPlaybackNextId++,
+    data,
+    enqueuedAt: Date.now(),
+    reason,
+  });
+
+  // Cap total pending clips (current + queued) to avoid unbounded growth.
+  // If a clip is already playing, allow at most (limit - 1) queued items.
+  const maxQueued = ttsPlaybackPlaying
+    ? Math.max(0, TTS_PLAYBACK_QUEUE_LIMIT - 1)
+    : TTS_PLAYBACK_QUEUE_LIMIT;
+  if (ttsPlaybackQueue.length > maxQueued) {
+    const drop = ttsPlaybackQueue.length - maxQueued;
+    ttsPlaybackQueue.splice(0, drop);
+    console.warn(`TTS playback queue exceeded ${TTS_PLAYBACK_QUEUE_LIMIT}; dropped ${drop} oldest clip(s).`);
+  }
+
+  drainTtsPlaybackQueueSoon();
+}
+
+function drainTtsPlaybackQueueSoon() {
+  if (ttsPlaybackDrainScheduled) return;
+  ttsPlaybackDrainScheduled = true;
+  const schedule = typeof queueMicrotask === "function"
+    ? queueMicrotask
+    : (fn) => Promise.resolve().then(fn);
+  schedule(() => {
+    ttsPlaybackDrainScheduled = false;
+    drainTtsPlaybackQueue();
+  });
+}
+
+function drainTtsPlaybackQueue() {
+  // Auto-read OFF: do not autoplay queued clips (except explicit replay which calls playAudio()).
+  // If autoread is toggled off mid-queue, stopTtsPlayback() clears it.
+  if (ttsPlaybackPlaying) return;
+  if (ttsPlaybackQueue.length === 0) return;
+
+  const next = ttsPlaybackQueue.shift();
+  if (!next || !next.data) return;
+
+  // Start playback for this clip.
+  const blob = new Blob([next.data], { type: ttsMime || "audio/ogg" });
+  const url = URL.createObjectURL(blob);
+
+  // Revoke previous URL only after we've already switched away from it.
+  if (ttsPlaybackCurrentUrl) {
+    try { URL.revokeObjectURL(ttsPlaybackCurrentUrl); } catch {}
+  }
+  ttsPlaybackCurrentUrl = url;
+
+  ttsAudio.src = url;
+  ttsPlaybackPlaying = true;
+
+  // Resume AudioContext if suspended (mobile browsers suspend on background)
+  if (audioCtx && audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
+
+  ttsAudio.play().catch((err) => {
+    // Autoplay can be blocked until a user gesture. Keep the clip at the head of the queue.
+    ttsPlaybackPlaying = false;
+    ttsPlaybackQueue.unshift(next);
+
+    const now = Date.now();
+    if (now - ttsPlaybackPlayBlockedAt > 2000) {
+      ttsPlaybackPlayBlockedAt = now;
+      console.warn("TTS play blocked:", err && err.message ? err.message : "unknown");
+    }
+  });
+}
+
+// Best-effort: when returning to a visible tab, resume a paused clip or continue draining the queue.
+// Some browsers will pause media in background without firing 'ended', which could otherwise stall the queue.
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) return;
+  if (ttsPlaybackPlaying && ttsAudio && ttsAudio.paused && ttsAudio.src) {
+    ttsAudio.play().catch(() => {
+      // If it still can't play, the queue head remains intact (see play() catch path).
+      drainTtsPlaybackQueueSoon();
+    });
+    return;
+  }
+  drainTtsPlaybackQueueSoon();
+});
 
 function handleIncomingTtsAudio(data, opts = {}) {
   lastTtsAudioData = data;
@@ -337,15 +457,7 @@ function handleIncomingTtsAudio(data, opts = {}) {
 }
 
 function playAudio(data) {
-  const blob = new Blob([data], { type: ttsMime || "audio/ogg" });
-  const url = URL.createObjectURL(blob);
-  if (ttsAudio.src) URL.revokeObjectURL(ttsAudio.src);
-  ttsAudio.src = url;
-  // Resume AudioContext if suspended (mobile browsers suspend on background)
-  if (audioCtx && audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
-  ttsAudio.play().catch((err) => {
-    console.warn("TTS play blocked:", err && err.message ? err.message : "unknown");
-  });
+  enqueueTtsPlayback(data, { reason: "playAudio" });
 }
 
 // Decouple snapshot rendering from WebSocket to keep main thread free
@@ -611,7 +723,9 @@ function connect() {
   // Best-effort: set defaults before the server sends tts_config.
   ttsFormat = desiredTts;
   ttsMime = mimeForTtsFormat(desiredTts);
-  ws = new WebSocket(
+  // Explicitly use window.WebSocket so Playwright tests can stub it reliably.
+  const WebSocketCtor = window.WebSocket || WebSocket;
+  ws = new WebSocketCtor(
     `${proto}//${location.host}?token=${encodeURIComponent(token)}&tts=${encodeURIComponent(desiredTts)}`
   );
   ws.binaryType = "arraybuffer";
