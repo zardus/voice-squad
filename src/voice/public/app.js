@@ -22,8 +22,6 @@ const autoreadCb = document.getElementById("autoread-cb");
 const voiceAutoreadCb = document.getElementById("voice-autoread-cb");
 const autolistenCb = document.getElementById("autolisten-cb");
 const voiceAutolistenCb = document.getElementById("voice-autolisten-cb");
-const micCaptureStateEl = document.getElementById("mic-capture-state");
-const voiceMicCaptureStateEl = document.getElementById("voice-mic-capture-state");
 const voiceMicBtn = document.getElementById("voice-mic-btn");
 const voiceReplayBtn = document.getElementById("voice-replay-btn");
 const voiceStatusBtn = document.getElementById("voice-status-btn");
@@ -101,15 +99,6 @@ function renderMicCaptureState() {
     document.documentElement.dataset.micActive = active ? "true" : "false";
     document.documentElement.dataset.micSource = source || "";
   } catch {}
-
-  const text = active ? `Mic: active${source ? " (" + source + ")" : ""}` : "Mic: off";
-  const cls = active ? "on" : "off";
-  [micCaptureStateEl, voiceMicCaptureStateEl].forEach((el) => {
-    if (!el) return;
-    el.textContent = text;
-    el.classList.remove("on", "off");
-    el.classList.add(cls);
-  });
 }
 
 function mimeForTtsFormat(fmt) {

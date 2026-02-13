@@ -120,7 +120,7 @@ test.describe("Auto Listen", () => {
       await ensureMicStream();
     });
     await expect.poll(async () => page.evaluate(() => window.__gumCalls)).toBe(1);
-    await expect(page.locator("#mic-capture-state")).toContainText("Mic: active");
+    await expect.poll(async () => page.evaluate(() => document.documentElement.dataset.micActive)).toBe("true");
 
     // Toggle OFF: must stop tracks and release mic.
     await page.evaluate(async () => {
@@ -129,7 +129,7 @@ test.describe("Auto Listen", () => {
     });
     await expect.poll(async () => page.evaluate(() => window.__stopCount)).toBe(1);
     await expect.poll(async () => page.evaluate(() => window.__audioCancelCount)).toBe(1);
-    await expect(page.locator("#mic-capture-state")).toContainText("Mic: off");
+    await expect.poll(async () => page.evaluate(() => document.documentElement.dataset.micActive)).toBe("false");
 
     // Subsequent gestures should not re-acquire.
     await page.click("body");

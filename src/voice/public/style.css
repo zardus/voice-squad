@@ -910,50 +910,6 @@ body.voice-history-open {
   user-select: none;
 }
 
-/* Actual microphone capture state (not the Auto Listen preference toggle). */
-.mic-capture-state {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
-  border-radius: 999px;
-  font-size: 12px;
-  line-height: 1;
-  white-space: nowrap;
-  color: rgba(255, 255, 255, 0.78);
-  background: rgba(255, 255, 255, 0.08);
-}
-.mic-capture-state::before {
-  content: "";
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.25);
-}
-.mic-capture-state.on {
-  color: rgba(255, 255, 255, 0.92);
-  background: rgba(38, 209, 124, 0.18);
-}
-.mic-capture-state.on::before {
-  background: rgba(38, 209, 124, 0.95);
-}
-.mic-capture-state.off {
-  color: rgba(255, 255, 255, 0.68);
-  background: rgba(255, 255, 255, 0.06);
-}
-.mic-capture-state.off::before {
-  background: rgba(255, 255, 255, 0.18);
-}
-
-#mic-capture-state {
-  flex: 0 0 auto;
-}
-
-#voice-mic-capture-state {
-  margin-top: 8px;
-  justify-content: center;
-}
-
 .toggle input {
   display: none;
 }
@@ -1108,11 +1064,6 @@ body.voice-history-open {
   #controls {
     gap: 6px;
     padding: 8px 8px;
-  }
-
-  /* Keep the bottom bar compact on phones; the Voice tab shows mic state separately. */
-  #mic-capture-state {
-    display: none;
   }
 
   #text-input {
