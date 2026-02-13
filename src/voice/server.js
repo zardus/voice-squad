@@ -584,6 +584,15 @@ wss.on("connection", (ws, req) => {
         break;
       }
 
+      case "audio_cancel": {
+        // Client-side cancellation (e.g., Auto Listen toggled off mid-upload).
+        audioChunks = [];
+        audioBytes = 0;
+        audioTooLarge = false;
+        console.log(`[audio] recording cancelled${msg.reason ? ` (${msg.reason})` : ""}`);
+        break;
+      }
+
       case "text_command":
         if (msg.text && msg.text.trim()) {
           console.log(`[cmd] text: "${msg.text.trim()}"`);

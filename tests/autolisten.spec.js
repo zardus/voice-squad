@@ -71,6 +71,7 @@ test.describe("Auto Listen", () => {
 
       window.__gumCalls = 0;
       window.__stopCount = 0;
+      window.__audioCancelCount = 0;
       navigator.mediaDevices = navigator.mediaDevices || {};
       navigator.mediaDevices.getUserMedia = async () => {
         window.__gumCalls += 1;
@@ -94,7 +95,13 @@ test.describe("Auto Listen", () => {
           window.__testWs = this;
           setTimeout(() => this.onopen && this.onopen(), 0);
         }
-        send() {}
+        send(data) {
+          if (typeof data !== "string") return;
+          try {
+            const msg = JSON.parse(data);
+            if (msg && msg.type === "audio_cancel") window.__audioCancelCount += 1;
+          } catch {}
+        }
         close() {
           this.readyState = 3;
           if (this.onclose) this.onclose();
@@ -113,6 +120,7 @@ test.describe("Auto Listen", () => {
       await ensureMicStream();
     });
     await expect.poll(async () => page.evaluate(() => window.__gumCalls)).toBe(1);
+    await expect(page.locator("#mic-capture-state")).toContainText("Mic: active");
 
     // Toggle OFF: must stop tracks and release mic.
     await page.evaluate(async () => {
@@ -120,6 +128,8 @@ test.describe("Auto Listen", () => {
       await setAutoListenEnabled(false);
     });
     await expect.poll(async () => page.evaluate(() => window.__stopCount)).toBe(1);
+    await expect.poll(async () => page.evaluate(() => window.__audioCancelCount)).toBe(1);
+    await expect(page.locator("#mic-capture-state")).toContainText("Mic: off");
 
     // Subsequent gestures should not re-acquire.
     await page.click("body");

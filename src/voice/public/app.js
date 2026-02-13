@@ -22,6 +22,8 @@ const autoreadCb = document.getElementById("autoread-cb");
 const voiceAutoreadCb = document.getElementById("voice-autoread-cb");
 const autolistenCb = document.getElementById("autolisten-cb");
 const voiceAutolistenCb = document.getElementById("voice-autolisten-cb");
+const micCaptureStateEl = document.getElementById("mic-capture-state");
+const voiceMicCaptureStateEl = document.getElementById("voice-mic-capture-state");
 const voiceMicBtn = document.getElementById("voice-mic-btn");
 const voiceReplayBtn = document.getElementById("voice-replay-btn");
 const voiceStatusBtn = document.getElementById("voice-status-btn");
@@ -70,6 +72,45 @@ let recordingSessionId = 0; // increments per recording; used to abort onstop si
 let abortRecordingUpload = false;
 
 let audioCtx = null; // declared early; initialized lazily by getAudioContext()
+
+function isMicStreamLive() {
+  try {
+    return !!(micStream && micStream.getTracks && micStream.getTracks().some((t) => t && t.readyState === "live"));
+  } catch {
+    return false;
+  }
+}
+
+function computeMicCaptureState() {
+  // "Capture" means the browser is actively holding the microphone.
+  // This is intentionally independent of the Auto Listen preference toggle.
+  const streamLive = isMicStreamLive();
+  const recorderLive = !!(mediaRecorder && mediaRecorder.state && mediaRecorder.state !== "inactive");
+  const speechLive = !!activePaneSpeech;
+  const active = streamLive || recorderLive || speechLive || recording || wantRecording;
+  let source = "";
+  if (recorderLive || recording || wantRecording) source = "recording";
+  else if (speechLive) source = "speech";
+  else if (streamLive) source = "stream";
+  return { active, source };
+}
+
+function renderMicCaptureState() {
+  const { active, source } = computeMicCaptureState();
+  try {
+    document.documentElement.dataset.micActive = active ? "true" : "false";
+    document.documentElement.dataset.micSource = source || "";
+  } catch {}
+
+  const text = active ? `Mic: active${source ? " (" + source + ")" : ""}` : "Mic: off";
+  const cls = active ? "on" : "off";
+  [micCaptureStateEl, voiceMicCaptureStateEl].forEach((el) => {
+    if (!el) return;
+    el.textContent = text;
+    el.classList.remove("on", "off");
+    el.classList.add(cls);
+  });
+}
 
 function mimeForTtsFormat(fmt) {
   switch (String(fmt || "").toLowerCase()) {
@@ -161,6 +202,7 @@ function stopMicStream() {
     }
   } finally {
     micStream = null;
+    renderMicCaptureState();
   }
 }
 
@@ -168,6 +210,8 @@ function abortActiveRecording() {
   wantRecording = false;
   recording = false;
   abortRecordingUpload = true;
+  // Invalidate any in-flight onstop upload loop even if it already passed its first guard.
+  recordingSessionId++;
 
   if (maxRecordingTimer) {
     clearTimeout(maxRecordingTimer);
@@ -189,6 +233,17 @@ function abortActiveRecording() {
     } catch {}
   }
   mediaRecorder = null;
+  renderMicCaptureState();
+}
+
+function maybeSendAudioCancel(reason) {
+  try {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    // Only send cancel when we might have an in-flight upload/recording/session on this socket.
+    const shouldCancel = !!(mediaRecorder || recording || wantRecording || isMicStreamLive());
+    if (!shouldCancel) return;
+    ws.send(JSON.stringify({ type: "audio_cancel", reason: reason || "" }));
+  } catch {}
 }
 
 async function setAutoListenEnabled(enabled, { persist = true, acquire = false } = {}) {
@@ -201,6 +256,7 @@ async function setAutoListenEnabled(enabled, { persist = true, acquire = false }
     micStreamAcquireSeq++;
     // If the user disables listening while holding the mic, stop immediately.
     if (recording || wantRecording || mediaRecorder) abortActiveRecording();
+    maybeSendAudioCancel("autolisten_off");
 
     // Web Speech recognition also uses the microphone (iOS Safari shows the mic indicator).
     stopActivePaneSpeech();
@@ -208,6 +264,7 @@ async function setAutoListenEnabled(enabled, { persist = true, acquire = false }
     stopMicStream();
     micStreamAcquired = false;
     closeAudioContext();
+    renderMicCaptureState();
     return;
   }
 
@@ -216,6 +273,7 @@ async function setAutoListenEnabled(enabled, { persist = true, acquire = false }
       await ensureMicStream();
       micStreamAcquired = !!(micStream && micStream.getTracks().some((t) => t.readyState === "live"));
     } catch {}
+    renderMicCaptureState();
   }
 }
 
@@ -225,6 +283,11 @@ setAutoListenEnabled(storedAutoListen === null ? true : storedAutoListen === "tr
   if (!cb) return;
   cb.addEventListener("change", () => setAutoListenEnabled(cb.checked, { acquire: true }));
 });
+renderMicCaptureState();
+// Poll occasionally so UI reflects "true" mic capture state even if a track ends without events.
+setInterval(() => {
+  try { renderMicCaptureState(); } catch {}
+}, 750);
 
 const MIN_RECORDING_MS = 300;
 const MIN_AUDIO_BYTES = 1000;
@@ -838,16 +901,23 @@ async function ensureMicStream() {
   if (!autoListenEnabled) {
     throw new Error("Auto Listen is off");
   }
-  if (micStream && micStream.getTracks().some((t) => t.readyState === "live")) return true;
+  if (isMicStreamLive()) return true;
   const seq = ++micStreamAcquireSeq;
   const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
   // If Auto Listen was turned off (or another acquire superseded this one) while we were waiting,
   // immediately stop tracks so iPadOS releases the mic and the indicator turns off.
   if (!autoListenEnabled || seq !== micStreamAcquireSeq) {
     try { stream.getTracks().forEach((t) => { try { t.stop(); } catch {} }); } catch {}
+    renderMicCaptureState();
     return false;
   }
   micStream = stream;
+  try {
+    stream.getTracks().forEach((t) => {
+      try { t.onended = () => renderMicCaptureState(); } catch {}
+    });
+  } catch {}
+  renderMicCaptureState();
   return true;
 }
 
@@ -1015,12 +1085,14 @@ function startRecording() {
     voiceTranscriptionEl.textContent = "Mic off";
     voiceTranscriptionEl.className = "voice-transcription error";
     playDing(false);
+    renderMicCaptureState();
     return;
   }
   if (!ws || ws.readyState !== WebSocket.OPEN) {
     wantRecording = false;
     playDing(false);
     flashDisconnectedIndicator();
+    renderMicCaptureState();
     return;
   }
 
@@ -1080,6 +1152,11 @@ function startRecording() {
     // Show upload feedback first; switch to "Transcribing..." when server confirms STT started.
     showUploadingIndicator(0);
     playDing(true);
+    // Guard again before sending anything (Auto Listen may have been toggled OFF after the first check).
+    if (abortRecordingUpload || !autoListenEnabled || mySessionId !== recordingSessionId) {
+      maybeSendAudioCancel("client_abort_before_upload");
+      return;
+    }
     ws.send(JSON.stringify({ type: "audio_start", mimeType }));
 
     // This is "upload" over WebSocket. There's no true per-byte upload progress API for
@@ -1132,8 +1209,16 @@ function startRecording() {
       maybeUpdatePct(0, true);
 
       for (const chunk of recordedChunks) {
+        if (abortRecordingUpload || !autoListenEnabled || mySessionId !== recordingSessionId) {
+          maybeSendAudioCancel("client_abort_mid_upload");
+          return;
+        }
         const chunkBytes = new Uint8Array(await chunk.arrayBuffer());
         for (let offset = 0; offset < chunkBytes.byteLength; offset += WS_AUDIO_FRAME_BYTES) {
+          if (abortRecordingUpload || !autoListenEnabled || mySessionId !== recordingSessionId) {
+            maybeSendAudioCancel("client_abort_mid_upload");
+            return;
+          }
           const frame = chunkBytes.slice(offset, offset + WS_AUDIO_FRAME_BYTES);
           ws.send(frame);
           queuedBytes += frame.byteLength;
@@ -1145,6 +1230,10 @@ function startRecording() {
       // Wait until the WS send buffer drains so 100% reflects real upload completion.
       const deadline = Date.now() + DRAIN_TIMEOUT_MS;
       while (Date.now() < deadline) {
+        if (abortRecordingUpload || !autoListenEnabled || mySessionId !== recordingSessionId) {
+          maybeSendAudioCancel("client_abort_during_drain");
+          return;
+        }
         const bufferedDelta = Math.max(0, ws.bufferedAmount - baseBufferedAmount);
         if (bufferedDelta <= DRAIN_EPSILON_BYTES) break;
         await new Promise((r) => setTimeout(r, 50));
@@ -1164,6 +1253,7 @@ function startRecording() {
   }, MAX_RECORDING_MS);
   micBtn.classList.add("recording");
   voiceMicBtn.classList.add("recording");
+  renderMicCaptureState();
 }
 
 function stopRecording() {
@@ -1178,6 +1268,7 @@ function stopRecording() {
   recording = false;
   micBtn.classList.remove("recording");
   voiceMicBtn.classList.remove("recording");
+  renderMicCaptureState();
 
   // Play the most recent speak audio that arrived while recording.
   // Only the latest is played to avoid a cascade of stale messages.
@@ -1408,8 +1499,13 @@ let activePaneInteract = null; // { key, panel, overlay, input, statusEl, target
 function stopActivePaneSpeech() {
   if (activePaneSpeech) {
     try { activePaneSpeech.onresult = null; activePaneSpeech.onerror = null; activePaneSpeech.onend = null; } catch {}
-    try { activePaneSpeech.stop(); } catch {}
+    // `abort()` is the most reliable immediate shutdown across browsers.
+    try {
+      if (typeof activePaneSpeech.abort === "function") activePaneSpeech.abort();
+      else activePaneSpeech.stop();
+    } catch {}
     activePaneSpeech = null;
+    renderMicCaptureState();
   }
 }
 
