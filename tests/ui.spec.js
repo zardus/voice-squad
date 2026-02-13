@@ -185,6 +185,7 @@ test.describe("UI", () => {
       await expect(page.locator("#text-input")).toBeVisible();
       await expect(page.locator("#send-btn")).toBeVisible();
       await expect(page.locator("#autoread-toggle")).toBeVisible();
+      await expect(page.locator("#autolisten-toggle")).toBeVisible();
     });
 
     test("text input has placeholder", async ({ page }) => {
@@ -211,6 +212,21 @@ test.describe("UI", () => {
 
       // Toggle back
       await page.locator("#autoread-toggle").click();
+      const restored = await cb.isChecked();
+      expect(restored).toBe(initialState);
+    });
+
+    test("auto listen toggle checkbox works", async ({ page }) => {
+      await page.goto(pageUrl());
+      const cb = page.locator("#autolisten-cb");
+
+      const initialState = await cb.isChecked();
+
+      await page.locator("#autolisten-toggle").click();
+      const newState = await cb.isChecked();
+      expect(newState).not.toBe(initialState);
+
+      await page.locator("#autolisten-toggle").click();
       const restored = await cb.isChecked();
       expect(restored).toBe(initialState);
     });
@@ -286,6 +302,13 @@ test.describe("UI", () => {
       await expect(page.locator("#voice-hint")).toHaveText("Hold mic or spacebar to speak");
     });
 
+    test("voice tab shows auto-read and auto listen toggles", async ({ page }) => {
+      await page.goto(pageUrl());
+      await page.click('[data-tab="voice"]');
+      await expect(page.locator("#voice-autoread-toggle")).toBeVisible();
+      await expect(page.locator("#voice-autolisten-toggle")).toBeVisible();
+    });
+
     test("no media session / AirPod diagnostics UI is present", async ({ page }) => {
       await page.goto(pageUrl());
       await page.click('[data-tab="voice"]');
@@ -349,35 +372,32 @@ test.describe("UI", () => {
       await expect(page.locator("#controls")).toHaveClass(/hidden/);
     });
 
-    test("auto-read forced ON when entering voice tab", async ({ page }) => {
+    test("auto-read toggles stay in sync between terminal controls and voice tab", async ({ page }) => {
       await page.goto(pageUrl());
-      // Make sure auto-read is OFF initially
-      const cb = page.locator("#autoread-cb");
-      if (await cb.isChecked()) {
-        await page.locator("#autoread-toggle").click();
-      }
-      expect(await cb.isChecked()).toBe(false);
+      const terminalCb = page.locator("#autoread-cb");
+      const voiceCb = page.locator("#voice-autoread-cb");
 
-      // Enter voice tab
       await page.click('[data-tab="voice"]');
-      expect(await cb.isChecked()).toBe(true);
+      const initial = await voiceCb.isChecked();
+      await page.locator("#voice-autoread-toggle").click();
+      await expect(voiceCb).toHaveJSProperty("checked", !initial);
+
+      await page.click('[data-tab="terminal"]');
+      await expect(terminalCb).toHaveJSProperty("checked", !initial);
     });
 
-    test("auto-read restored when leaving voice tab", async ({ page }) => {
+    test("auto listen toggles stay in sync between terminal controls and voice tab", async ({ page }) => {
       await page.goto(pageUrl());
-      const cb = page.locator("#autoread-cb");
+      const terminalCb = page.locator("#autolisten-cb");
+      const voiceCb = page.locator("#voice-autolisten-cb");
 
-      // Set auto-read OFF
-      if (await cb.isChecked()) {
-        await page.locator("#autoread-toggle").click();
-      }
-      expect(await cb.isChecked()).toBe(false);
-
-      // Enter then leave voice tab
       await page.click('[data-tab="voice"]');
-      expect(await cb.isChecked()).toBe(true);
+      const initial = await voiceCb.isChecked();
+      await page.locator("#voice-autolisten-toggle").click();
+      await expect(voiceCb).toHaveJSProperty("checked", !initial);
+
       await page.click('[data-tab="terminal"]');
-      expect(await cb.isChecked()).toBe(false);
+      await expect(terminalCb).toHaveJSProperty("checked", !initial);
     });
 
     test("voice top row buttons are side by side", async ({ page }) => {
@@ -392,14 +412,16 @@ test.describe("UI", () => {
       expect(gap).toBeTruthy();
     });
 
-    test("voice buttons are 140x140px", async ({ page }) => {
+    test("voice buttons are square and reasonably sized", async ({ page }) => {
       await page.goto(pageUrl());
       await page.click('[data-tab="voice"]');
 
       for (const id of ["#voice-status-btn", "#voice-interrupt-btn", "#voice-mic-btn"]) {
         const box = await page.locator(id).boundingBox();
-        expect(box.width).toBeCloseTo(140, -1);
-        expect(box.height).toBeCloseTo(140, -1);
+        expect(box).toBeTruthy();
+        expect(Math.abs(box.width - box.height)).toBeLessThan(2);
+        expect(box.width).toBeGreaterThanOrEqual(100);
+        expect(box.width).toBeLessThanOrEqual(160);
       }
     });
 

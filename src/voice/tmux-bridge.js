@@ -3,6 +3,7 @@ const { execSync, execFile, execFileSync } = require("child_process");
 const TARGET = "captain:0";
 const ENTER_RETRY_COUNT = 2;
 const ENTER_RETRY_DELAY_MS = 400;
+const TERMINAL_TRIM_BOTTOM_LINES = Number(process.env.TMUX_TERMINAL_TRIM_BOTTOM_LINES || 5);
 
 function validatePaneTarget(target) {
   const t = String(target || "").trim();
@@ -13,107 +14,13 @@ function validatePaneTarget(target) {
   return t;
 }
 
-// Strip Claude/Codex interactive input chrome (textbox + autosuggest) from a captured pane.
-// This keeps the UI's "Terminal" view focused on conversation/log output.
-function stripInputBox(output) {
-  const lines = output.split("\n");
+// Terminal view: don't try to detect Claude/Codex UI chrome; just hide the bottom prompt area.
+function trimBottomLines(output, n) {
+  const drop = Math.max(0, Number(n) || 0);
+  const lines = String(output || "").split("\n");
   while (lines.length && lines[lines.length - 1] === "") lines.pop();
-
-  const delimiterIdxs = [];
-
-  function isDelimiterLine(line) {
-    const s = (line || "").trim();
-    if (s.length < 20) return false;
-    let dashy = 0;
-    for (const ch of s) {
-      if (ch === "-" || ch === "─" || ch === "━") dashy++;
-      else return false;
-    }
-    return dashy / s.length >= 0.9;
-  }
-
-  for (let i = 0; i < lines.length; i++) {
-    if (isDelimiterLine(lines[i])) delimiterIdxs.push(i);
-  }
-
-  // Claude Code renders the input box area under two long delimiter lines.
-  // Cut at the *second-to-last* delimiter when scanning backward from the end.
-  function cutAtSecondToLastDelimiterFromEnd(maxScanLines) {
-    let found = 0;
-    for (let i = lines.length - 1; i >= 0 && (lines.length - 1 - i) < maxScanLines; i--) {
-      if (isDelimiterLine(lines[i])) {
-        found++;
-        if (found === 2) return i;
-      }
-    }
-    return -1;
-  }
-
-  const backwardCutIdx = cutAtSecondToLastDelimiterFromEnd(400);
-  if (backwardCutIdx >= 0) {
-    return lines.slice(0, backwardCutIdx).join("\n").trimEnd();
-  }
-
-  function looksLikeInputChrome(after) {
-    for (let i = 0; i < Math.min(60, after.length); i++) {
-      const l = after[i] || "";
-      if (l.trimStart().startsWith("❯")) return true;
-      if (l.includes("┌") || l.includes("└") || l.includes("│")) return true;
-      if (l.includes("Ctrl") && l.includes("Enter")) return true;
-    }
-    return false;
-  }
-
-  const uiDelimiterIdxs = delimiterIdxs.filter((idx) => looksLikeInputChrome(lines.slice(idx + 1)));
-  if (uiDelimiterIdxs.length) {
-    const cutIdx = uiDelimiterIdxs.length >= 2 ? uiDelimiterIdxs[uiDelimiterIdxs.length - 2] : uiDelimiterIdxs[0];
-    return lines.slice(0, cutIdx).join("\n").trimEnd();
-  }
-
-  // Codex CLI renders an input prompt that starts with U+203A ("›") and shows status
-  // lines like "? for shortcuts" and "XX% context left" near the bottom, without
-  // Claude-style delimiter lines. If detected near the end, cut from the prompt onward.
-  function cutAtCodexPromptFromEnd(maxScanLines) {
-    const start = Math.max(0, lines.length - maxScanLines);
-    let promptIdx = -1;
-    for (let i = lines.length - 1; i >= start; i--) {
-      const l = lines[i] || "";
-      if (l.trimStart().startsWith("›")) {
-        promptIdx = i;
-        break;
-      }
-    }
-    if (promptIdx < 0) return -1;
-
-    let confirmed = false;
-    const confirmStart = Math.max(start, promptIdx - 5);
-    const confirmEnd = Math.min(lines.length, promptIdx + 15);
-    for (let i = confirmStart; i < confirmEnd; i++) {
-      const l = lines[i] || "";
-      if (l.includes("? for shortcuts")) confirmed = true;
-      if (/%\s*context\s+left/.test(l)) confirmed = true;
-    }
-    if (!confirmed) return -1;
-
-    // Strip blank lines immediately above the prompt (Codex leaves vertical padding).
-    let cutIdx = promptIdx;
-    while (cutIdx > 0 && (lines[cutIdx - 1] || "").trim() === "") cutIdx--;
-    return cutIdx;
-  }
-
-  const codexCutIdx = cutAtCodexPromptFromEnd(30);
-  if (codexCutIdx >= 0) {
-    return lines.slice(0, codexCutIdx).join("\n").trimEnd();
-  }
-
-  // Fallback: cut before the last "❯" prompt line if present.
-  for (let i = lines.length - 1; i >= 0; i--) {
-    if ((lines[i] || "").trimStart().startsWith("❯")) {
-      return lines.slice(0, i).join("\n").trimEnd();
-    }
-  }
-
-  return output.trimEnd();
+  if (drop === 0) return lines.join("\n").trimEnd();
+  return lines.slice(0, Math.max(0, lines.length - drop)).join("\n").trimEnd();
 }
 
 function capturePaneOutput() {
@@ -122,7 +29,7 @@ function capturePaneOutput() {
       encoding: "utf-8",
       timeout: 5000,
     });
-    return stripInputBox(raw);
+    return trimBottomLines(raw, TERMINAL_TRIM_BOTTOM_LINES);
   } catch {
     return "";
   }
@@ -134,7 +41,7 @@ function capturePaneOutputAsync() {
       encoding: "utf-8",
       timeout: 5000,
     }, (err, stdout) => {
-      resolve(err ? "" : stripInputBox(stdout));
+      resolve(err ? "" : trimBottomLines(stdout, TERMINAL_TRIM_BOTTOM_LINES));
     });
   });
 }

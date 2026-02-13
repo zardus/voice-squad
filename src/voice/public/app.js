@@ -19,6 +19,9 @@ const voiceHistoryList = document.getElementById("voice-history-list");
 const voiceHistoryModalBtn = document.getElementById("voice-history-modal-btn");
 const updateBtn = document.getElementById("update-btn");
 const autoreadCb = document.getElementById("autoread-cb");
+const voiceAutoreadCb = document.getElementById("voice-autoread-cb");
+const autolistenCb = document.getElementById("autolisten-cb");
+const voiceAutolistenCb = document.getElementById("voice-autolisten-cb");
 const voiceMicBtn = document.getElementById("voice-mic-btn");
 const voiceReplayBtn = document.getElementById("voice-replay-btn");
 const voiceStatusBtn = document.getElementById("voice-status-btn");
@@ -84,14 +87,69 @@ function setLatestVoiceSummary(text) {
 }
 
 // Auto-read toggle: OFF by default, persisted in localStorage
-let autoreadBeforeVoice = null; // saved state when entering Voice tab
-autoreadCb.checked = localStorage.getItem("autoread") === "true";
-autoreadCb.addEventListener("change", () => {
-  localStorage.setItem("autoread", autoreadCb.checked);
-  if (!autoreadCb.checked) {
+function setAutoReadEnabled(enabled, { persist = true } = {}) {
+  const val = !!enabled;
+  if (autoreadCb) autoreadCb.checked = val;
+  if (voiceAutoreadCb) voiceAutoreadCb.checked = val;
+  if (persist) localStorage.setItem("autoread", String(val));
+  if (!val) {
     stopTtsPlayback();
     speakAudioQueue = [];
   }
+}
+
+setAutoReadEnabled(localStorage.getItem("autoread") === "true", { persist: false });
+[autoreadCb, voiceAutoreadCb].forEach((cb) => {
+  if (!cb) return;
+  cb.addEventListener("change", () => setAutoReadEnabled(cb.checked));
+});
+
+// Auto Listen toggle: ON by default (keep mic stream acquired in background)
+let autoListenEnabled = true;
+function setAutoListenUi(enabled) {
+  const val = !!enabled;
+  if (autolistenCb) autolistenCb.checked = val;
+  if (voiceAutolistenCb) voiceAutolistenCb.checked = val;
+}
+
+function stopMicStream() {
+  try {
+    if (micStream) {
+      micStream.getTracks().forEach((t) => {
+        try { t.stop(); } catch {}
+      });
+    }
+  } finally {
+    micStream = null;
+  }
+}
+
+async function setAutoListenEnabled(enabled, { persist = true, acquire = false } = {}) {
+  autoListenEnabled = !!enabled;
+  setAutoListenUi(autoListenEnabled);
+  if (persist) localStorage.setItem("autolisten", String(autoListenEnabled));
+
+  if (!autoListenEnabled) {
+    // If the user disables listening while holding the mic, stop immediately.
+    if (recording || wantRecording) stopRecording();
+    stopMicStream();
+    micStreamAcquired = false;
+    return;
+  }
+
+  if (acquire) {
+    try {
+      await ensureMicStream();
+      micStreamAcquired = true;
+    } catch {}
+  }
+}
+
+const storedAutoListen = localStorage.getItem("autolisten");
+setAutoListenEnabled(storedAutoListen === null ? true : storedAutoListen === "true", { persist: false });
+[autolistenCb, voiceAutolistenCb].forEach((cb) => {
+  if (!cb) return;
+  cb.addEventListener("change", () => setAutoListenEnabled(cb.checked, { acquire: true }));
 });
 
 let ws = null;
@@ -611,6 +669,9 @@ function connect() {
 
 // Pre-acquire mic stream so recording starts instantly on press
 async function ensureMicStream() {
+  if (!autoListenEnabled) {
+    throw new Error("Auto Listen is off");
+  }
   if (micStream && micStream.getTracks().some((t) => t.readyState === "live")) return;
   micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
 }
@@ -772,6 +833,15 @@ if (voiceHistoryBackdrop) {
 // Mic recording — uses pre-acquired stream for instant start
 function startRecording() {
   unlockAudio();
+  if (!autoListenEnabled) {
+    wantRecording = false;
+    transcriptionEl.textContent = "Mic is off (Auto Listen disabled)";
+    transcriptionEl.className = "error";
+    voiceTranscriptionEl.textContent = "Mic off";
+    voiceTranscriptionEl.className = "voice-transcription error";
+    playDing(false);
+    return;
+  }
   if (!ws || ws.readyState !== WebSocket.OPEN) {
     wantRecording = false;
     playDing(false);
@@ -1044,7 +1114,7 @@ let micStreamAcquired = false;
 function onUserGesture() {
   if (!audioUnlocked) unlockAudio();
   if (audioCtx && audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
-  if (!micStreamAcquired) {
+  if (!micStreamAcquired && autoListenEnabled) {
     ensureMicStream().then(() => { micStreamAcquired = true; }).catch(() => {});
   }
 }
@@ -1202,18 +1272,13 @@ tabs.forEach((tab) => {
     // Notify server about screens tab activation/deactivation
     if (target === "screens" && !wasScreens) sendScreensTabState(true);
     if (target !== "screens" && wasScreens) { sendScreensTabState(false); closeActivePaneInteract(); }
-    // Voice tab: force auto-read on, hide controls
+
+    // Voice tab: hide bottom controls (Auto-read and Auto Listen toggles are duplicated inside Voice tab).
     if (target === "voice") {
       if (isTextPopoutOpen()) closeTextPopout();
-      autoreadBeforeVoice = autoreadCb.checked;
-      autoreadCb.checked = true;
       controlsEl.classList.add("hidden");
     } else {
       controlsEl.classList.remove("hidden");
-      if (wasVoice && autoreadBeforeVoice !== null) {
-        autoreadCb.checked = autoreadBeforeVoice;
-        autoreadBeforeVoice = null;
-      }
     }
 
     // Summary tab: auto-refresh once on tab switch so the user sees fresh data.

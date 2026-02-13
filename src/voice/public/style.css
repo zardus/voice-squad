@@ -20,6 +20,12 @@ body.voice-history-open {
   overflow: hidden;
 }
 
+.voice-status-mark {
+  font-size: 64px;
+  font-weight: 800;
+  line-height: 1;
+}
+
 #app {
   display: flex;
   flex-direction: column;
@@ -241,6 +247,7 @@ body.voice-history-open {
   max-height: 30%;
   display: flex;
   flex-direction: column;
+  min-height: 0;
 }
 
 #summary-label {
@@ -282,6 +289,7 @@ body.voice-history-open {
   flex-shrink: 0;
   border-bottom: 1px solid #0f3460;
   background: #16213e;
+  min-height: 0;
 }
 
 #transcription-label {
@@ -890,8 +898,8 @@ body.voice-history-open {
   color: #e94560;
 }
 
-/* Auto-read toggle */
-#autoread-toggle {
+/* Toggle (Auto-read / Auto Listen) */
+.toggle {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -902,11 +910,11 @@ body.voice-history-open {
   user-select: none;
 }
 
-#autoread-toggle input {
+.toggle input {
   display: none;
 }
 
-.autoread-slider {
+.toggle-slider {
   width: 32px;
   height: 18px;
   background: #0f3460;
@@ -915,7 +923,7 @@ body.voice-history-open {
   transition: background 0.2s;
 }
 
-.autoread-slider::after {
+.toggle-slider::after {
   content: "";
   position: absolute;
   width: 14px;
@@ -927,20 +935,38 @@ body.voice-history-open {
   transition: transform 0.2s, background 0.2s;
 }
 
-#autoread-toggle input:checked + .autoread-slider {
+.toggle input:checked + .toggle-slider {
   background: #1a5c40;
 }
 
-#autoread-toggle input:checked + .autoread-slider::after {
+.toggle input:checked + .toggle-slider::after {
   transform: translateX(14px);
   background: #4ecca3;
 }
 
-.autoread-label {
+.toggle-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
   font-size: 9px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
   color: #777;
+}
+
+.toggle-icon {
+  display: inline-block;
+  flex: 0 0 auto;
+  opacity: 0.9;
+}
+
+#voice-toggles {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin-top: 6px;
 }
 
 /* Controls — bottom bar */
@@ -1041,6 +1067,47 @@ body.voice-history-open {
   }
 
   #text-input {
+    padding: 10px 8px;
+  }
+}
+
+@media (max-width: 340px) {
+  #controls {
+    gap: 3px;
+    padding: 8px 6px;
+  }
+
+  .toggle-label {
+    display: none;
+  }
+
+  .toggle-slider {
+    width: 24px;
+    height: 14px;
+  }
+
+  .toggle-slider::after {
+    width: 12px;
+    height: 12px;
+    top: 1px;
+    left: 1px;
+  }
+
+  .toggle input:checked + .toggle-slider::after {
+    transform: translateX(10px);
+  }
+
+  #mic-btn {
+    width: 40px;
+    height: 40px;
+  }
+
+  #text-popout-btn {
+    width: 34px;
+    height: 34px;
+  }
+
+  #send-btn {
     padding: 10px 8px;
   }
 }

@@ -94,7 +94,7 @@
       <div id="voice-center">
         <div id="voice-top-row">
           <button id="voice-status-btn" title="Ask for status update">
-            <span style="font-size:64px;font-weight:bold;line-height:1">?</span>
+            <span class="voice-status-mark" aria-hidden="true">?</span>
           </button>
           <button id="voice-interrupt-btn" title="Interrupt captain (Ctrl+C)">
             <svg viewBox="0 0 24 24" width="64" height="64" fill="currentColor">
@@ -126,6 +126,23 @@
           </select>
         </div>
         <span id="voice-hint">Hold mic or spacebar to speak</span>
+        <div id="voice-toggles" aria-label="Voice settings">
+          <label id="voice-autoread-toggle" class="toggle" title="Auto-read summaries aloud">
+            <input type="checkbox" id="voice-autoread-cb">
+            <span class="toggle-slider"></span>
+            <span class="toggle-label">Auto-read</span>
+          </label>
+          <label id="voice-autolisten-toggle" class="toggle" title="Keep microphone ready in the background">
+            <input type="checkbox" id="voice-autolisten-cb">
+            <span class="toggle-slider"></span>
+            <span class="toggle-label">
+              <svg class="toggle-icon" viewBox="0 0 24 24" width="12" height="12" fill="currentColor" aria-hidden="true">
+                <path d="M12 14a3 3 0 003-3V5a3 3 0 00-6 0v6a3 3 0 003 3zm-1-9a1 1 0 012 0v6a1 1 0 01-2 0V5zm6 6a5 5 0 01-10 0H5a7 7 0 0014 0h-2zm-5 9a1 1 0 01-1-1v-2h2v2a1 1 0 01-1 1z"/>
+              </svg>
+              Auto Listen
+            </span>
+          </label>
+        </div>
         <div id="voice-summary-panel">
           <div id="voice-summary-label">latest reply</div>
           <div id="voice-summary" aria-live="polite"></div>
@@ -142,10 +159,20 @@
     </div>
 
     <div id="controls">
-      <label id="autoread-toggle" title="Auto-read summaries aloud">
+      <label id="autoread-toggle" class="toggle" title="Auto-read summaries aloud">
         <input type="checkbox" id="autoread-cb">
-        <span class="autoread-slider"></span>
-        <span class="autoread-label">Auto-read</span>
+        <span class="toggle-slider"></span>
+        <span class="toggle-label">Auto-read</span>
+      </label>
+      <label id="autolisten-toggle" class="toggle" title="Keep microphone ready in the background">
+        <input type="checkbox" id="autolisten-cb">
+        <span class="toggle-slider"></span>
+        <span class="toggle-label">
+          <svg class="toggle-icon" viewBox="0 0 24 24" width="12" height="12" fill="currentColor" aria-hidden="true">
+            <path d="M12 14a3 3 0 003-3V5a3 3 0 00-6 0v6a3 3 0 003 3zm-1-9a1 1 0 012 0v6a1 1 0 01-2 0V5zm6 6a5 5 0 01-10 0H5a7 7 0 0014 0h-2zm-5 9a1 1 0 01-1-1v-2h2v2a1 1 0 01-1 1z"/>
+          </svg>
+          Auto Listen
+        </span>
       </label>
       <button id="mic-btn" title="Hold to speak">
         <svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor">
