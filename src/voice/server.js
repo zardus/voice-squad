@@ -1,6 +1,7 @@
 const express = require("express");
 const http = require("http");
 const https = require("https");
+const os = require("os");
 const path = require("path");
 const fs = require("fs/promises");
 const fsSync = require("fs");
@@ -20,8 +21,13 @@ const statusDaemon = require("./status-daemon");
 const PORT = process.env.VOICE_PORT || 3000;
 let CAPTAIN = process.env.SQUAD_CAPTAIN || "claude";
 const TOKEN = process.env.VOICE_TOKEN;
-const SUMMARIES_DIR =
-  process.env.SQUAD_SUMMARIES_DIR || "/home/ubuntu/captain/archive/summaries";
+const CAPTAIN_DIR = process.env.SQUAD_CAPTAIN_DIR || path.join(os.homedir(), "captain");
+const ARCHIVE_DIR = process.env.SQUAD_ARCHIVE_DIR || path.join(CAPTAIN_DIR, "archive");
+const TASK_DEFS_DIR = process.env.SQUAD_TASK_DEFS_DIR || path.join(CAPTAIN_DIR, "task-definitions");
+const TASK_DEFS_PENDING_DIR = path.join(TASK_DEFS_DIR, "pending");
+const TASK_DEFS_ARCHIVED_DIR = path.join(TASK_DEFS_DIR, "archived");
+const SUMMARIES_DIR = process.env.SQUAD_SUMMARIES_DIR || path.join(ARCHIVE_DIR, "summaries");
+const COMPLETED_TASKS_LIMIT = Number(process.env.SQUAD_COMPLETED_TASKS_LIMIT || process.env.COMPLETED_TASKS_LIMIT || 2000);
 const WS_MAX_PAYLOAD_BYTES = Number(process.env.WS_MAX_PAYLOAD_BYTES || 64 * 1024 * 1024);
 const MAX_AUDIO_UPLOAD_BYTES = Number(process.env.MAX_AUDIO_UPLOAD_BYTES || 64 * 1024 * 1024);
 const VOICE_HISTORY_FILE = process.env.VOICE_HISTORY_FILE || "/tmp/voice-summary-history.json";
@@ -158,11 +164,30 @@ function completedAtToEpoch(item) {
   return Number.isFinite(t) ? t : 0;
 }
 
-async function listCompletedTasks() {
-  await fs.mkdir(SUMMARIES_DIR, { recursive: true });
-  const entries = await fs.readdir(SUMMARIES_DIR, { withFileTypes: true });
-  const tasks = [];
+function isoNoMillis(d) {
+  const dt = d instanceof Date ? d : new Date(d);
+  if (!Number.isFinite(dt.valueOf())) return new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+  return dt.toISOString().replace(/\.\d{3}Z$/, "Z");
+}
 
+async function listExplicitCompletedTasks() {
+  try {
+    await fs.mkdir(SUMMARIES_DIR, { recursive: true });
+  } catch (err) {
+    // If the directory is unreadable/uncreatable, fall back to inferred tasks.
+    console.warn(`[completed-tasks] cannot access summaries dir ${SUMMARIES_DIR}: ${err.message}`);
+    return [];
+  }
+
+  let entries = [];
+  try {
+    entries = await fs.readdir(SUMMARIES_DIR, { withFileTypes: true });
+  } catch (err) {
+    console.warn(`[completed-tasks] cannot read summaries dir ${SUMMARIES_DIR}: ${err.message}`);
+    return [];
+  }
+
+  const tasks = [];
   for (const entry of entries) {
     if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
     const fullPath = path.join(SUMMARIES_DIR, entry.name);
@@ -174,9 +199,149 @@ async function listCompletedTasks() {
       console.warn(`[completed-tasks] skipping ${entry.name}: ${err.message}`);
     }
   }
-
   tasks.sort((a, b) => completedAtToEpoch(b) - completedAtToEpoch(a));
   return tasks;
+}
+
+function parseArchiveLogName(filename) {
+  // Expected: <session>_<window>_<YYYY-MM-DD>_<HH-MM-SS>.log
+  // Window names can contain underscores; session names typically don't, but be defensive.
+  if (typeof filename !== "string" || !filename.endsWith(".log")) return null;
+  const base = filename.slice(0, -".log".length);
+  const parts = base.split("_");
+  if (parts.length < 4) return null;
+
+  const timePart = parts[parts.length - 1];
+  const datePart = parts[parts.length - 2];
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(datePart) || !/^\d{2}-\d{2}-\d{2}$/.test(timePart)) {
+    return null;
+  }
+
+  const nameParts = parts.slice(0, -2);
+  if (nameParts.length < 2) return null;
+  const session = nameParts[0];
+  const windowName = nameParts.slice(1).join("_");
+
+  return { session, window: windowName };
+}
+
+async function readTaskDefinition(windowName) {
+  const name = String(windowName || "").trim();
+  if (!name) return null;
+
+  const candidates = [
+    path.join(TASK_DEFS_ARCHIVED_DIR, `${name}.txt`),
+    path.join(TASK_DEFS_PENDING_DIR, `${name}.txt`),
+  ];
+
+  for (const p of candidates) {
+    try {
+      const raw = await fs.readFile(p, "utf8");
+      const trimmed = raw.trim();
+      if (trimmed) return trimmed;
+    } catch {}
+  }
+  return null;
+}
+
+async function listInferredCompletedTasksFromArchiveLogs() {
+  let entries = [];
+  try {
+    entries = await fs.readdir(ARCHIVE_DIR, { withFileTypes: true });
+  } catch (err) {
+    // Archive directory might not exist in some setups; don't fail the endpoint.
+    console.warn(`[completed-tasks] cannot read archive dir ${ARCHIVE_DIR}: ${err.message}`);
+    return [];
+  }
+
+  const logFiles = entries
+    .filter((e) => e.isFile() && e.name.endsWith(".log"))
+    .map((e) => e.name);
+
+  const latestByTarget = new Map();
+
+  for (const name of logFiles) {
+    const parsed = parseArchiveLogName(name);
+    if (!parsed) continue;
+    const fullPath = path.join(ARCHIVE_DIR, name);
+
+    let st;
+    try {
+      st = await fs.stat(fullPath);
+    } catch {
+      continue;
+    }
+
+    const key = `${parsed.session}:${parsed.window}`;
+    const existing = latestByTarget.get(key);
+    if (!existing || (st.mtimeMs || 0) > existing.mtimeMs) {
+      latestByTarget.set(key, {
+        ...parsed,
+        mtimeMs: st.mtimeMs || 0,
+        log_file: name,
+      });
+    }
+  }
+
+  const inferred = Array.from(latestByTarget.values())
+    .sort((a, b) => (b.mtimeMs || 0) - (a.mtimeMs || 0));
+
+  const out = [];
+  for (const item of inferred) {
+    const completedAt = item.mtimeMs ? isoNoMillis(new Date(item.mtimeMs)) : null;
+    out.push({
+      task_name: item.window,
+      completed_at: completedAt,
+      short_summary: "Completed (inferred from archived pane log; missing explicit completion record).",
+      worker_type: "unknown",
+      session: item.session,
+      window: item.window,
+      archive_log: item.log_file,
+      task_definition: await readTaskDefinition(item.window),
+    });
+  }
+
+  return out;
+}
+
+async function listCompletedTasks() {
+  const explicit = await listExplicitCompletedTasks();
+  const inferred = await listInferredCompletedTasksFromArchiveLogs();
+
+  // Merge on strongest identity available: session+window if present, else task_name.
+  const mergedByKey = new Map();
+  const add = (task) => {
+    if (!task || typeof task !== "object") return;
+    const session = typeof task.session === "string" ? task.session : "";
+    const windowName = typeof task.window === "string" ? task.window : "";
+    const taskName = typeof task.task_name === "string" ? task.task_name : "";
+    const key = (session && windowName) ? `${session}:${windowName}` : `name:${taskName}`;
+    if (!key || key === "name:") return;
+
+    const prev = mergedByKey.get(key);
+    if (!prev) {
+      mergedByKey.set(key, task);
+      return;
+    }
+
+    // Prefer the one with the newest completed_at, but keep richer fields.
+    const prevEpoch = completedAtToEpoch(prev);
+    const nextEpoch = completedAtToEpoch(task);
+    const newest = nextEpoch >= prevEpoch ? task : prev;
+    const oldest = newest === task ? prev : task;
+    mergedByKey.set(key, { ...oldest, ...newest });
+  };
+
+  for (const t of inferred) add(t);
+  for (const t of explicit) add(t);
+
+  const merged = Array.from(mergedByKey.values());
+  merged.sort((a, b) => completedAtToEpoch(b) - completedAtToEpoch(a));
+
+  if (Number.isFinite(COMPLETED_TASKS_LIMIT) && COMPLETED_TASKS_LIMIT > 0) {
+    return merged.slice(0, COMPLETED_TASKS_LIMIT);
+  }
+  return merged;
 }
 
 app.get("/api/completed-tasks", async (req, res) => {

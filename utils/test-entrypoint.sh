@@ -11,6 +11,12 @@ VOICE_TOKEN=$(head -c 32 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9' | head -c 32
 # requires OPENAI_API_KEY to start.
 export OPENAI_API_KEY="${OPENAI_API_KEY:-sk-test-dummy}"
 
+# Isolated captain filesystem for tests (avoid relying on /home/ubuntu/captain defaults).
+export SQUAD_CAPTAIN_DIR=/tmp/test-captain
+export SQUAD_SUMMARIES_DIR=/tmp/test-captain/archive/summaries
+rm -rf "$SQUAD_CAPTAIN_DIR"
+mkdir -p "$SQUAD_SUMMARIES_DIR" "$SQUAD_CAPTAIN_DIR/task-definitions/pending" "$SQUAD_CAPTAIN_DIR/task-definitions/archived"
+
 # ── Start tmux session (bare shell acts as the "captain") ────
 tmux new-session -d -s captain -c /home/ubuntu
 
