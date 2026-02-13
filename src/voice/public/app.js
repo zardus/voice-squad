@@ -39,6 +39,44 @@ let speakAudioQueue = []; // TTS audio received while mic is held down
 let ttsFormat = "opus";
 let ttsMime = "audio/ogg";
 
+function mimeForTtsFormat(fmt) {
+  switch (String(fmt || "").toLowerCase()) {
+    case "mp3":
+      return "audio/mpeg";
+    case "aac":
+      return "audio/aac";
+    case "opus":
+    default:
+      return "audio/ogg";
+  }
+}
+
+function selectBestTtsFormat() {
+  // Prefer Opus when the browser can actually decode it; fall back to MP3/AAC.
+  // This avoids iPadOS "desktop UA" cases where user-agent sniffing fails.
+  const a = new Audio();
+  const can = (mime) => {
+    if (!a.canPlayType) return "";
+    try {
+      return a.canPlayType(mime) || "";
+    } catch {
+      return "";
+    }
+  };
+
+  // Opus in an Ogg container (what we send for response_format=opus).
+  if (can('audio/ogg; codecs="opus"')) return "opus";
+  if (can("audio/ogg")) return "opus";
+
+  if (can("audio/mpeg")) return "mp3";
+
+  // iOS Safari sometimes prefers MP4/AAC; OpenAI supports response_format=aac.
+  if (can('audio/mp4; codecs="mp4a.40.2"')) return "aac";
+  if (can("audio/aac")) return "aac";
+
+  return "opus";
+}
+
 function setLatestVoiceSummary(text) {
   const t = typeof text === "string" ? text : "";
   if (summaryEl) summaryEl.textContent = t;
@@ -223,6 +261,34 @@ const HISTORY_PREVIEW_MAX = 40;
 let messageHistory = [];
 let voiceSummaryHistory = [];
 
+function normalizeVoiceHistoryEntries(entries) {
+  if (!Array.isArray(entries)) return [];
+  return entries
+    .filter((item) => item && typeof item === "object")
+    .map((item) => ({
+      text: typeof item.text === "string" ? item.text.trim() : "",
+      timestamp: typeof item.timestamp === "string" ? item.timestamp : new Date().toISOString(),
+    }))
+    .filter((item) => item.text);
+}
+
+function mergeVoiceHistoryEntries(existing, incoming) {
+  const out = [];
+  const seen = new Set();
+  const add = (e) => {
+    const key = `${e.timestamp}\n${e.text}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(e);
+  };
+  for (const e of normalizeVoiceHistoryEntries(existing)) add(e);
+  for (const e of normalizeVoiceHistoryEntries(incoming)) add(e);
+
+  // Keep newest-first for display.
+  out.sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp)));
+  return out;
+}
+
 function truncateHistoryPreview(text) {
   return text.length > HISTORY_PREVIEW_MAX
     ? text.slice(0, HISTORY_PREVIEW_MAX - 3) + "..."
@@ -358,14 +424,8 @@ function openVoiceHistoryModal() {
 }
 
 function setVoiceSummaryHistory(entries) {
-  if (!Array.isArray(entries)) return;
-  voiceSummaryHistory = entries
-    .filter((item) => item && typeof item === "object")
-    .map((item) => ({
-      text: typeof item.text === "string" ? item.text.trim() : "",
-      timestamp: typeof item.timestamp === "string" ? item.timestamp : new Date().toISOString(),
-    }))
-    .filter((item) => item.text);
+  // Merge rather than overwrite: speak_text can arrive before initial history fetch resolves.
+  voiceSummaryHistory = mergeVoiceHistoryEntries(voiceSummaryHistory, entries);
   if (voiceSummaryHistory[0] && voiceSummaryHistory[0].text) {
     setLatestVoiceSummary(voiceSummaryHistory[0].text);
   }
@@ -437,8 +497,10 @@ terminalEl.addEventListener("scroll", () => {
 
 function connect() {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
-  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-  const desiredTts = isIOS ? "mp3" : "opus";
+  const desiredTts = selectBestTtsFormat();
+  // Best-effort: set defaults before the server sends tts_config.
+  ttsFormat = desiredTts;
+  ttsMime = mimeForTtsFormat(desiredTts);
   ws = new WebSocket(
     `${proto}//${location.host}?token=${encodeURIComponent(token)}&tts=${encodeURIComponent(desiredTts)}`
   );

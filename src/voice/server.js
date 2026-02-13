@@ -290,7 +290,8 @@ app.post("/api/speak", async (req, res) => {
       console.log(`[speak] synthesized ${audio.length} bytes (format=${ttsFormat}) for ${clients.length} client(s)`);
       for (const client of clients) {
         if (client.readyState !== 1) continue;
-        client.send(audio);
+        // Be explicit: this must be a binary WebSocket frame for browsers to treat it as audio bytes.
+        client.send(audio, { binary: true });
         sent++;
       }
     }
