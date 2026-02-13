@@ -30,8 +30,9 @@ test.describe("Integration", () => {
     // Capture the initial terminal content
     const initialContent = await page.locator("#terminal").textContent();
 
-    // Send a harmless command (just echo to the captain, it will see it)
-    await page.fill("#text-input", "echo hello from test suite");
+    // Send a harmless command and produce enough output that UI-side trimming
+    // (hiding the bottom prompt area) won't clip it entirely.
+    await page.fill("#text-input", 'for i in $(seq 1 12); do echo "hello from test suite $i"; done');
     await page.click("#send-btn");
 
     // Wait for terminal content to change (tmux_snapshot comes every 1s)
@@ -54,6 +55,12 @@ test.describe("Integration", () => {
 
     // Clean up any leftover test file
     try { fs.unlinkSync(TEST_FILE); } catch {}
+
+    // Other tests (notably /api/restart-captain) may leave captain:0 running something other than a shell.
+    // Force a predictable bash pane so the redirection command works deterministically.
+    try {
+      execSync("tmux respawn-pane -k -t captain:0 bash", { timeout: 5000 });
+    } catch {}
 
     await page.goto(pageUrl());
     await expect(page.locator("#status")).toHaveClass(/connected/, { timeout: 5000 });

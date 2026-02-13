@@ -20,6 +20,9 @@ function trimBottomLines(output, n) {
   const lines = String(output || "").split("\n");
   while (lines.length && lines[lines.length - 1] === "") lines.pop();
   if (drop === 0) return lines.join("\n").trimEnd();
+  // If the pane only contains the prompt area (or very little output), trimming would blank the UI.
+  // In that case, keep the raw capture rather than showing nothing.
+  if (lines.length <= drop) return lines.join("\n").trimEnd();
   return lines.slice(0, Math.max(0, lines.length - drop)).join("\n").trimEnd();
 }
 

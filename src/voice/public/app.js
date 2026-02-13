@@ -42,6 +42,24 @@ let speakAudioQueue = []; // TTS audio received while mic is held down
 let ttsFormat = "opus";
 let ttsMime = "audio/ogg";
 
+// Core runtime state (declared early so localStorage-driven toggles can safely run on load).
+let ws = null;
+let mediaRecorder = null;
+let recording = false;
+let wantRecording = false; // true while user is holding the mic button
+let recordingStartTime = 0;
+let micStream = null;
+let micStreamAcquired = false;
+let autoScroll = true;
+let disconnectedFlashTimer = null;
+let maxRecordingTimer = null;
+let activePaneSpeech = null; // Web Speech API recognition (uses mic)
+
+let recordingSessionId = 0; // increments per recording; used to abort onstop side effects
+let abortRecordingUpload = false;
+
+let audioCtx = null; // declared early; initialized lazily by getAudioContext()
+
 function mimeForTtsFormat(fmt) {
   switch (String(fmt || "").toLowerCase()) {
     case "mp3":
@@ -106,10 +124,21 @@ setAutoReadEnabled(localStorage.getItem("autoread") === "true", { persist: false
 
 // Auto Listen toggle: ON by default (keep mic stream acquired in background)
 let autoListenEnabled = true;
+let micStreamAcquireSeq = 0; // increments to invalidate in-flight getUserMedia() calls
 function setAutoListenUi(enabled) {
   const val = !!enabled;
   if (autolistenCb) autolistenCb.checked = val;
   if (voiceAutolistenCb) voiceAutolistenCb.checked = val;
+}
+
+function closeAudioContext() {
+  if (!audioCtx) return;
+  try {
+    if (typeof audioCtx.close === "function") {
+      audioCtx.close().catch(() => {});
+    }
+  } catch {}
+  audioCtx = null;
 }
 
 function stopMicStream() {
@@ -124,23 +153,57 @@ function stopMicStream() {
   }
 }
 
+function abortActiveRecording() {
+  wantRecording = false;
+  recording = false;
+  abortRecordingUpload = true;
+
+  if (maxRecordingTimer) {
+    clearTimeout(maxRecordingTimer);
+    maxRecordingTimer = null;
+  }
+
+  micBtn.classList.remove("recording");
+  voiceMicBtn.classList.remove("recording");
+  speakAudioQueue = [];
+
+  if (mediaRecorder) {
+    // Prevent upload side effects when stopping due to Auto Listen OFF.
+    try { mediaRecorder.ondataavailable = null; } catch {}
+    try { mediaRecorder.onstop = null; } catch {}
+    try {
+      if (mediaRecorder.state !== "inactive") {
+        mediaRecorder.stop();
+      }
+    } catch {}
+  }
+  mediaRecorder = null;
+}
+
 async function setAutoListenEnabled(enabled, { persist = true, acquire = false } = {}) {
   autoListenEnabled = !!enabled;
   setAutoListenUi(autoListenEnabled);
   if (persist) localStorage.setItem("autolisten", String(autoListenEnabled));
 
   if (!autoListenEnabled) {
+    // Invalidate any in-flight `getUserMedia()` so it can't re-acquire after OFF.
+    micStreamAcquireSeq++;
     // If the user disables listening while holding the mic, stop immediately.
-    if (recording || wantRecording) stopRecording();
+    if (recording || wantRecording || mediaRecorder) abortActiveRecording();
+
+    // Web Speech recognition also uses the microphone (iOS Safari shows the mic indicator).
+    stopActivePaneSpeech();
+
     stopMicStream();
     micStreamAcquired = false;
+    closeAudioContext();
     return;
   }
 
   if (acquire) {
     try {
       await ensureMicStream();
-      micStreamAcquired = true;
+      micStreamAcquired = !!(micStream && micStream.getTracks().some((t) => t.readyState === "live"));
     } catch {}
   }
 }
@@ -151,16 +214,6 @@ setAutoListenEnabled(storedAutoListen === null ? true : storedAutoListen === "tr
   if (!cb) return;
   cb.addEventListener("change", () => setAutoListenEnabled(cb.checked, { acquire: true }));
 });
-
-let ws = null;
-let mediaRecorder = null;
-let recording = false;
-let wantRecording = false; // true while user is holding the mic button
-let recordingStartTime = 0;
-let micStream = null;
-let autoScroll = true;
-let disconnectedFlashTimer = null;
-let maxRecordingTimer = null;
 
 const MIN_RECORDING_MS = 300;
 const MIN_AUDIO_BYTES = 1000;
@@ -173,7 +226,6 @@ const ttsAudio = new Audio();
 ttsAudio.setAttribute("playsinline", "");
 ttsAudio.setAttribute("webkit-playsinline", "");
 let audioUnlocked = false;
-let audioCtx = null;
 
 // Tiny silent WAV data URI used only to prime iOS Safari audio on first user gesture.
 // This is intentionally static (no keepalive loops / media session / hardware control bridging).
@@ -672,8 +724,17 @@ async function ensureMicStream() {
   if (!autoListenEnabled) {
     throw new Error("Auto Listen is off");
   }
-  if (micStream && micStream.getTracks().some((t) => t.readyState === "live")) return;
-  micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  if (micStream && micStream.getTracks().some((t) => t.readyState === "live")) return true;
+  const seq = ++micStreamAcquireSeq;
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  // If Auto Listen was turned off (or another acquire superseded this one) while we were waiting,
+  // immediately stop tracks so iPadOS releases the mic and the indicator turns off.
+  if (!autoListenEnabled || seq !== micStreamAcquireSeq) {
+    try { stream.getTracks().forEach((t) => { try { t.stop(); } catch {} }); } catch {}
+    return false;
+  }
+  micStream = stream;
+  return true;
 }
 
 // Text command
@@ -852,7 +913,9 @@ function startRecording() {
   if (!micStream || !micStream.getTracks().some((t) => t.readyState === "live")) {
     // Stream missing or dead — (re)acquire, then start only if user is still holding
     micStream = null;
-    ensureMicStream().then(() => {
+    ensureMicStream().then((ok) => {
+      if (!autoListenEnabled) return;
+      if (!ok) return;
       if (wantRecording) startRecording();
     }).catch((err) => {
       transcriptionEl.textContent = "Mic access denied: " + err.message;
@@ -870,12 +933,17 @@ function startRecording() {
 
   mediaRecorder = new MediaRecorder(micStream, { mimeType });
   const recordedChunks = [];
+  const mySessionId = ++recordingSessionId;
+  abortRecordingUpload = false;
 
   mediaRecorder.ondataavailable = (e) => {
     if (e.data.size > 0) recordedChunks.push(e.data);
   };
 
   mediaRecorder.onstop = async () => {
+    if (abortRecordingUpload || !autoListenEnabled || mySessionId !== recordingSessionId) {
+      return;
+    }
     if (maxRecordingTimer) {
       clearTimeout(maxRecordingTimer);
       maxRecordingTimer = null;
@@ -1110,12 +1178,14 @@ voiceStatusBtn.addEventListener("click", () => {
 // Unlock audio + acquire mic on user interaction.
 // Not once-only: after WS reconnect audioUnlocked resets, so we need subsequent
 // gestures to re-prime the Audio element for autoplay.
-let micStreamAcquired = false;
 function onUserGesture() {
   if (!audioUnlocked) unlockAudio();
   if (audioCtx && audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
   if (!micStreamAcquired && autoListenEnabled) {
-    ensureMicStream().then(() => { micStreamAcquired = true; }).catch(() => {});
+    if (navigator.webdriver) return;
+    ensureMicStream().then(() => {
+      if (autoListenEnabled) micStreamAcquired = true;
+    }).catch(() => {});
   }
 }
 document.addEventListener("touchstart", onUserGesture, { passive: true });
@@ -1219,7 +1289,7 @@ const tabBarEl = document.getElementById("tab-bar");
 let screensTabActive = false;
 
 let activePaneInteract = null; // { key, panel, overlay, input, statusEl, target }
-let activePaneSpeech = null;
+// activePaneSpeech is declared at top-level (shared with Auto Listen OFF shutdown logic).
 
 function stopActivePaneSpeech() {
   if (activePaneSpeech) {
