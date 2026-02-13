@@ -1225,6 +1225,40 @@ body.voice-history-open {
   color: #555;
 }
 
+#voice-summary-panel {
+  width: min(94vw, 560px);
+  border: 1px solid #0f3460;
+  border-radius: 14px;
+  background: rgba(22, 33, 62, 0.55);
+  padding: 12px 14px;
+}
+
+#voice-summary-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #a78bfa;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+#voice-summary {
+  font-size: 15px;
+  line-height: 1.5;
+  color: #e0e0e0;
+  max-height: min(24vh, 220px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  cursor: pointer;
+}
+
+#voice-summary:empty::after {
+  content: "Waiting for output...";
+  color: #555;
+  font-style: italic;
+  cursor: default;
+}
+
 .voice-transcription {
   font-size: 14px;
   color: #999;

@@ -22,6 +22,7 @@ const autoreadCb = document.getElementById("autoread-cb");
 const voiceMicBtn = document.getElementById("voice-mic-btn");
 const voiceReplayBtn = document.getElementById("voice-replay-btn");
 const voiceStatusBtn = document.getElementById("voice-status-btn");
+const voiceSummaryEl = document.getElementById("voice-summary");
 const voiceTranscriptionEl = document.getElementById("voice-transcription");
 const voiceInterruptBtn = document.getElementById("voice-interrupt-btn");
 const voiceHistorySelect = document.getElementById("voice-history-select");
@@ -35,6 +36,14 @@ const completedTabContentEl = document.getElementById("completed-tab-content");
 const refreshCompletedBtn = document.getElementById("refresh-completed-btn");
 let lastTtsAudioData = null;
 let speakAudioQueue = []; // TTS audio received while mic is held down
+let ttsFormat = "opus";
+let ttsMime = "audio/ogg";
+
+function setLatestVoiceSummary(text) {
+  const t = typeof text === "string" ? text : "";
+  if (summaryEl) summaryEl.textContent = t;
+  if (voiceSummaryEl) voiceSummaryEl.textContent = t;
+}
 
 // Auto-read toggle: OFF by default, persisted in localStorage
 let autoreadBeforeVoice = null; // saved state when entering Voice tab
@@ -180,7 +189,7 @@ function handleIncomingTtsAudio(data, opts = {}) {
 }
 
 function playAudio(data) {
-  const blob = new Blob([data], { type: "audio/ogg" });
+  const blob = new Blob([data], { type: ttsMime || "audio/ogg" });
   const url = URL.createObjectURL(blob);
   if (ttsAudio.src) URL.revokeObjectURL(ttsAudio.src);
   ttsAudio.src = url;
@@ -357,6 +366,9 @@ function setVoiceSummaryHistory(entries) {
       timestamp: typeof item.timestamp === "string" ? item.timestamp : new Date().toISOString(),
     }))
     .filter((item) => item.text);
+  if (voiceSummaryHistory[0] && voiceSummaryHistory[0].text) {
+    setLatestVoiceSummary(voiceSummaryHistory[0].text);
+  }
   renderVoiceHistoryModal();
 }
 
@@ -393,7 +405,7 @@ async function replayHistoricalSpeak(text) {
     const resp = await fetch("/api/speak", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token, text: trimmed, playbackOnly: true }),
+      body: JSON.stringify({ token, text: trimmed, playbackOnly: true, format: ttsFormat }),
     });
     if (!resp.ok) return false;
     const audio = await resp.arrayBuffer();
@@ -425,7 +437,11 @@ terminalEl.addEventListener("scroll", () => {
 
 function connect() {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
-  ws = new WebSocket(`${proto}//${location.host}?token=${encodeURIComponent(token)}`);
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+  const desiredTts = isIOS ? "mp3" : "opus";
+  ws = new WebSocket(
+    `${proto}//${location.host}?token=${encodeURIComponent(token)}&tts=${encodeURIComponent(desiredTts)}`
+  );
   ws.binaryType = "arraybuffer";
 
   ws.onopen = () => {
@@ -468,13 +484,18 @@ function connect() {
         }
         break;
 
+      case "tts_config":
+        if (msg && typeof msg.format === "string") ttsFormat = msg.format;
+        if (msg && typeof msg.mime === "string") ttsMime = msg.mime;
+        break;
+
       case "tmux_snapshot":
         pendingSnapshot = msg.content;
         break;
 
       case "speak_text":
         if (msg.text) {
-          summaryEl.textContent = msg.text;
+          setLatestVoiceSummary(msg.text);
           prependVoiceSummaryEntry({
             text: msg.text,
             timestamp: msg.timestamp,
@@ -483,9 +504,6 @@ function connect() {
         break;
       case "voice_history":
         setVoiceSummaryHistory(msg.entries || []);
-        if (!summaryEl.textContent && voiceSummaryHistory[0]) {
-          summaryEl.textContent = voiceSummaryHistory[0].text;
-        }
         break;
 
       case "transcription":
@@ -678,6 +696,9 @@ if (voiceHistoryModalBtn) {
 }
 if (summaryEl) {
   summaryEl.addEventListener("click", openVoiceHistoryModal);
+}
+if (voiceSummaryEl) {
+  voiceSummaryEl.addEventListener("click", openVoiceHistoryModal);
 }
 if (voiceHistoryCloseBtn) {
   voiceHistoryCloseBtn.addEventListener("click", closeVoiceHistoryModal);

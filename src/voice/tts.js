@@ -3,14 +3,26 @@ const https = require("https");
 /**
  * Convert text to speech using OpenAI TTS API.
  * @param {string} text - Text to speak
- * @returns {Promise<Buffer>} MP3 audio buffer
+ * @param {string} [format] - OpenAI response format: "opus" (default), "mp3", or "aac"
+ * @returns {Promise<{ audio: Buffer, format: string, mime: string }>}
  */
-async function synthesize(text) {
+async function synthesize(text, format = "opus") {
+  const safeFormat = typeof format === "string" ? format.toLowerCase() : "opus";
+  const response_format = (safeFormat === "mp3" || safeFormat === "aac" || safeFormat === "opus")
+    ? safeFormat
+    : "opus";
+
+  const mime = response_format === "mp3"
+    ? "audio/mpeg"
+    : response_format === "aac"
+      ? "audio/aac"
+      : "audio/ogg";
+
   const body = JSON.stringify({
     model: "tts-1",
     input: text,
     voice: "alloy",
-    response_format: "opus",
+    response_format,
     speed: 1.15,
   });
 
@@ -38,7 +50,7 @@ async function synthesize(text) {
             );
             return;
           }
-          resolve(Buffer.concat(chunks));
+          resolve({ audio: Buffer.concat(chunks), format: response_format, mime });
         });
       }
     );

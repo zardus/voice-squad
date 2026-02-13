@@ -98,6 +98,25 @@ function checkToken(req) {
   return url.searchParams.get("token") === TOKEN;
 }
 
+function normalizeTtsFormat(fmt) {
+  const f = String(fmt || "").toLowerCase();
+  if (f === "mp3" || f === "aac" || f === "opus") return f;
+  return "opus";
+}
+
+function ttsMimeFromFormat(fmt) {
+  switch (fmt) {
+    case "mp3":
+      return "audio/mpeg";
+    case "aac":
+      return "audio/aac";
+    case "opus":
+    default:
+      // Opus frames inside an Ogg container.
+      return "audio/ogg";
+  }
+}
+
 const app = express();
 
 app.use(express.json());
@@ -220,7 +239,7 @@ app.post("/api/completed-tasks", async (req, res) => {
 });
 
 app.post("/api/speak", async (req, res) => {
-  const { text, token, playbackOnly } = req.body || {};
+  const { text, token, playbackOnly, format } = req.body || {};
   if (token !== TOKEN) {
     return res.status(401).json({ error: "Unauthorized" });
   }
@@ -229,30 +248,55 @@ app.post("/api/speak", async (req, res) => {
   }
   try {
     const trimmed = text.trim();
+    const requestTtsFormat = normalizeTtsFormat(format);
+    const requestTtsMime = ttsMimeFromFormat(requestTtsFormat);
     console.log(`[speak] "${trimmed.slice(0, 100)}${trimmed.length > 100 ? "..." : ""}"`);
-    const audio = await synthesize(trimmed);
-    console.log(`[speak] synthesized ${audio.length} bytes`);
     if (playbackOnly === true) {
-      res.setHeader("Content-Type", "audio/ogg");
+      const { audio } = await synthesize(trimmed, requestTtsFormat);
+      console.log(`[speak] synthesized ${audio.length} bytes (format=${requestTtsFormat}, playbackOnly=true)`);
+      res.setHeader("Content-Type", requestTtsMime);
       res.setHeader("Cache-Control", "no-store");
       res.send(audio);
       return;
     }
     const entry = await addVoiceSummaryEntry(trimmed);
     let sent = 0;
+    const speakMsg = JSON.stringify({
+      type: "speak_text",
+      text: trimmed,
+      timestamp: entry ? entry.timestamp : new Date().toISOString(),
+    });
+
+    // Send speak_text first (per-client ordering is preserved; audio follows per-format).
+    const openClients = [];
     for (const client of wss.clients) {
-      if (client.readyState === 1) {
-        client.send(JSON.stringify({
-          type: "speak_text",
-          text: trimmed,
-          timestamp: entry ? entry.timestamp : new Date().toISOString(),
-        }));
+      if (client.readyState !== 1) continue;
+      client.send(speakMsg);
+      openClients.push(client);
+    }
+
+    const clientsByFormat = new Map(); // format -> [ws,...]
+    for (const client of openClients) {
+      const desired = normalizeTtsFormat(client.ttsFormat || requestTtsFormat);
+      const list = clientsByFormat.get(desired) || [];
+      list.push(client);
+      clientsByFormat.set(desired, list);
+    }
+
+    const formatsUsed = [];
+    for (const [ttsFormat, clients] of clientsByFormat.entries()) {
+      formatsUsed.push(ttsFormat);
+      const { audio } = await synthesize(trimmed, ttsFormat);
+      console.log(`[speak] synthesized ${audio.length} bytes (format=${ttsFormat}) for ${clients.length} client(s)`);
+      for (const client of clients) {
+        if (client.readyState !== 1) continue;
         client.send(audio);
         sent++;
       }
     }
+
     console.log(`[speak] sent to ${sent}/${wss.clients.size} client(s)`);
-    res.json({ ok: true, clients: sent });
+    res.json({ ok: true, clients: sent, formats: formatsUsed.sort() });
   } catch (err) {
     console.error("[speak] error:", err.message);
     res.status(500).json({ error: err.message });
@@ -438,8 +482,18 @@ server.on("upgrade", (req, socket, head) => {
   });
 });
 
-wss.on("connection", (ws) => {
+wss.on("connection", (ws, req) => {
   console.log("[ws] client connected");
+
+  try {
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    const ttsFormat = normalizeTtsFormat(url.searchParams.get("tts"));
+    ws.ttsFormat = ttsFormat;
+    ws.ttsMime = ttsMimeFromFormat(ttsFormat);
+  } catch {
+    ws.ttsFormat = "opus";
+    ws.ttsMime = ttsMimeFromFormat("opus");
+  }
 
   let audioChunks = [];
   let audioMimeType = "audio/webm";
@@ -447,6 +501,7 @@ wss.on("connection", (ws) => {
   let audioTooLarge = false;
 
   ws.send(JSON.stringify({ type: "connected", captain: CAPTAIN }));
+  ws.send(JSON.stringify({ type: "tts_config", format: ws.ttsFormat, mime: ws.ttsMime }));
   ws.send(JSON.stringify({ type: "voice_history", entries: voiceSummaryHistory }));
 
   let lastSnapshot = null;
