@@ -1,0 +1,40 @@
+name: iOS Build
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/ios/**"
+      - ".github/workflows/ios-build.yml"
+  pull_request:
+    paths:
+      - "src/ios/**"
+      - ".github/workflows/ios-build.yml"
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Xcode version
+        run: xcodebuild -version
+
+      - name: Build (Simulator)
+        run: |
+          xcodebuild build \
+            -project src/ios/VoiceSquad.xcodeproj \
+            -scheme VoiceSquad \
+            -configuration Debug \
+            -destination 'platform=iOS Simulator,name=iPhone 15' \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Test (Simulator)
+        run: |
+          xcodebuild test \
+            -project src/ios/VoiceSquad.xcodeproj \
+            -scheme VoiceSquad \
+            -configuration Debug \
+            -destination 'platform=iOS Simulator,name=iPhone 15' \
+            CODE_SIGNING_ALLOWED=NO
+
