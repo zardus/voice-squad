@@ -39,19 +39,22 @@ const completedTabContentEl = document.getElementById("completed-tab-content");
 const refreshCompletedBtn = document.getElementById("refresh-completed-btn");
 let lastTtsAudioData = null;
 let speakAudioQueue = []; // TTS audio received while mic is held down
-let ttsFormat = "opus";
-let ttsMime = "audio/ogg";
+let ttsFormat = "mp3";
+let ttsMime = "audio/mpeg";
+let ttsFormatOverride = null; // set when we detect a format mismatch (e.g., iOS failing Opus)
+let pendingTtsTexts = []; // speak_text arrives before the binary audio frame; keep them paired
 
 // ── TTS Playback Queue (FIFO) ────────────────────────────────────────────────
 // Declared early because Auto-read is initialized before the Audio element is created,
 // and disabling auto-read calls stopTtsPlayback() during initial script evaluation.
 const TTS_PLAYBACK_QUEUE_LIMIT = 50;
-let ttsPlaybackQueue = []; // [{ id, data:ArrayBuffer, enqueuedAt:number }]
+let ttsPlaybackQueue = []; // [{ id, data:ArrayBuffer, enqueuedAt:number, text?:string, fallbackTried?:boolean }]
 let ttsPlaybackNextId = 1;
 let ttsPlaybackPlaying = false;
 let ttsPlaybackDrainScheduled = false;
 let ttsPlaybackCurrentUrl = null;
 let ttsPlaybackPlayBlockedAt = 0; // throttle logs if autoplay is blocked
+let ttsFormatMismatchAt = 0; // throttle reconnects when we detect an unsupported format
 
 // Core runtime state (declared early so localStorage-driven toggles can safely run on load).
 let ws = null;
@@ -109,13 +112,14 @@ function mimeForTtsFormat(fmt) {
       return "audio/aac";
     case "opus":
     default:
-      return "audio/ogg";
+      // Opus frames inside an Ogg container.
+      return 'audio/ogg; codecs="opus"';
   }
 }
 
 function selectBestTtsFormat() {
-  // Prefer Opus when the browser can actually decode it; fall back to MP3/AAC.
-  // This avoids iPadOS "desktop UA" cases where user-agent sniffing fails.
+  // iOS Safari is extremely finicky with Ogg/Opus and can report false positives via canPlayType().
+  // Default to MP3 (most compatible), then AAC, and only pick Opus if the browser says "probably".
   const a = new Audio();
   const can = (mime) => {
     if (!a.canPlayType) return "";
@@ -125,18 +129,24 @@ function selectBestTtsFormat() {
       return "";
     }
   };
+  const ok = (mime) => {
+    const v = can(mime);
+    return typeof v === "string" && v.length > 0;
+  };
+  const probably = (mime) => String(can(mime)).toLowerCase() === "probably";
 
-  // Opus in an Ogg container (what we send for response_format=opus).
-  if (can('audio/ogg; codecs="opus"')) return "opus";
-  if (can("audio/ogg")) return "opus";
-
-  if (can("audio/mpeg")) return "mp3";
+  // MP3 is the safest baseline on iPhone/iPad and works across basically everything.
+  if (ok("audio/mpeg")) return "mp3";
 
   // iOS Safari sometimes prefers MP4/AAC; OpenAI supports response_format=aac.
-  if (can('audio/mp4; codecs="mp4a.40.2"')) return "aac";
-  if (can("audio/aac")) return "aac";
+  if (ok('audio/mp4; codecs="mp4a.40.2"')) return "aac";
+  if (ok("audio/aac")) return "aac";
 
-  return "opus";
+  // Opus in an Ogg container (what we send for response_format=opus).
+  // Only accept "probably" to avoid canPlayType() false positives on Safari.
+  if (probably('audio/ogg; codecs="opus"')) return "opus";
+
+  return "mp3";
 }
 
 function setLatestVoiceSummary(text) {
@@ -404,13 +414,49 @@ function onTtsPlaybackFinished(reason) {
 ttsAudio.addEventListener("ended", () => onTtsPlaybackFinished("ended"));
 ttsAudio.addEventListener("error", () => onTtsPlaybackFinished("error"));
 
-function enqueueTtsPlayback(data, { reason = "tts" } = {}) {
+async function fetchPlaybackOnlyTts(text, format) {
+  const trimmed = (text || "").trim();
+  if (!trimmed) return null;
+  const resp = await fetch("/api/speak", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token, text: trimmed, playbackOnly: true, format }),
+  });
+  if (!resp.ok) return null;
+  const audio = await resp.arrayBuffer().catch(() => null);
+  if (!audio || audio.byteLength === 0) return null;
+  return audio;
+}
+
+function isNotSupportedPlaybackError(err) {
+  const name = err && typeof err.name === "string" ? err.name : "";
+  const msg = err && typeof err.message === "string" ? err.message.toLowerCase() : "";
+  return name === "NotSupportedError" || msg.includes("not supported") || msg.includes("cannot decode");
+}
+
+function ensureMp3TtsAndReconnect() {
+  ttsFormatOverride = "mp3";
+  ttsFormat = "mp3";
+  ttsMime = mimeForTtsFormat("mp3");
+
+  // If we were connected with a bad server-side format (e.g., opus), reconnect so future TTS arrives as mp3.
+  const now = Date.now();
+  if (now - ttsFormatMismatchAt < 3000) return;
+  ttsFormatMismatchAt = now;
+  try {
+    if (ws && ws.readyState === WebSocket.OPEN) ws.close();
+  } catch {}
+}
+
+function enqueueTtsPlayback(data, { reason = "tts", text = "", fallbackTried = false } = {}) {
   if (!data) return;
   ttsPlaybackQueue.push({
     id: ttsPlaybackNextId++,
     data,
     enqueuedAt: Date.now(),
     reason,
+    text,
+    fallbackTried,
   });
 
   // Cap total pending clips (current + queued) to avoid unbounded growth.
@@ -465,6 +511,24 @@ function drainTtsPlaybackQueue() {
   if (audioCtx && audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
 
   ttsAudio.play().catch((err) => {
+    // If the browser cannot decode this format (common on iOS for Ogg/Opus),
+    // switch to mp3 and replay the corresponding text via playbackOnly.
+    if (isNotSupportedPlaybackError(err) && ttsFormat === "opus" && next.text && !next.fallbackTried) {
+      ensureMp3TtsAndReconnect();
+      (async () => {
+        const mp3 = await fetchPlaybackOnlyTts(next.text, "mp3").catch(() => null);
+        if (mp3) {
+          enqueueTtsPlayback(mp3, { reason: "fallback_mp3", text: next.text, fallbackTried: true });
+          drainTtsPlaybackQueueSoon();
+          return;
+        }
+        // If fallback fails, drop this clip so we don't spin forever.
+        console.warn("TTS format mismatch and mp3 fallback failed; dropping clip.");
+        onTtsPlaybackFinished("fallback_failed");
+      })();
+      return;
+    }
+
     // Autoplay can be blocked until a user gesture. Keep the clip at the head of the queue.
     ttsPlaybackPlaying = false;
     ttsPlaybackQueue.unshift(next);
@@ -503,13 +567,13 @@ function handleIncomingTtsAudio(data, opts = {}) {
       // Mic is active — hold audio until recording stops
       speakAudioQueue.push(data);
     } else {
-      playAudio(data);
+      playAudio(data, { text: opts.text || "" });
     }
   }
 }
 
-function playAudio(data) {
-  enqueueTtsPlayback(data, { reason: "playAudio" });
+function playAudio(data, { text = "" } = {}) {
+  enqueueTtsPlayback(data, { reason: "playAudio", text });
 }
 
 // Decouple snapshot rendering from WebSocket to keep main thread free
@@ -771,7 +835,7 @@ terminalEl.addEventListener("scroll", () => {
 
 function connect() {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
-  const desiredTts = selectBestTtsFormat();
+  const desiredTts = ttsFormatOverride || selectBestTtsFormat();
   // Best-effort: set defaults before the server sends tts_config.
   ttsFormat = desiredTts;
   ttsMime = mimeForTtsFormat(desiredTts);
@@ -794,13 +858,15 @@ function connect() {
   ws.onmessage = async (evt) => {
     // Any binary frame from server = TTS audio, store for replay and maybe autoplay.
     if (evt.data instanceof ArrayBuffer) {
-      handleIncomingTtsAudio(evt.data);
+      const text = pendingTtsTexts.length ? pendingTtsTexts.shift() : "";
+      handleIncomingTtsAudio(evt.data, { text });
       return;
     }
     if (evt.data instanceof Blob) {
       const buf = await evt.data.arrayBuffer().catch(() => null);
       if (!buf) return;
-      handleIncomingTtsAudio(buf);
+      const text = pendingTtsTexts.length ? pendingTtsTexts.shift() : "";
+      handleIncomingTtsAudio(buf, { text });
       return;
     }
 
@@ -838,6 +904,8 @@ function connect() {
             text: msg.text,
             timestamp: msg.timestamp,
           });
+          // Maintain FIFO pairing between speak_text and subsequent binary audio frame.
+          pendingTtsTexts.push(String(msg.text || ""));
         }
         break;
       case "voice_history":

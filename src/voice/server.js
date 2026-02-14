@@ -107,7 +107,7 @@ function checkToken(req) {
 function normalizeTtsFormat(fmt) {
   const f = String(fmt || "").toLowerCase();
   if (f === "mp3" || f === "aac" || f === "opus") return f;
-  return "opus";
+  return "mp3";
 }
 
 function ttsMimeFromFormat(fmt) {
@@ -119,7 +119,7 @@ function ttsMimeFromFormat(fmt) {
     case "opus":
     default:
       // Opus frames inside an Ogg container.
-      return "audio/ogg";
+      return 'audio/ogg; codecs="opus"';
   }
 }
 
@@ -657,8 +657,8 @@ wss.on("connection", (ws, req) => {
     ws.ttsFormat = ttsFormat;
     ws.ttsMime = ttsMimeFromFormat(ttsFormat);
   } catch {
-    ws.ttsFormat = "opus";
-    ws.ttsMime = ttsMimeFromFormat("opus");
+    ws.ttsFormat = "mp3";
+    ws.ttsMime = ttsMimeFromFormat("mp3");
   }
 
   let audioChunks = [];
