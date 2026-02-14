@@ -12,7 +12,8 @@ if [ -z "$VOICE_TOKEN" ]; then
   exit 1
 fi
 
-curl -s -X POST http://localhost:3000/api/speak \
+VOICE_URL="${VOICE_SERVER_URL:-http://localhost:3000}"
+curl -s -X POST "${VOICE_URL}/api/speak" \
   -H "Content-Type: application/json" \
   -d "{\"text\": $(printf '%s' "$1" | jq -Rs .), \"token\": \"$VOICE_TOKEN\"}" \
   > /dev/null

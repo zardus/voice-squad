@@ -13,7 +13,7 @@ CAPTAIN_THRESHOLD=300   # 5 minutes
 WORKER_THRESHOLD=30     # 30 seconds
 
 LOGFILE="/tmp/pane-monitor.log"
-VOICE_SERVER_URL="http://localhost:3000/"
+VOICE_SERVER_URL="${VOICE_SERVER_URL:-http://localhost:3000/}"
 VOICE_CHECK_INTERVAL=15
 VOICE_ALERT_COOLDOWN=900
 

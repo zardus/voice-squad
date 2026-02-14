@@ -1,0 +1,62 @@
+services:
+  workspace:
+    build:
+      context: src
+      dockerfile: Dockerfile.workspace
+    privileged: true
+    stdin_open: true
+    tty: true
+    volumes:
+      - ./home:/home/ubuntu
+      - tmux-socket:/run/tmux
+    environment:
+      - ANTHROPIC_API_KEY
+      - OPENAI_API_KEY
+      - GH_TOKEN
+      - SQUAD_CAPTAIN=${SQUAD_CAPTAIN:-claude}
+      - VOICE_TOKEN
+      - VOICE_SERVER_URL=http://voice-server:3000
+      - COMPOSE_MODE=1
+      - TMUX_TMPDIR=/run/tmux
+    healthcheck:
+      test: ["CMD-SHELL", "tmux has-session -t captain 2>/dev/null"]
+      interval: 5s
+      timeout: 3s
+      retries: 120
+      start_period: 10s
+
+  voice-server:
+    build:
+      context: src
+      dockerfile: Dockerfile.voice
+    pid: "service:workspace"
+    depends_on:
+      workspace:
+        condition: service_healthy
+    volumes:
+      - ./home:/home/ubuntu
+      - tmux-socket:/run/tmux
+    environment:
+      - OPENAI_API_KEY
+      - ANTHROPIC_API_KEY
+      - VOICE_TOKEN
+      - SQUAD_CAPTAIN=${SQUAD_CAPTAIN:-claude}
+      - TMUX_TMPDIR=/run/tmux
+    ports:
+      - "3000:3000"
+
+  pane-monitor:
+    build:
+      context: src
+      dockerfile: Dockerfile.pane-monitor
+    depends_on:
+      workspace:
+        condition: service_healthy
+    volumes:
+      - tmux-socket:/run/tmux
+    environment:
+      - TMUX_TMPDIR=/run/tmux
+      - VOICE_SERVER_URL=http://voice-server:3000/
+
+volumes:
+  tmux-socket:

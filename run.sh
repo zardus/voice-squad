@@ -1,7 +1,8 @@
 #!/bin/bash
 set -e
 
-IMAGE_NAME="squad"
+cd "$(dirname "$0")"
+
 CAPTAIN="${1:-claude}"
 
 if [ "$CAPTAIN" != "claude" ] && [ "$CAPTAIN" != "codex" ]; then
@@ -10,23 +11,17 @@ if [ "$CAPTAIN" != "claude" ] && [ "$CAPTAIN" != "codex" ]; then
     exit 1
 fi
 
-# Build if needed
-echo "Building squad image..."
-docker build -t "$IMAGE_NAME" -f "$(dirname "$0")/src/Dockerfile" "$(dirname "$0")/src"
+# Generate a voice token for this session
+VOICE_TOKEN=$(head -c 32 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9' | head -c 32)
 
-shift 2>/dev/null || true
+# Export variables for docker compose
+export SQUAD_CAPTAIN="$CAPTAIN"
+export VOICE_TOKEN
+export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-}"
+export OPENAI_API_KEY="${OPENAI_API_KEY:-}"
+export GH_TOKEN="${GH_TOKEN:-}"
 
-SSH_AGENT_ARGS=()
-if [ -n "$SSH_AUTH_SOCK" ]; then
-    SSH_AGENT_ARGS+=(-v "$SSH_AUTH_SOCK:/tmp/ssh-agent.sock" -e SSH_AUTH_SOCK=/tmp/ssh-agent.sock)
-fi
+echo "Starting squad with captain: $CAPTAIN"
+echo "Building and launching containers..."
 
-exec docker run -it --rm --privileged \
-    -p 3000:3000 \
-    -v "$(pwd)/home:/home/ubuntu" \
-    -e ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY}" \
-    -e OPENAI_API_KEY="${OPENAI_API_KEY}" \
-    -e SQUAD_CAPTAIN="$CAPTAIN" \
-    "${SSH_AGENT_ARGS[@]}" \
-    "$IMAGE_NAME" \
-    "$@"
+exec docker compose up --build
