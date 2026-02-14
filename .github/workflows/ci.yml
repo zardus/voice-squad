@@ -11,8 +11,5 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build test image
-        run: docker build -f Dockerfile.test -t voice-squad-test .
-
       - name: Run tests
-        run: docker run --rm voice-squad-test
+        run: ./test.sh

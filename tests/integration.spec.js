@@ -13,7 +13,7 @@ const fs = require("fs");
 const { TOKEN, pageUrl } = require("./helpers/config");
 
 const INTEGRATION = process.env.TEST_INTEGRATION === "1";
-const TEST_FILE = "/tmp/test-hello-e2e.txt";
+const TEST_FILE = "/home/ubuntu/test-hello-e2e.txt";
 
 test.describe("Integration", () => {
   test.beforeAll(() => {

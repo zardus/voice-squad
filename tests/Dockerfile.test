@@ -1,5 +1,6 @@
-# Lightweight test image for running the full test suite (including integration tests)
-# inside an isolated Docker container — no AI agents, API keys, or tunnels needed.
+# Lightweight test-runner: Playwright + Chromium + tmux client.
+# The voice server and tmux session run in separate containers
+# (see docker-compose.test.yml).
 
 FROM ubuntu:24.04
 
@@ -11,6 +12,7 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     gnupg \
     procps \
+    sudo \
     && rm -rf /var/lib/apt/lists/*
 
 # Node.js 20
@@ -22,19 +24,22 @@ RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
 RUN usermod -aG sudo ubuntu \
     && echo "ubuntu ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
-# ── Voice server (the system under test) ─────────────────────
-COPY src/voice/ /opt/squad/voice/
-RUN cd /opt/squad/voice && npm install --production
+# Tmux socket directory for cross-container sharing
+ENV TMUX_TMPDIR=/run/tmux
+RUN mkdir -p /run/tmux && chown ubuntu:ubuntu /run/tmux
 
 # ── Scripts under test ──────────────────────────────────────
-COPY src/switch-account.sh /opt/tests/src/switch-account.sh
+# show-qr.js + its qrcode-terminal dependency (for main-menu tests)
+RUN mkdir -p /opt/squad/voice && cd /opt/squad/voice && npm install --save qrcode-terminal
+COPY src/voice/show-qr.js /opt/squad/voice/show-qr.js
+COPY src/main-menu.sh /opt/squad/main-menu.sh
 COPY src/restart-captain.sh /opt/squad/restart-captain.sh
 COPY src/pane-monitor.sh /opt/squad/pane-monitor.sh
-COPY src/main-menu.sh /opt/squad/main-menu.sh
-RUN chmod +x /opt/squad/restart-captain.sh /opt/squad/pane-monitor.sh /opt/squad/main-menu.sh
+COPY src/switch-account.sh /opt/tests/src/switch-account.sh
+RUN chmod +x /opt/squad/main-menu.sh /opt/squad/restart-captain.sh /opt/squad/pane-monitor.sh
 
 # ── Test suite ───────────────────────────────────────────────
-COPY package.json playwright.config.js /opt/tests/
+COPY tests/package.json tests/playwright.config.js /opt/tests/
 
 WORKDIR /opt/tests
 
@@ -45,16 +50,17 @@ RUN npm install \
     && npx playwright install --with-deps chromium
 
 # Copy tests after Playwright install so changing tests doesn't invalidate the heavy browser install layer.
-COPY tests/ /opt/tests/tests/
+COPY tests/*.spec.js /opt/tests/tests/
+COPY tests/helpers/ /opt/tests/tests/helpers/
 
 # Make test dir + browser cache writable by ubuntu
 RUN chown -R ubuntu:ubuntu /opt/tests /opt/pw-browsers
 
 # ── Test entrypoint ──────────────────────────────────────────
-COPY utils/test-entrypoint.sh /test-entrypoint.sh
-RUN chmod +x /test-entrypoint.sh
+COPY tests/entrypoint-test.sh /entrypoint-test.sh
+RUN chmod +x /entrypoint-test.sh
 
 USER ubuntu
 WORKDIR /home/ubuntu
 
-ENTRYPOINT ["/test-entrypoint.sh"]
+ENTRYPOINT ["/entrypoint-test.sh"]

@@ -1,7 +1,7 @@
 const { defineConfig } = require("@playwright/test");
 
 module.exports = defineConfig({
-  testDir: "./tests",
+  testDir: ".",
   timeout: 60000,
   retries: 0,
   // The suite shares one tmux "captain" session + one voice server; parallel workers
