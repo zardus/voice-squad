@@ -17,6 +17,24 @@ fi
 export OPENAI_API_KEY="${OPENAI_API_KEY:-${_OPENAI_API_KEY:-}}"
 export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-${_ANTHROPIC_API_KEY:-}}"
 
+# Read VOICE_TOKEN from shared volume if not set via environment
+if [ -z "${VOICE_TOKEN:-}" ]; then
+    echo "[voice-entrypoint] Waiting for voice token from workspace..."
+    for i in $(seq 1 120); do
+        if [ -f /home/ubuntu/.voice-token ]; then
+            VOICE_TOKEN=$(cat /home/ubuntu/.voice-token)
+            export VOICE_TOKEN
+            break
+        fi
+        sleep 1
+    done
+    if [ -z "${VOICE_TOKEN:-}" ]; then
+        echo "[voice-entrypoint] ERROR: VOICE_TOKEN not available after 120s"
+        exit 1
+    fi
+fi
+echo "[voice-entrypoint] VOICE_TOKEN set"
+
 # Wait for tmux captain session to be available (workspace container must start first)
 echo "[voice-entrypoint] Waiting for tmux captain session..."
 timeout=120

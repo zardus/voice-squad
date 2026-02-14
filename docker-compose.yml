@@ -1,3 +1,10 @@
+# Usage:
+#   docker compose up --build
+#   SQUAD_CAPTAIN=codex docker compose up --build
+#
+# Required env vars: ANTHROPIC_API_KEY, OPENAI_API_KEY
+# Optional: GH_TOKEN, SQUAD_CAPTAIN (default: claude), VOICE_TOKEN (auto-generated if not set)
+
 services:
   workspace:
     build:
@@ -44,6 +51,13 @@ services:
       - TMUX_TMPDIR=/run/tmux
     ports:
       - "3000:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000/ || exit 1"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
 
   pane-monitor:
     build:
@@ -56,7 +70,6 @@ services:
       - tmux-socket:/run/tmux
     environment:
       - TMUX_TMPDIR=/run/tmux
-      - VOICE_SERVER_URL=http://voice-server:3000/
 
 volumes:
   tmux-socket:

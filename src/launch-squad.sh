@@ -25,11 +25,14 @@ if [ -f /home/ubuntu/env ]; then
     set +a
 fi
 
-# In compose mode, VOICE_TOKEN is passed via environment. In standalone mode, generate it.
-if [ -z "$VOICE_TOKEN" ]; then
+# Generate VOICE_TOKEN if not provided via environment
+if [ -z "${VOICE_TOKEN:-}" ]; then
     VOICE_TOKEN=$(head -c 32 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9' | head -c 32)
     export VOICE_TOKEN
 fi
+
+# Write token to shared volume so other containers (voice-server) can read it
+echo "$VOICE_TOKEN" > /home/ubuntu/.voice-token
 
 echo "Starting $CAPTAIN as captain..."
 

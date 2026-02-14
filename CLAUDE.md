@@ -9,16 +9,16 @@ Squad is a multi-agent AI orchestration system. It runs inside a privileged Dock
 ## Build & Run
 
 ```bash
-# Build Docker image and launch a squad (default captain: claude)
-./run.sh
+# Build and launch a squad (default captain: claude)
+docker compose up --build
 
 # Launch with codex as captain
-./run.sh codex
+SQUAD_CAPTAIN=codex docker compose up --build
 ```
 
-Requires `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` environment variables on the host. SSH agent is forwarded automatically if `SSH_AUTH_SOCK` is set.
+Requires `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` environment variables on the host. Optional: `GH_TOKEN`. A `VOICE_TOKEN` is auto-generated if not provided.
 
-The Docker image is built from `src/Dockerfile` (Ubuntu 24.04 + Docker-in-Docker + Node.js 20 + Claude Code CLI + Codex CLI + cloudflared).
+The system runs as 3 containers (see `docker-compose.yml`): workspace (captain + tmux), voice-server (voice pipeline + cloudflared tunnel), and pane-monitor (idle worker detection).
 
 ## Project Structure
 
@@ -39,7 +39,7 @@ All build/runtime files live in `src/`:
 - `show-qr.js` — Renders voice URL as terminal QR code for phone scanning
 - `public/` — PWA frontend (HTML, JS, CSS, manifest, service worker, icons)
 
-`run.sh` at the root is the host-side entry point. Exposes port 3000 for LAN access.
+`docker-compose.yml` at the root orchestrates the 3 containers. Port 3000 is exposed for LAN access.
 
 `home/` is the shared persistent volume mounted into the container at `/home/ubuntu`. It is gitignored.
 
