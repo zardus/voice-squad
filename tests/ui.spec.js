@@ -125,7 +125,7 @@ test.describe("UI", () => {
       await page.goto(pageUrl());
       const btn = page.locator("#update-btn");
       await expect(btn).toBeVisible();
-      await expect(btn).toHaveText("Status");
+      await expect(btn.locator(".btn-label")).toHaveText("Status");
       await expect(btn).toBeEnabled();
     });
 
@@ -153,7 +153,7 @@ test.describe("UI", () => {
       await page.goto(pageUrl());
       const btn = page.locator("#restart-captain-btn");
       await expect(btn).toBeVisible();
-      await expect(btn).toHaveText("Restart");
+      await expect(btn.locator(".btn-label")).toHaveText("Restart");
     });
 
     test("summary panel exists with label", async ({ page }) => {
@@ -671,11 +671,11 @@ test.describe("UI", () => {
 
       // Click restart, then immediately check the button text
       page.click("#restart-captain-btn"); // don't await — we need to check mid-flight
-      await expect(page.locator("#restart-captain-btn")).toHaveText("Restarting...");
+      await expect(page.locator("#restart-captain-btn .btn-label")).toHaveText("Restarting...");
       await expect(page.locator("#restart-captain-btn")).toBeDisabled();
 
       // Wait for it to finish and re-enable
-      await expect(page.locator("#restart-captain-btn")).toHaveText("Restart", { timeout: 5000 });
+      await expect(page.locator("#restart-captain-btn .btn-label")).toHaveText("Restart", { timeout: 5000 });
       await expect(page.locator("#restart-captain-btn")).toBeEnabled();
     });
 
