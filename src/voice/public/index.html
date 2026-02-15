@@ -32,21 +32,30 @@
       </div>
 
       <div id="update-bar">
-        <button id="update-btn" title="Ask captain for a status update">Status</button>
+        <button id="update-btn" title="Ask captain for a status update">
+          <span class="btn-icon" aria-hidden="true">&#x2139;</span>
+          <span class="btn-label">Status</span>
+        </button>
         <button id="interrupt-btn" title="Interrupt captain (Ctrl+C)">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
             <rect x="5" y="4" width="5" height="16" rx="1"/>
             <rect x="14" y="4" width="5" height="16" rx="1"/>
           </svg>
-          Interrupt
+          <span class="btn-label">Interrupt</span>
         </button>
         <div id="captain-switch">
           <select id="captain-tool-select">
             <option value="claude">Claude</option>
             <option value="codex">Codex</option>
           </select>
-          <button id="restart-captain-btn" title="Restart captain with selected tool">Restart</button>
-          <button id="login-btn" title="Login to captain account">Login</button>
+          <button id="restart-captain-btn" title="Restart captain with selected tool">
+            <span class="btn-icon" aria-hidden="true">&#x21BB;</span>
+            <span class="btn-label">Restart</span>
+          </button>
+          <button id="login-btn" title="Login to captain account">
+            <span class="btn-icon" aria-hidden="true">&#x2197;</span>
+            <span class="btn-label">Login</span>
+          </button>
         </div>
       </div>
 

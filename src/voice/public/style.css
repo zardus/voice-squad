@@ -184,6 +184,9 @@ body.voice-history-open {
   cursor: pointer;
   flex-shrink: 0;
   transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 #update-btn:active {
@@ -1395,6 +1398,9 @@ body.voice-history-open {
   letter-spacing: 0.5px;
   cursor: pointer;
   transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 #restart-captain-btn:active {
@@ -1450,11 +1456,48 @@ body.voice-history-open {
   letter-spacing: 0.5px;
   cursor: pointer;
   transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 #login-btn:active {
   background: #6ba8ff;
   color: #1a1a2e;
+}
+
+/* Update bar icons — always visible, act as icon-only labels on narrow screens */
+#update-bar .btn-icon {
+  flex-shrink: 0;
+  font-style: normal;
+}
+
+/* Responsive toolbar — icon-only on narrow screens */
+@media (max-width: 480px) {
+  #update-bar {
+    gap: 6px;
+    padding: 6px 8px;
+  }
+
+  #update-bar .btn-label {
+    display: none;
+  }
+
+  #update-btn,
+  #interrupt-btn {
+    padding: 6px 10px;
+    letter-spacing: 0;
+  }
+
+  #captain-switch {
+    gap: 4px;
+  }
+
+  #restart-captain-btn,
+  #login-btn {
+    padding: 5px 8px;
+    letter-spacing: 0;
+  }
 }
 
 #voice-login-btn {

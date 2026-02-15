@@ -1515,10 +1515,19 @@ captainToolSelect.addEventListener("change", () => syncCaptainSelects(captainToo
 voiceCaptainToolSelect.addEventListener("change", () => syncCaptainSelects(voiceCaptainToolSelect));
 updateSelectColors();
 
+function setButtonLabel(btn, text) {
+  const label = btn.querySelector('.btn-label');
+  if (label) {
+    label.textContent = text;
+  } else {
+    btn.textContent = text;
+  }
+}
+
 async function restartCaptain() {
   const tool = captainToolSelect.value;
   const btns = [restartCaptainBtn, voiceRestartCaptainBtn];
-  btns.forEach((b) => { b.disabled = true; b.textContent = "Restarting..."; });
+  btns.forEach((b) => { b.disabled = true; setButtonLabel(b, "Restarting..."); });
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 90000);
@@ -1550,8 +1559,8 @@ async function restartCaptain() {
       summaryEl.textContent = "Restart failed: " + (err.message || "network error");
     }
   } finally {
-    restartCaptainBtn.textContent = "Restart";
-    voiceRestartCaptainBtn.textContent = "Restart Captain";
+    setButtonLabel(restartCaptainBtn, "Restart");
+    setButtonLabel(voiceRestartCaptainBtn, "Restart Captain");
     btns.forEach((b) => { b.disabled = false; });
   }
 }
