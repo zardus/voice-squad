@@ -1,0 +1,58 @@
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y \
+    curl \
+    tmux \
+    ca-certificates \
+    gnupg \
+    sudo \
+    jq \
+    procps \
+    locales \
+    && rm -rf /var/lib/apt/lists/*
+
+# Generate UTF-8 locale
+RUN locale-gen en_US.UTF-8
+
+ENV LANG=en_US.UTF-8 \
+    LC_ALL=en_US.UTF-8 \
+    TERM=xterm-256color
+
+# Node.js 20
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+# cloudflared (for HTTPS tunnel to voice server)
+RUN curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-$(dpkg --print-architecture) \
+    -o /usr/local/bin/cloudflared \
+    && chmod +x /usr/local/bin/cloudflared
+
+# Set up ubuntu user
+RUN echo "ubuntu ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+
+# Tmux socket directory for cross-container sharing
+ENV TMUX_TMPDIR=/run/tmux
+RUN mkdir -p /run/tmux && chown ubuntu:ubuntu /run/tmux
+
+# Voice server
+COPY voice/ /opt/squad/voice/
+RUN cd /opt/squad/voice && npm install --production
+
+# restart-captain.sh (called by /api/restart-captain endpoint)
+COPY restart-captain.sh /opt/squad/restart-captain.sh
+RUN chmod +x /opt/squad/restart-captain.sh
+
+# Entrypoint
+COPY entrypoint-voice.sh /entrypoint-voice.sh
+RUN chmod +x /entrypoint-voice.sh
+
+EXPOSE 3000
+
+USER ubuntu
+
+WORKDIR /home/ubuntu
+
+ENTRYPOINT ["/entrypoint-voice.sh"]

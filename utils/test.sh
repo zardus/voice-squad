@@ -27,7 +27,7 @@ echo ""
 # Check if server is running
 if ! curl -sf http://localhost:3000 > /dev/null 2>&1; then
   echo "ERROR: Voice server not running on localhost:3000"
-  echo "Start the container first with: ./run.sh"
+  echo "Start the containers first with: docker compose up --build"
   exit 1
 fi
 echo "[ok] Voice server is running on port 3000"

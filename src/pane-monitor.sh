@@ -13,18 +13,11 @@ CAPTAIN_THRESHOLD=300   # 5 minutes
 WORKER_THRESHOLD=30     # 30 seconds
 
 LOGFILE="/tmp/pane-monitor.log"
-VOICE_SERVER_URL="http://localhost:3000/"
-VOICE_CHECK_INTERVAL=15
-VOICE_ALERT_COOLDOWN=900
 
 declare -A last_hash
 declare -A seconds_unchanged
 declare -A already_notified
 declare -A has_had_activity
-
-voice_last_check_time=0
-voice_server_was_down=0
-voice_last_alert_time=0
 
 log() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') $1" >> "$LOGFILE"
@@ -33,33 +26,6 @@ log() {
 log "Pane monitor started (pid=$$, captain_threshold=${CAPTAIN_THRESHOLD}s, worker_threshold=${WORKER_THRESHOLD}s)"
 
 while true; do
-    now_epoch=$(date +%s)
-
-    # Voice server health check (throttled to avoid hammering localhost)
-    if (( now_epoch - voice_last_check_time >= VOICE_CHECK_INTERVAL )); then
-        voice_last_check_time=$now_epoch
-        check_timestamp=$(date '+%Y-%m-%d %H:%M:%S')
-        http_code=$(curl -s -o /dev/null -w '%{http_code}' "$VOICE_SERVER_URL" 2>/dev/null || echo "000")
-
-        if [[ "$http_code" == "200" ]]; then
-            if (( voice_server_was_down == 1 )); then
-                log "HEALTH OK: Voice server recovered at $check_timestamp (url=$VOICE_SERVER_URL)"
-                voice_server_was_down=0
-                voice_last_alert_time=0
-            fi
-        else
-            voice_server_was_down=1
-            if (( voice_last_alert_time == 0 || now_epoch - voice_last_alert_time >= VOICE_ALERT_COOLDOWN )); then
-                log "HEALTH ALERT: Voice server down (url=$VOICE_SERVER_URL, code=$http_code, checked_at=$check_timestamp)"
-                tmux send-keys -t "$CAPTAIN_PANE" \
-                    "HEALTH ALERT: Voice server (localhost:3000) is not responding. Last checked at $check_timestamp." 2>/dev/null || true
-                sleep 0.5
-                tmux send-keys -t "$CAPTAIN_PANE" Enter 2>/dev/null || true
-                voice_last_alert_time=$now_epoch
-            fi
-        fi
-    fi
-
     # Discover all current panes across all sessions
     current_panes=()
     while IFS= read -r pane_target; do

@@ -1,0 +1,26 @@
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y \
+    tmux \
+    sudo \
+    procps \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set up ubuntu user
+RUN echo "ubuntu ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+
+# Tmux socket directory for cross-container sharing
+ENV TMUX_TMPDIR=/run/tmux
+RUN mkdir -p /run/tmux && chown ubuntu:ubuntu /run/tmux
+
+COPY pane-monitor.sh /opt/squad/pane-monitor.sh
+RUN chmod +x /opt/squad/pane-monitor.sh
+
+COPY entrypoint-pane-monitor.sh /entrypoint-pane-monitor.sh
+RUN chmod +x /entrypoint-pane-monitor.sh
+
+USER ubuntu
+
+ENTRYPOINT ["/entrypoint-pane-monitor.sh"]

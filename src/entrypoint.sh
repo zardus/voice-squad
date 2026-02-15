@@ -1,6 +1,13 @@
 #!/bin/bash
 set -e
 
+# Ensure tmux socket directory is accessible (for compose mode socket sharing)
+if [ -n "${TMUX_TMPDIR:-}" ]; then
+    sudo mkdir -p "$TMUX_TMPDIR"
+    sudo chown ubuntu:ubuntu "$TMUX_TMPDIR"
+    sudo chmod 755 "$TMUX_TMPDIR"
+fi
+
 # Start dockerd in the background (docker-in-docker)
 sudo sh -c 'dockerd &>/var/log/dockerd.log' &
 

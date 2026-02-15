@@ -41,27 +41,46 @@ find_voice_pid() {
   '
 }
 
+find_show_qr_script() {
+  # In compose mode, show-qr.js is at /opt/squad/show-qr.js
+  # In standalone mode, it's at /opt/squad/voice/show-qr.js
+  if [[ -f /opt/squad/voice/show-qr.js ]]; then
+    echo "/opt/squad/voice/show-qr.js"
+  elif [[ -f /opt/squad/show-qr.js ]]; then
+    echo "/opt/squad/show-qr.js"
+  else
+    echo ""
+  fi
+}
+
 show_web_ui_qr() {
   local url
   url=""
-  if [[ -f /tmp/voice-url.txt ]]; then
-    url="$(cat /tmp/voice-url.txt 2>/dev/null | tr -d '\r' | head -1 || true)"
-  fi
+  # Check both paths: compose mode writes to ~/.voice-url.txt, standalone to /tmp/
+  for f in /tmp/voice-url.txt /home/ubuntu/.voice-url.txt; do
+    if [[ -f "$f" ]]; then
+      url="$(cat "$f" 2>/dev/null | tr -d '\r' | head -1 || true)"
+      [[ -n "${url}" ]] && break
+    fi
+  done
 
   if [[ -z "${url}" ]]; then
-    echo "ERROR: /tmp/voice-url.txt missing or empty; cannot display QR."
+    echo "ERROR: Voice URL not found. Voice server may not be running yet."
     return 1
   fi
 
+  local qr_script
+  qr_script="$(find_show_qr_script)"
+
   if command -v whiptail >/dev/null 2>&1 && [[ -t 0 && -t 1 ]]; then
-    local qr_out
-    qr_out="$(node /opt/squad/voice/show-qr.js "${url}" 2>&1 || true)"
+    local qr_out=""
+    if [[ -n "${qr_script}" ]]; then
+      qr_out="$(node "${qr_script}" "${url}" 2>&1 || true)"
+    fi
     local lines cols height width
     lines="$(tput lines 2>/dev/null || echo 0)"
     cols="$(tput cols 2>/dev/null || echo 0)"
 
-    # Use most of the screen for the QR view; leave a small margin so whiptail
-    # has room for borders/buttons.
     height=35
     width=100
     if [[ "${lines}" =~ ^[0-9]+$ ]] && [[ "${lines}" -ge 20 ]]; then
@@ -73,14 +92,15 @@ show_web_ui_qr() {
       [[ "${width}" -lt 60 ]] && width=60
     fi
 
-    # whiptail needs a single string; preserve newlines.
     whiptail --title "Squad Web UI" --scrolltext --msgbox "Web UI URL:\n  ${url}\n\n${qr_out}" "${height}" "${width}"
   else
     echo ""
     echo "Web UI URL:"
     echo "  ${url}"
     echo ""
-    node /opt/squad/voice/show-qr.js "${url}"
+    if [[ -n "${qr_script}" ]]; then
+      node "${qr_script}" "${url}"
+    fi
   fi
 }
 
@@ -100,6 +120,12 @@ run_interactive() {
 }
 
 restart_voice_server() {
+  if [[ -n "${COMPOSE_MODE:-}" ]]; then
+    echo "In Docker Compose mode, the voice server runs in a separate container."
+    echo "Restart it with: docker compose restart voice-server"
+    return 0
+  fi
+
   local voice_pid proc_env _oai _ant _tok _cap new_pid
 
   voice_pid="$(find_voice_pid || true)"
@@ -163,6 +189,12 @@ restart_voice_server() {
 }
 
 restart_pane_monitor() {
+  if [[ -n "${COMPOSE_MODE:-}" ]]; then
+    echo "In Docker Compose mode, the pane monitor runs in a separate container."
+    echo "Restart it with: docker compose restart pane-monitor"
+    return 0
+  fi
+
   echo "Restarting pane monitor..."
   pkill -f "/opt/squad/pane-monitor.sh" 2>/dev/null || true
   sleep 0.5

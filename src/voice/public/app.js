@@ -37,6 +37,17 @@ const voiceCaptainToolSelect = document.getElementById("voice-captain-tool-selec
 const voiceRestartCaptainBtn = document.getElementById("voice-restart-captain-btn");
 const completedTabContentEl = document.getElementById("completed-tab-content");
 const refreshCompletedBtn = document.getElementById("refresh-completed-btn");
+const loginBtn = document.getElementById("login-btn");
+const voiceLoginBtn = document.getElementById("voice-login-btn");
+const loginModal = document.getElementById("login-modal");
+const loginBackdrop = document.getElementById("login-backdrop");
+const loginCloseBtn = document.getElementById("login-close-btn");
+const loginStatusText = document.getElementById("login-status-text");
+const loginToolSelect = document.getElementById("login-tool-select");
+const loginStartBtn = document.getElementById("login-start-btn");
+const loginUrlContainer = document.getElementById("login-url-container");
+const loginUrlLink = document.getElementById("login-url-link");
+const loginCancelBtn = document.getElementById("login-cancel-btn");
 let lastTtsAudioData = null;
 let speakAudioQueue = []; // TTS audio received while mic is held down
 let ttsFormat = "mp3";
@@ -1100,6 +1111,11 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && isVoiceHistoryModalOpen()) {
     e.preventDefault();
     closeVoiceHistoryModal();
+    return;
+  }
+  if (e.key === "Escape" && isLoginModalOpen()) {
+    e.preventDefault();
+    closeLoginModal();
   }
 });
 
@@ -1542,6 +1558,125 @@ async function restartCaptain() {
 
 restartCaptainBtn.addEventListener("click", restartCaptain);
 voiceRestartCaptainBtn.addEventListener("click", restartCaptain);
+
+// --- Login flow ---
+let loginPollTimer = null;
+
+function isLoginModalOpen() {
+  return loginModal && !loginModal.classList.contains("hidden");
+}
+
+function openLoginModal() {
+  if (!loginModal) return;
+  // Sync tool select with current captain
+  if (loginToolSelect) loginToolSelect.value = captainToolSelect.value;
+  loginStatusText.textContent = "Select a tool and start the login flow.";
+  loginUrlContainer.classList.add("hidden");
+  loginCancelBtn.classList.add("hidden");
+  loginStartBtn.disabled = false;
+  loginStartBtn.textContent = "Start Login";
+  loginToolSelect.disabled = false;
+  loginModal.classList.remove("hidden");
+  loginModal.setAttribute("aria-hidden", "false");
+  document.body.classList.add("login-modal-open");
+}
+
+function closeLoginModal() {
+  if (!loginModal) return;
+  loginModal.classList.add("hidden");
+  loginModal.setAttribute("aria-hidden", "true");
+  document.body.classList.remove("login-modal-open");
+  if (loginPollTimer) {
+    clearInterval(loginPollTimer);
+    loginPollTimer = null;
+  }
+}
+
+async function startLogin() {
+  const tool = loginToolSelect.value;
+  loginStartBtn.disabled = true;
+  loginStartBtn.textContent = "Starting...";
+  loginToolSelect.disabled = true;
+  loginStatusText.textContent = "Starting login...";
+  loginUrlContainer.classList.add("hidden");
+
+  try {
+    const resp = await fetch("/api/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token, tool }),
+    });
+    if (!resp.ok) {
+      const data = await resp.json().catch(() => ({}));
+      loginStatusText.textContent = "Error: " + (data.error || "Request failed");
+      loginStartBtn.disabled = false;
+      loginStartBtn.textContent = "Start Login";
+      loginToolSelect.disabled = false;
+      playDing(false);
+      return;
+    }
+    loginStatusText.textContent = "Waiting for OAuth URL...";
+    loginCancelBtn.classList.remove("hidden");
+    pollLoginStatus();
+  } catch (err) {
+    loginStatusText.textContent = "Error: " + (err.message || "Network error");
+    loginStartBtn.disabled = false;
+    loginStartBtn.textContent = "Start Login";
+    loginToolSelect.disabled = false;
+    playDing(false);
+  }
+}
+
+function pollLoginStatus() {
+  if (loginPollTimer) clearInterval(loginPollTimer);
+  loginPollTimer = setInterval(async () => {
+    try {
+      const resp = await fetch(`/api/login-status?token=${encodeURIComponent(token)}`);
+      if (!resp.ok) return;
+      const data = await resp.json();
+
+      switch (data.status) {
+        case "waiting_for_auth":
+          if (data.url) {
+            loginUrlLink.href = data.url;
+            loginUrlLink.textContent = data.url;
+            loginUrlContainer.classList.remove("hidden");
+            loginStatusText.textContent = "Open the link below to authenticate:";
+          }
+          break;
+        case "success":
+          clearInterval(loginPollTimer);
+          loginPollTimer = null;
+          loginStatusText.textContent = "Login successful!";
+          loginUrlContainer.classList.add("hidden");
+          loginCancelBtn.classList.add("hidden");
+          loginStartBtn.disabled = false;
+          loginStartBtn.textContent = "Start Login";
+          loginToolSelect.disabled = false;
+          playDing(true);
+          break;
+        case "error":
+          clearInterval(loginPollTimer);
+          loginPollTimer = null;
+          loginStatusText.textContent = "Login failed: " + (data.error || "Unknown error");
+          loginUrlContainer.classList.add("hidden");
+          loginCancelBtn.classList.add("hidden");
+          loginStartBtn.disabled = false;
+          loginStartBtn.textContent = "Start Login";
+          loginToolSelect.disabled = false;
+          playDing(false);
+          break;
+      }
+    } catch {}
+  }, 1000);
+}
+
+if (loginBtn) loginBtn.addEventListener("click", openLoginModal);
+if (voiceLoginBtn) voiceLoginBtn.addEventListener("click", openLoginModal);
+if (loginStartBtn) loginStartBtn.addEventListener("click", startLogin);
+if (loginCloseBtn) loginCloseBtn.addEventListener("click", closeLoginModal);
+if (loginBackdrop) loginBackdrop.addEventListener("click", closeLoginModal);
+if (loginCancelBtn) loginCancelBtn.addEventListener("click", closeLoginModal);
 
 // --- Tab switching ---
 const tabs = document.querySelectorAll("#tab-bar .tab");

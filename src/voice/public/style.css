@@ -1437,6 +1437,43 @@ body.voice-history-open {
   cursor: default;
 }
 
+/* Login buttons */
+#login-btn {
+  padding: 5px 12px;
+  border: 1px solid #6ba8ff;
+  border-radius: 6px;
+  background: #1a1a2e;
+  color: #6ba8ff;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+#login-btn:active {
+  background: #6ba8ff;
+  color: #1a1a2e;
+}
+
+#voice-login-btn {
+  padding: 8px 18px;
+  border: 2px solid #6ba8ff;
+  border-radius: 24px;
+  background: #1a1a2e;
+  color: #6ba8ff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+#voice-login-btn:active {
+  background: #6ba8ff;
+  color: #1a1a2e;
+}
+
 #controls.hidden {
   display: none;
 }
@@ -1702,4 +1739,199 @@ body.voice-history-open {
     max-height: min(84dvh, 920px);
     padding: 12px;
   }
+
+  #login-modal {
+    padding: 10px;
+  }
+
+  #login-dialog {
+    width: calc(100vw - 20px);
+    padding: 12px;
+  }
+}
+
+/* Login modal */
+body.login-modal-open {
+  overflow: hidden;
+}
+
+#login-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+}
+
+#login-modal.hidden {
+  display: none;
+}
+
+#login-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(8, 10, 16, 0.72);
+}
+
+#login-dialog {
+  position: relative;
+  width: min(520px, calc(100vw - 36px));
+  border: 1px solid #0f3460;
+  border-radius: 12px;
+  background: #16213e;
+  display: flex;
+  flex-direction: column;
+  padding: 14px;
+  gap: 14px;
+  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.45);
+}
+
+#login-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+#login-title {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #6ba8ff;
+  font-weight: 700;
+}
+
+#login-close-btn {
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(127, 142, 163, 0.45);
+  border-radius: 8px;
+  background: #1a1a2e;
+  color: #c8c8d0;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+#login-close-btn:active {
+  background: rgba(127, 142, 163, 0.25);
+}
+
+#login-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+#login-status-text {
+  font-size: 14px;
+  color: #c8c8d0;
+  line-height: 1.4;
+}
+
+#login-tool-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+#login-tool-select {
+  padding: 8px 12px;
+  border: 1px solid #0f3460;
+  border-radius: 8px;
+  background: #1a1a2e;
+  color: #e0e0e0;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+#login-tool-select:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+#login-start-btn {
+  padding: 8px 20px;
+  border: 1px solid #6ba8ff;
+  border-radius: 8px;
+  background: #0f3460;
+  color: #6ba8ff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+#login-start-btn:active {
+  background: #6ba8ff;
+  color: #1a1a2e;
+}
+
+#login-start-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+#login-url-container {
+  border: 1px solid #6ba8ff;
+  border-radius: 10px;
+  background: rgba(107, 168, 255, 0.08);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+#login-url-container.hidden {
+  display: none;
+}
+
+#login-url-label {
+  font-size: 12px;
+  color: #8aa0bf;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+}
+
+#login-url-link {
+  color: #6ba8ff;
+  font-size: 14px;
+  word-break: break-all;
+  text-decoration: underline;
+  line-height: 1.4;
+}
+
+#login-url-link:hover {
+  color: #99c4ff;
+}
+
+#login-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+#login-cancel-btn {
+  padding: 8px 16px;
+  border: 1px solid rgba(127, 142, 163, 0.5);
+  border-radius: 8px;
+  background: #1a1a2e;
+  color: #c8c8d0;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+#login-cancel-btn.hidden {
+  display: none;
+}
+
+#login-cancel-btn:active {
+  background: rgba(127, 142, 163, 0.25);
 }

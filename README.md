@@ -81,17 +81,17 @@ export OPENAI_API_KEY="sk-..."
 # Clone and run
 git clone https://github.com/nichochar/voice-squad.git
 cd voice-squad
-./run.sh
+docker compose up --build
 ```
 
-This builds a Docker image (Ubuntu 24.04 with Node.js, Python, Claude Code CLI, Codex CLI, cloudflared, and Docker-in-Docker support), starts the container, and drops you into the captain's tmux session.
+This builds 3 Docker containers (workspace, voice-server, pane-monitor) and starts the squad. The workspace container runs the captain in a tmux session.
 
 A QR code will appear in the voice tmux window (switch to it with `Ctrl-b n`). Scan it with your phone to open the voice interface.
 
 ### Using Codex as Captain
 
 ```bash
-./run.sh codex
+SQUAD_CAPTAIN=codex docker compose up --build
 ```
 
 ## Usage
@@ -144,15 +144,12 @@ You're attached to the captain's tmux session. Interact with the captain CLI dir
 
 ### Volumes
 
-`run.sh` mounts several paths into the container:
+`docker-compose.yml` mounts several paths into the containers:
 
 | Host Path | Container Path | Purpose |
 |---|---|---|
 | `./home/` | `/home/ubuntu/` | Persistent project storage (gitignored) |
-| `~/.claude/` | `/home/ubuntu/.claude/` | Claude Code configuration |
-| `~/.claude.json` | `/home/ubuntu/.claude.json` | Claude Code auth |
-| `~/.codex/` | `/home/ubuntu/.codex/` | Codex configuration |
-| `$SSH_AUTH_SOCK` | `/tmp/ssh-agent.sock` | SSH agent forwarding (if available) |
+| `tmux-socket` (Docker volume) | `/run/tmux` | Shared tmux socket across containers |
 
 ### Container Environment File
 
@@ -182,7 +179,7 @@ This pulls the latest code, copies files to the install location, reinstalls npm
 
 ```
 voice-squad/
-├── run.sh                       # Host entry point — builds image, runs container
+├── docker-compose.yml           # Container orchestration — workspace, voice-server, pane-monitor
 ├── utils/                       # Utility scripts
 │   ├── update.sh                # Hot-update script (runs inside container)
 │   ├── test.sh                  # Run Playwright tests against a running container

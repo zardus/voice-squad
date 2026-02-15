@@ -9,16 +9,16 @@ Squad is a multi-agent AI orchestration system. It runs inside a privileged Dock
 ## Build & Run
 
 ```bash
-# Build Docker image and launch a squad (default captain: claude)
-./run.sh
+# Build and launch a squad (default captain: claude)
+docker compose up --build
 
 # Launch with codex as captain
-./run.sh codex
+SQUAD_CAPTAIN=codex docker compose up --build
 ```
 
-Requires `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` environment variables on the host. SSH agent is forwarded automatically if `SSH_AUTH_SOCK` is set.
+Requires `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` environment variables on the host. Optional: `GH_TOKEN`. A `VOICE_TOKEN` is auto-generated if not provided.
 
-The Docker image is built from `src/Dockerfile` (Ubuntu 24.04 + Docker-in-Docker + Node.js 20 + Claude Code CLI + Codex CLI + cloudflared).
+The system runs as 3 containers (see `docker-compose.yml`): workspace (captain + tmux), voice-server (voice pipeline + cloudflared tunnel), and pane-monitor (idle worker detection).
 
 ## Project Structure
 
@@ -39,7 +39,7 @@ All build/runtime files live in `src/`:
 - `show-qr.js` — Renders voice URL as terminal QR code for phone scanning
 - `public/` — PWA frontend (HTML, JS, CSS, manifest, service worker, icons)
 
-`run.sh` at the root is the host-side entry point. Exposes port 3000 for LAN access.
+`docker-compose.yml` at the root orchestrates the 3 containers. Port 3000 is exposed for LAN access.
 
 `home/` is the shared persistent volume mounted into the container at `/home/ubuntu`. It is gitignored.
 
@@ -72,16 +72,25 @@ This pulls latest git, copies `src/` files to `/opt/squad/` (the installed locat
 - The container runs `--privileged` for Docker-in-Docker support. The Docker container itself is the sandbox boundary.
 ## Running Tests
 
-**Tests MUST be run in a separate Docker container**, not in the live squad container. Running tests in the live container will interfere with the running captain and workers.
-
-The project includes a `Dockerfile.test` that builds a lightweight test image with tmux, the voice server, and Playwright:
+**Tests run in a separate Docker Compose stack** (`docker-compose.test.yml`), fully isolated from any live squad deployment. The test stack reuses the real workspace, voice-server, and pane-monitor images alongside a lightweight test-runner container (Playwright + Chromium).
 
 ```bash
-# Build the test image (from the repo root)
-docker build -f Dockerfile.test -t voice-squad-test .
+# Run all tests (from the repo root)
+./test.sh
 
-# Run all tests (including integration tests)
-docker run --rm voice-squad-test
+# Run a specific test file
+./test.sh api.spec.js
+
+# Run captain E2E tests (requires real API keys in env or home/env)
+TEST_CAPTAIN=1 ./test.sh captain.spec.js
 ```
 
-This is the same setup used in CI (`.github/workflows/ci.yml`). The test container starts its own tmux session and voice server in isolation — no API keys, agents, or tunnels needed.
+`test.sh` uses `docker compose -p voice-squad-test` to namespace containers, networks, and volumes away from production. On exit it tears everything down (`down -v --remove-orphans`).
+
+**Test architecture** (see `docker-compose.test.yml`):
+- **workspace** — real image, entrypoint overridden to just start tmux (no agents, no dockerd)
+- **voice-server** — real image + real entrypoint with dummy API keys
+- **pane-monitor** — real image + real entrypoint
+- **test-runner** — lightweight: Ubuntu + Node + Playwright + Chromium + tmux client
+
+All services share the workspace PID/network namespace so `localhost:3000`, `pgrep`, and `tmux` commands work transparently from the test-runner.
