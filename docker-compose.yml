@@ -48,8 +48,6 @@ services:
       - VOICE_TOKEN
       - SQUAD_CAPTAIN=${SQUAD_CAPTAIN:-claude}
       - TMUX_TMPDIR=/run/tmux
-    ports:
-      - "3000:3000"
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:3000/ || exit 1"]
       interval: 15s
