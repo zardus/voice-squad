@@ -488,6 +488,7 @@ app.post("/api/interrupt", (req, res) => {
 });
 
 let restartInProgress = false;
+let loginState = { inProgress: false, tool: null, url: null, status: "idle", error: null, child: null };
 
 app.post("/api/restart-captain", async (req, res) => {
   const { token, tool } = req.body || {};
@@ -538,6 +539,108 @@ app.get("/api/restart-status", (req, res) => {
     return res.status(401).json({ error: "Unauthorized" });
   }
   res.json({ restartInProgress, captain: CAPTAIN });
+});
+
+app.post("/api/login", (req, res) => {
+  const { token: reqToken, tool } = req.body || {};
+  if (reqToken !== TOKEN) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  if (tool !== "claude" && tool !== "codex") {
+    return res.status(400).json({ error: "tool must be 'claude' or 'codex'" });
+  }
+  if (loginState.inProgress) {
+    return res.status(409).json({ error: "A login is already in progress" });
+  }
+
+  const { spawn } = require("child_process");
+
+  const cmd = tool === "claude" ? "claude" : "codex";
+  const args = tool === "claude" ? ["login"] : ["auth", "login"];
+
+  loginState = { inProgress: true, tool, url: null, status: "spawning", error: null, child: null };
+
+  console.log(`[login] spawning ${cmd} ${args.join(" ")}...`);
+
+  const child = spawn(cmd, args, {
+    env: { ...process.env, BROWSER: "" },
+    stdio: ["pipe", "pipe", "pipe"],
+    timeout: 0,
+  });
+  loginState.child = child;
+
+  const LOGIN_TIMEOUT_MS = 5 * 60 * 1000;
+  const timeoutTimer = setTimeout(() => {
+    if (loginState.child === child && loginState.inProgress) {
+      console.log("[login] timed out after 5 minutes");
+      loginState.status = "error";
+      loginState.error = "Login timed out after 5 minutes";
+      loginState.inProgress = false;
+      try { child.kill("SIGTERM"); } catch {}
+      loginState.child = null;
+    }
+  }, LOGIN_TIMEOUT_MS);
+
+  const urlRegex = /https?:\/\/[^\s"'<>]+/;
+
+  function handleOutput(data) {
+    const text = data.toString();
+    console.log(`[login] output: ${text.trim()}`);
+    if (!loginState.url) {
+      const match = text.match(urlRegex);
+      if (match) {
+        loginState.url = match[0];
+        loginState.status = "waiting_for_auth";
+        console.log(`[login] OAuth URL found: ${loginState.url}`);
+      }
+    }
+  }
+
+  child.stdout.on("data", handleOutput);
+  child.stderr.on("data", handleOutput);
+
+  child.on("error", (err) => {
+    clearTimeout(timeoutTimer);
+    console.error(`[login] spawn error: ${err.message}`);
+    loginState.status = "error";
+    loginState.error = err.message;
+    loginState.inProgress = false;
+    loginState.child = null;
+  });
+
+  child.on("close", (code) => {
+    clearTimeout(timeoutTimer);
+    if (loginState.child !== child) return;
+    if (code === 0) {
+      console.log(`[login] ${tool} login completed successfully`);
+      loginState.status = "success";
+    } else if (loginState.status !== "error") {
+      console.log(`[login] ${tool} login exited with code ${code}`);
+      loginState.status = "error";
+      loginState.error = `Login process exited with code ${code}`;
+    }
+    loginState.inProgress = false;
+    loginState.child = null;
+  });
+
+  // Write a newline to stdin in case the CLI is waiting for confirmation
+  try { child.stdin.write("\n"); } catch {}
+
+  res.json({ ok: true });
+});
+
+app.get("/api/login-status", (req, res) => {
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  if (url.searchParams.get("token") !== TOKEN) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  res.json({
+    status: loginState.status,
+    url: loginState.url,
+    tool: loginState.tool,
+    error: loginState.error,
+    inProgress: loginState.inProgress,
+  });
 });
 
 const HAIKU_PROMPT =
