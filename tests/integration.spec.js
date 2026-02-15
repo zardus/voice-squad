@@ -18,6 +18,9 @@ const TEST_FILE = "/home/ubuntu/test-hello-e2e.txt";
 test.describe("Integration", () => {
   test.beforeAll(() => {
     if (!TOKEN) throw new Error("Cannot discover VOICE_TOKEN");
+    // Ensure captain:0 has a clean bash shell — earlier tests (e.g. restart-captain)
+    // may have started a real captain agent if API keys are present.
+    try { execSync("tmux respawn-pane -k -t captain:0 bash", { timeout: 5000 }); } catch {}
   });
 
   test("send text command and observe tmux_snapshot change", async ({ page }) => {

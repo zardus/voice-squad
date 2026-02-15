@@ -12,6 +12,4 @@ module.exports = defineConfig({
     headless: true,
     permissions: ["microphone"],
   },
-  // Ignore the old e2e test (replaced by the new suite)
-  testIgnore: ["**/voice-e2e.spec.js"],
 });
