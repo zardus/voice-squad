@@ -67,11 +67,6 @@ resolve_voice_token() {
         return 0
     fi
 
-    # 4) Last-resort scrape from tmux voice window content
-    if tmux has-session -t captain 2>/dev/null; then
-        pane_dump="$(tmux capture-pane -t captain:voice -p -S -250 2>/dev/null || true)"
-        token="$(printf '%s' "$pane_dump" | tr -d '\r\n[:space:]' | grep -oE 'token=[A-Za-z0-9_-]+' | head -1 | cut -d= -f2)"
-    fi
     printf '%s' "$token"
 }
 

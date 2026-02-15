@@ -26,7 +26,7 @@ All build/runtime files live in `src/`:
 
 - `Dockerfile` — Container image definition
 - `entrypoint.sh` — Starts dockerd, fixes permissions, calls launch-squad.sh
-- `launch-squad.sh` — Creates captain tmux session (window 0: captain CLI, window 1: voice server + cloudflared), generates auth token, displays QR code
+- `launch-squad.sh` — Creates captain tmux session (window 0: captain CLI), generates auth token
 - `captain-instructions.md` — Injected as CLAUDE.md/AGENTS.md for the captain agent at runtime
 
 `src/voice/` — Voice interface server and PWA:
@@ -66,7 +66,7 @@ This pulls latest git, copies `src/` files to `/opt/squad/` (the installed locat
 ## Key Architecture Details
 
 - **Inside the container**, files are installed to `/opt/squad/`. `launch-squad.sh` copies instruction files to `/home/ubuntu/` with the correct filename (CLAUDE.md for claude captains, AGENTS.md for codex captains).
-- **Captain runs in tmux**: The captain CLI runs in window 0 of a tmux session called `captain`. The voice server and cloudflared tunnel run in window 1 (`voice`). Switch between them with `Ctrl-b n`.
+- **Captain runs in tmux**: The captain CLI runs in window 0 of a tmux session called `captain`.
 - **Voice interface**: A phone PWA connects via WebSocket through a cloudflared quick tunnel (`*.trycloudflare.com`). Auth is via a random token embedded in the URL (shown as a QR code at startup in the voice tmux window). The pipeline: STT (Whisper) -> send to captain via tmux -> poll output -> summarize (Claude Sonnet) -> TTS (OpenAI) -> play on phone.
 - **Environment variables**: `SQUAD_CAPTAIN` (claude|codex), `VOICE_TOKEN` (auto-generated).
 - The container runs `--privileged` for Docker-in-Docker support. The Docker container itself is the sandbox boundary.

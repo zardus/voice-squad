@@ -111,10 +111,6 @@ else
     fi
 
     echo "$VOICE_URL" > /tmp/voice-url.txt
-
-    # Show QR code in a second tmux window
-    tmux new-window -t captain -n voice
-    tmux send-keys -t captain:voice "node /opt/squad/voice/show-qr.js '${VOICE_URL}' && echo 'Voice server log: /tmp/voice-server.log' && tail -f /tmp/voice-server.log" Enter
 fi
 
 # Select the captain window (window 0) but do not attach:

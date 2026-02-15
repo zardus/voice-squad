@@ -86,7 +86,7 @@ docker compose up --build
 
 This builds 3 Docker containers (workspace, voice-server, pane-monitor) and starts the squad. The workspace container runs the captain in a tmux session.
 
-A QR code will appear in the voice tmux window (switch to it with `Ctrl-b n`). Scan it with your phone to open the voice interface.
+A QR code will appear in the voice-server container logs. Scan it with your phone to open the voice interface.
 
 ### Using Codex as Captain
 

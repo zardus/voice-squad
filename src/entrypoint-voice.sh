@@ -105,10 +105,6 @@ echo ""
 node /opt/squad/voice/show-qr.js "$VOICE_URL" 2>/dev/null || true
 echo ""
 
-# Also create a tmux window in the captain session for the QR display
-tmux new-window -t captain -n voice 2>/dev/null || true
-tmux send-keys -t captain:voice "echo 'Voice URL: ${VOICE_URL}' && echo 'Voice server running in voice-server container' && echo 'Log: docker compose logs voice-server'" Enter 2>/dev/null || true
-
 # Follow voice server log (keeps container alive)
 echo "[voice-entrypoint] Voice server running. Following logs..."
 exec tail -f /tmp/voice-server.log
