@@ -12,6 +12,10 @@ const WORKER_SESSION = "idle-test-worker";
 test.describe("Idle monitor", () => {
   test.beforeAll(() => {
     if (!TOKEN) throw new Error("Cannot discover VOICE_TOKEN — set it or ensure /tmp/voice-url.txt exists");
+    // Earlier tests (e.g. api.spec restart-captain) may leave captain:0 running
+    // Claude Code instead of a clean shell. Respawn with bash so our tmux
+    // send-keys / capture-pane assertions work against a plain prompt.
+    try { execSync("tmux respawn-pane -k -t captain:0 bash", { timeout: 5000 }); } catch {}
   });
 
   test.afterAll(() => {
@@ -25,7 +29,7 @@ test.describe("Idle monitor", () => {
   });
 
   test("detects idle worker pane and sends IDLE ALERT to captain", async () => {
-    test.setTimeout(60000);
+    test.setTimeout(120000);
 
     // Create the worker tmux session FIRST (before starting the monitor)
     // so the monitor can discover the pane in its initial state.
@@ -62,16 +66,22 @@ test.describe("Idle monitor", () => {
       timeout: 5000,
     });
 
-    // Wait for the idle threshold (30s) plus buffer for detection + send.
-    // The 30s counter starts from the last content change, which was ~3s ago,
-    // so we need about 30 more seconds.
-    await new Promise((r) => setTimeout(r, 35000));
-
-    // Capture the captain pane output and verify the IDLE ALERT
-    const captainOutput = execSync("tmux capture-pane -t captain:0 -p -S -100", {
-      encoding: "utf8",
-      timeout: 5000,
-    });
+    // Poll for the IDLE ALERT instead of waiting a fixed time.
+    // The monitor's 30-second idle counter increments once per loop iteration,
+    // and each iteration takes >1s in CI due to tmux + md5sum overhead,
+    // so the actual wall-clock time can be well over 35s.
+    const deadline = Date.now() + 90000; // 90s generous timeout
+    let captainOutput = "";
+    while (Date.now() < deadline) {
+      captainOutput = execSync("tmux capture-pane -t captain:0 -p -S -100", {
+        encoding: "utf8",
+        timeout: 5000,
+      });
+      if (captainOutput.includes("IDLE ALERT") && captainOutput.includes(WORKER_SESSION)) {
+        break;
+      }
+      await new Promise((r) => setTimeout(r, 2000));
+    }
 
     expect(captainOutput).toContain("IDLE ALERT");
     expect(captainOutput).toContain(WORKER_SESSION);

@@ -119,7 +119,7 @@ test.describe("TTS playback queue", () => {
     expect(await page.evaluate(() => window.__playCalls)).toEqual([1, 2]);
   });
 
-  test("caps the queue (keeps last 50, drops oldest)", async ({ page }) => {
+  test("caps the queue (keeps last 5, drops oldest)", async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.setItem("autoread", "true");
 
@@ -170,8 +170,8 @@ test.describe("TTS playback queue", () => {
     await page.goto(pageUrl("test-token"));
     await page.waitForFunction(() => !!window.__testWs);
 
-    // Enqueue 60 audio frames quickly.
-    // With a cap of 50 total pending clips (current + queued), we should eventually play 50 total.
+    // Enqueue 10 audio frames quickly.
+    // With a cap of 5 total pending clips (current + queued), we should eventually play 5 total.
     await page.evaluate(() => {
       const ws = window.__testWs;
       ws.onmessage({ data: JSON.stringify({ type: "tts_config", format: "wav", mime: "audio/wav" }) });
@@ -199,7 +199,7 @@ test.describe("TTS playback queue", () => {
         return buf;
       };
 
-      for (let i = 0; i < 60; i++) {
+      for (let i = 0; i < 10; i++) {
         ws.onmessage({ data: generateSilenceWav(1) });
       }
     });
@@ -209,13 +209,13 @@ test.describe("TTS playback queue", () => {
     // Drain by firing ended repeatedly; each ended should trigger the next queued clip.
     await page.evaluate(async () => {
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-      for (let i = 0; i < 80; i++) {
+      for (let i = 0; i < 15; i++) {
         if (!window.__lastPlayedEl) break;
         window.__lastPlayedEl.dispatchEvent(new Event("ended"));
         await sleep(0);
       }
     });
 
-    await expect.poll(() => page.evaluate(() => window.__playCalls.length), { timeout: 5000 }).toBe(50);
+    await expect.poll(() => page.evaluate(() => window.__playCalls.length), { timeout: 5000 }).toBe(5);
   });
 });
