@@ -58,7 +58,7 @@ let pendingTtsTexts = []; // speak_text arrives before the binary audio frame; k
 // ── TTS Playback Queue (FIFO) ────────────────────────────────────────────────
 // Declared early because Auto-read is initialized before the Audio element is created,
 // and disabling auto-read calls stopTtsPlayback() during initial script evaluation.
-const TTS_PLAYBACK_QUEUE_LIMIT = 50;
+const TTS_PLAYBACK_QUEUE_LIMIT = 5;
 let ttsPlaybackQueue = []; // [{ id, data:ArrayBuffer, enqueuedAt:number, text?:string, fallbackTried?:boolean }]
 let ttsPlaybackNextId = 1;
 let ttsPlaybackPlaying = false;
@@ -459,8 +459,26 @@ function ensureMp3TtsAndReconnect() {
   } catch {}
 }
 
+function evictStaleTtsEntries() {
+  const now = Date.now();
+  const TTS_STALE_MS = 30000; // drop clips older than 30 seconds
+  let dropped = 0;
+  while (ttsPlaybackQueue.length > 0 && (now - ttsPlaybackQueue[0].enqueuedAt) > TTS_STALE_MS) {
+    ttsPlaybackQueue.shift();
+    dropped++;
+  }
+  if (dropped > 0) {
+    console.warn(`TTS: dropped ${dropped} stale clip(s) (older than ${TTS_STALE_MS / 1000}s).`);
+  }
+}
+
 function enqueueTtsPlayback(data, { reason = "tts", text = "", fallbackTried = false } = {}) {
   if (!data) return;
+  // Don't queue audio while the page is hidden — it would pile up and play back-to-back on return.
+  if (document.hidden) return;
+
+  evictStaleTtsEntries();
+
   ttsPlaybackQueue.push({
     id: ttsPlaybackNextId++,
     data,
@@ -500,6 +518,8 @@ function drainTtsPlaybackQueue() {
   // Auto-read OFF: do not autoplay queued clips (except explicit replay which calls playAudio()).
   // If autoread is toggled off mid-queue, stopTtsPlayback() clears it.
   if (ttsPlaybackPlaying) return;
+
+  evictStaleTtsEntries();
   if (ttsPlaybackQueue.length === 0) return;
 
   const next = ttsPlaybackQueue.shift();
@@ -552,18 +572,12 @@ function drainTtsPlaybackQueue() {
   });
 }
 
-// Best-effort: when returning to a visible tab, resume a paused clip or continue draining the queue.
-// Some browsers will pause media in background without firing 'ended', which could otherwise stall the queue.
+// When the page becomes visible again, discard any audio that piled up while hidden.
+// This prevents a cascade of stale messages playing back-to-back after the phone is unlocked.
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) return;
-  if (ttsPlaybackPlaying && ttsAudio && ttsAudio.paused && ttsAudio.src) {
-    ttsAudio.play().catch(() => {
-      // If it still can't play, the queue head remains intact (see play() catch path).
-      drainTtsPlaybackQueueSoon();
-    });
-    return;
-  }
-  drainTtsPlaybackQueueSoon();
+  stopTtsPlayback();
+  speakAudioQueue = [];
 });
 
 function handleIncomingTtsAudio(data, opts = {}) {
@@ -571,6 +585,9 @@ function handleIncomingTtsAudio(data, opts = {}) {
   voiceReplayBtn.disabled = false;
   const autoplay = opts.autoplay !== false;
   if (!autoplay) return;
+  // Drop audio that arrives while the page is hidden (backgrounded/locked).
+  // This prevents a pile-up of stale audio playing back-to-back when the user returns.
+  if (document.hidden) return;
   // Respect the auto-read toggle for autoplay; replay is always available.
   const shouldPlay = autoreadCb.checked;
   if (shouldPlay) {
