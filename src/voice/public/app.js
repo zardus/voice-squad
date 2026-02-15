@@ -77,6 +77,9 @@ let micStream = null;
 let micStreamAcquired = false;
 let autoScroll = true;
 let disconnectedFlashTimer = null;
+let lastCaptainUpdateAt = 0;
+let captainName = "";
+let statusUpdateTimer = null;
 let maxRecordingTimer = null;
 let activePaneSpeech = null; // Web Speech API recognition (uses mic)
 
@@ -861,6 +864,36 @@ terminalEl.addEventListener("scroll", () => {
   autoScroll = scrollHeight - scrollTop - clientHeight < 40;
 });
 
+function formatElapsed(ms) {
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return s + "s ago";
+  const m = Math.floor(s / 60);
+  if (m < 60) return m + "m ago";
+  const h = Math.floor(m / 60);
+  return h + "h ago";
+}
+
+function updateStatusTimer() {
+  if (!statusEl || statusEl.className !== "connected") return;
+  if (!lastCaptainUpdateAt) {
+    statusEl.textContent = captainName + " (waiting\u2026)";
+  } else {
+    statusEl.textContent = captainName + " (" + formatElapsed(Date.now() - lastCaptainUpdateAt) + ")";
+  }
+}
+
+function startStatusTimer() {
+  if (statusUpdateTimer) clearInterval(statusUpdateTimer);
+  statusUpdateTimer = setInterval(updateStatusTimer, 1000);
+}
+
+function stopStatusTimer() {
+  if (statusUpdateTimer) {
+    clearInterval(statusUpdateTimer);
+    statusUpdateTimer = null;
+  }
+}
+
 function connect() {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
   const desiredTts = ttsFormatOverride || selectBestTtsFormat();
@@ -907,8 +940,11 @@ function connect() {
 
     switch (msg.type) {
       case "connected":
-        statusEl.textContent = msg.captain;
+        captainName = msg.captain || "connected";
+        lastCaptainUpdateAt = Date.now();
         statusEl.className = "connected";
+        updateStatusTimer();
+        startStatusTimer();
         if (msg.captain === "claude" || msg.captain === "codex") {
           captainToolSelect.value = msg.captain;
           voiceCaptainToolSelect.value = msg.captain;
@@ -922,10 +958,12 @@ function connect() {
         break;
 
       case "tmux_snapshot":
+        lastCaptainUpdateAt = Date.now();
         pendingSnapshot = msg.content;
         break;
 
       case "speak_text":
+        lastCaptainUpdateAt = Date.now();
         if (msg.text) {
           setLatestVoiceSummary(msg.text);
           prependVoiceSummaryEntry({
@@ -941,6 +979,7 @@ function connect() {
         break;
 
       case "transcription":
+        lastCaptainUpdateAt = Date.now();
         transcriptionEl.textContent = msg.text;
         transcriptionEl.className = "";
         voiceTranscriptionEl.textContent = "Sent";
@@ -961,6 +1000,7 @@ function connect() {
         break;
 
       case "status_stream_update":
+        lastCaptainUpdateAt = Date.now();
         renderStreamUpdate(msg);
         break;
 
@@ -971,6 +1011,9 @@ function connect() {
   };
 
   ws.onclose = () => {
+    stopStatusTimer();
+    lastCaptainUpdateAt = 0;
+    captainName = "";
     statusEl.textContent = "disconnected";
     statusEl.className = "disconnected";
     // Reset audio unlock so next user gesture re-primes the Audio element
@@ -1559,7 +1602,9 @@ async function restartCaptain() {
     clearTimeout(timeout);
     if (resp.ok) {
       playDing(true);
-      statusEl.textContent = tool;
+      captainName = tool;
+      lastCaptainUpdateAt = Date.now();
+      updateStatusTimer();
       summaryEl.textContent = "Captain restarted (" + tool + ")";
     } else {
       const data = await resp.json().catch(() => ({}));

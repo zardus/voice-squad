@@ -110,7 +110,8 @@ test.describe("UI", () => {
       // Wait for WebSocket to connect
       await expect(page.locator("#status")).toHaveClass(/connected/, { timeout: 5000 });
       const text = await page.locator("#status").textContent();
-      expect(["claude", "codex"]).toContain(text);
+      // Status now shows "captain (Xs ago)" latency timer
+      expect(text).toMatch(/^(claude|codex)\s/);
     });
 
     test("terminal pre element exists and is scrollable", async ({ page }) => {
