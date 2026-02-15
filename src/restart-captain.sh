@@ -154,7 +154,7 @@ STARTUP_PROMPT="Run startup recovery: use tmux list-sessions and tmux list-windo
 if [ "$CAPTAIN" = "claude" ]; then
     if [ "$FRESH" = true ]; then
         # Fresh start: use startup prompt, no --continue
-        CMD="claude --dangerously-skip-permissions -p \"$STARTUP_PROMPT\""
+        CMD="claude --dangerously-skip-permissions \"$STARTUP_PROMPT\""
     else
         # Resume: use --continue to resume last session
         CMD="claude --dangerously-skip-permissions --continue"
