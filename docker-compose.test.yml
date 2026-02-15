@@ -22,6 +22,10 @@ services:
         # Stub pane-monitor so restart-idle-monitor test can start it via tmux
         printf '#!/bin/bash\necho "pane-monitor stub running"\nwhile true; do sleep 60; done\n' | sudo tee /opt/squad/pane-monitor.sh >/dev/null
         sudo chmod +x /opt/squad/pane-monitor.sh
+        # Copy captain instructions so restart-captain.sh can find them
+        cp /opt/squad/captain/instructions.md /home/ubuntu/captain/CLAUDE.md
+        # Write ~/env so restart-captain.sh can source API keys
+        printf 'OPENAI_API_KEY="%s"\nANTHROPIC_API_KEY="%s"\n' "$$OPENAI_API_KEY" "$$ANTHROPIC_API_KEY" > /home/ubuntu/env
         echo "$$VOICE_TOKEN" > /home/ubuntu/.voice-token
         tmux new-session -d -s captain -c /home/ubuntu
         exec sleep infinity
@@ -30,6 +34,8 @@ services:
       - tmux-socket:/run/tmux
     environment:
       - VOICE_TOKEN=test-token-for-ci
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-sk-test-dummy}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-sk-ant-test-dummy}
       - TMUX_TMPDIR=/run/tmux
     healthcheck:
       test: ["CMD-SHELL", "tmux has-session -t captain 2>/dev/null"]
@@ -52,8 +58,8 @@ services:
       - tmux-socket:/run/tmux
     environment:
       - VOICE_TOKEN=test-token-for-ci
-      - OPENAI_API_KEY=sk-test-dummy
-      - ANTHROPIC_API_KEY=sk-ant-test-dummy
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-sk-test-dummy}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-sk-ant-test-dummy}
       - TMUX_TMPDIR=/run/tmux
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:3000/ || exit 1"]
@@ -92,6 +98,9 @@ services:
     environment:
       - VOICE_TOKEN=test-token-for-ci
       - TEST_INTEGRATION=1
+      - TEST_CAPTAIN=${TEST_CAPTAIN:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-sk-test-dummy}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-sk-ant-test-dummy}
       - TMUX_TMPDIR=/run/tmux
 
 volumes:

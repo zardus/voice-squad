@@ -80,6 +80,9 @@ This pulls latest git, copies `src/` files to `/opt/squad/` (the installed locat
 
 # Run a specific test file
 ./test.sh api.spec.js
+
+# Run captain E2E tests (requires real API keys in env or home/env)
+TEST_CAPTAIN=1 ./test.sh captain.spec.js
 ```
 
 `test.sh` uses `docker compose -p voice-squad-test` to namespace containers, networks, and volumes away from production. On exit it tears everything down (`down -v --remove-orphans`).
