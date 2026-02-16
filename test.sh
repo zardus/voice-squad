@@ -45,7 +45,13 @@ PROJECTS=()
 RESULTS_DIR=$(mktemp -d)
 
 cleanup() {
-    # Tear down all test stacks
+    # Kill any still-running test subshells
+    for pid in "${PIDS[@]+"${PIDS[@]}"}"; do
+        kill "$pid" 2>/dev/null || true
+    done
+    wait "${PIDS[@]+"${PIDS[@]}"}" 2>/dev/null || true
+
+    # Tear down all test stacks in parallel
     for proj in "${PROJECTS[@]+"${PROJECTS[@]}"}"; do
         docker compose -p "$proj" $COMPOSE_FILES down -v --remove-orphans 2>/dev/null &
     done
