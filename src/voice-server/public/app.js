@@ -383,21 +383,26 @@ function playDing(success) {
 
 function unlockAudio() {
   if (audioUnlocked) return;
-  const primer = new Audio();
-  primer.src = SILENT_WAV_DATA_URI;
-  primer.setAttribute("playsinline", "");
-  primer.setAttribute("webkit-playsinline", "");
-  primer.play().then(() => {
+  // iOS Safari requires each Audio element to be played during a user gesture
+  // before it can be used for programmatic playback.  Prime the actual ttsAudio
+  // element (not a throwaway) so subsequent ttsAudio.play() calls succeed.
+  const prevSrc = ttsAudio.src;
+  ttsAudio.src = SILENT_WAV_DATA_URI;
+  ttsAudio.play().then(() => {
     audioUnlocked = true;
     try {
-      primer.pause();
-      primer.currentTime = 0;
+      ttsAudio.pause();
+      ttsAudio.currentTime = 0;
     } catch {}
+    // Restore previous src so it doesn't interfere with pending playback.
+    ttsAudio.src = prevSrc || "";
     // If any TTS was queued while autoplay was locked, try draining now.
     drainTtsPlaybackQueueSoon();
   }).catch((err) => {
     // Best-effort only: user can still tap replay, and subsequent gestures may unlock.
     console.warn("Audio unlock primer blocked:", err && err.message ? err.message : "unknown");
+    // Even on failure, restore the src.
+    ttsAudio.src = prevSrc || "";
   });
   getAudioContext(); // warm up AudioContext during user gesture
 }
