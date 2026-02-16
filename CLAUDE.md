@@ -80,7 +80,7 @@ This pulls latest git, copies `src/` files to `/opt/squad/` (the installed locat
 TEST_CAPTAIN=1 ./test.sh captain.spec.js
 ```
 
-`test.sh` uses `docker compose -p voice-squad-test -f docker-compose.yml -f docker-compose.test.yml` to namespace everything away from production. On exit it tears everything down (`down -v --remove-orphans`).
+`test.sh` builds images once, then launches each test file in its own fully isolated Docker Compose stack (separate `-p` project), so all tests run in parallel. On exit it tears down all stacks (`down -v --remove-orphans`).
 
 **Test overrides** (see `docker-compose.test.yml`):
 - All services run their **real entrypoints** with real API keys
