@@ -181,7 +181,8 @@ function setAutoReadEnabled(enabled, { persist = true } = {}) {
   }
 }
 
-setAutoReadEnabled(localStorage.getItem("autoread") !== "false", { persist: false });
+const storedAutoread = localStorage.getItem("autoread");
+setAutoReadEnabled(storedAutoread === null ? true : storedAutoread === "true", { persist: false });
 [autoreadCb, voiceAutoreadCb].forEach((cb) => {
   if (!cb) return;
   cb.addEventListener("change", () => setAutoReadEnabled(cb.checked));
