@@ -886,6 +886,17 @@ body.voice-history-open {
   margin-top: 8px;
 }
 
+.task-log-body {
+  margin-top: 8px;
+  max-height: 400px;
+  overflow: auto;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #c0c0c0;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
 .completed-loading {
   color: #a0a0a0;
   font-style: italic;

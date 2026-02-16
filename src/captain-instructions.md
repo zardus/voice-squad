@@ -343,9 +343,11 @@ Before killing any worker tmux window (cleanup, pruning finished workers, etc.),
 
 ```bash
 mkdir -p ~/captain/archived
-tmux capture-pane -t <session>:<window> -p -S -10000 > ~/captain/tasks/archived/<session>-<window>.log
+tmux capture-pane -t <session>:<window> -p -S -10000 > ~/captain/tasks/archived/<task-name>.log
 tmux kill-window -t <session>:<window>
 ```
+
+Afterwards, summarize the results to ~/captain/tasks/archived/<task-name>.results along with a short description/title to ~/captain/tasks/archived/<task-name>.title
 
 ## Operational Checklists (From Real Failure Modes)
 

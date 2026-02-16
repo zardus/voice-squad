@@ -523,13 +523,12 @@ test.describe("UI", () => {
             tasks: [
               {
                 task_name: "v8-bridging-redo",
+                title: "Refactored bridge",
+                started_at: "2026-02-11T09:40:00Z",
                 completed_at: "2026-02-11T09:43:00Z",
-                short_summary: "Refactored bridge and added tests.",
-                detailed_summary: "## Completed\n- Added API route\n```js\nconsole.log('ok')\n```",
+                results: "## Completed\n- Added API route\n```js\nconsole.log('ok')\n```",
                 task_definition: "### Original Task\n- Fix bridge",
-                worker_type: "codex",
-                session: "challenges",
-                window: "v8-redo",
+                has_log: true,
               },
             ],
           }),
@@ -539,7 +538,7 @@ test.describe("UI", () => {
       await page.goto(pageUrl());
       await page.click('[data-tab="completed"]');
       await expect(page.locator(".completed-task-item")).toHaveCount(1);
-      await expect(page.locator(".completed-task-short")).toHaveText("Refactored bridge and added tests.");
+      await expect(page.locator(".completed-task-short")).toContainText("started");
 
       const item = page.locator(".completed-task-item").first();
       expect(await item.evaluate((el) => el.hasAttribute("open"))).toBe(false);

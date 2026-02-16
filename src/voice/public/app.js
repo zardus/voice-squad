@@ -2273,6 +2273,20 @@ function formatCompletedAt(iso) {
   });
 }
 
+function formatDuration(startIso, endIso) {
+  const start = Date.parse(startIso || "");
+  const end = Date.parse(endIso || "");
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return null;
+  const ms = end - start;
+  if (ms < 0) return null;
+  const secs = Math.floor(ms / 1000);
+  if (secs < 60) return secs + "s";
+  const mins = Math.floor(secs / 60);
+  if (mins < 60) return mins + "m " + (secs % 60) + "s";
+  const hrs = Math.floor(mins / 60);
+  return hrs + "h " + (mins % 60) + "m";
+}
+
 function renderCompletedTasks(tasks) {
   if (!Array.isArray(tasks) || tasks.length === 0) {
     completedTabContentEl.innerHTML = '<div class="completed-empty">No completed tasks yet.</div>';
@@ -2291,32 +2305,29 @@ function renderCompletedTasks(tasks) {
 
     const heading = document.createElement("div");
     heading.className = "completed-task-heading";
-    heading.textContent = `${task.task_name || "unnamed-task"} · ${formatCompletedAt(task.completed_at)}`;
+    heading.textContent = task.title || task.task_name || "unnamed-task";
 
-    const shortSummary = document.createElement("div");
-    shortSummary.className = "completed-task-short";
-    shortSummary.textContent = task.short_summary || "(No short summary)";
+    const timeInfo = document.createElement("div");
+    timeInfo.className = "completed-task-short";
+    const parts = [];
+    if (task.started_at) parts.push("started " + formatCompletedAt(task.started_at));
+    if (task.completed_at) parts.push("done " + formatCompletedAt(task.completed_at));
+    const dur = formatDuration(task.started_at, task.completed_at);
+    if (dur) parts.push("(" + dur + ")");
+    timeInfo.textContent = parts.join(" \u00b7 ") || "no timing info";
 
     summary.appendChild(heading);
-    summary.appendChild(shortSummary);
+    summary.appendChild(timeInfo);
     item.appendChild(summary);
 
     const body = document.createElement("div");
     body.className = "completed-task-body";
 
-    const meta = document.createElement("div");
-    meta.className = "completed-task-meta";
-    const workerType = task.worker_type || "unknown";
-    const session = task.session || "unknown";
-    const windowName = task.window || "unknown";
-    meta.textContent = `Worker: ${workerType} · Session: ${session} · Window: ${windowName}`;
-    body.appendChild(meta);
-
-    if (task.detailed_summary) {
-      const detailed = document.createElement("div");
-      detailed.className = "completed-task-detailed";
-      detailed.innerHTML = mdToHtml(task.detailed_summary);
-      body.appendChild(detailed);
+    if (task.results) {
+      const results = document.createElement("div");
+      results.className = "completed-task-detailed";
+      results.innerHTML = mdToHtml(task.results);
+      body.appendChild(results);
     }
 
     if (task.task_definition) {
@@ -2330,6 +2341,42 @@ function renderCompletedTasks(tasks) {
       defDetails.appendChild(defSummary);
       defDetails.appendChild(defBody);
       body.appendChild(defDetails);
+    }
+
+    if (task.has_log) {
+      const logDetails = document.createElement("details");
+      logDetails.className = "task-definition-details";
+      const logSummary = document.createElement("summary");
+      logSummary.textContent = "Full log";
+      const logBody = document.createElement("pre");
+      logBody.className = "task-log-body";
+      logBody.textContent = "Click to load...";
+      logDetails.appendChild(logSummary);
+      logDetails.appendChild(logBody);
+
+      let logLoaded = false;
+      logDetails.addEventListener("toggle", async () => {
+        if (!logDetails.open || logLoaded) return;
+        logLoaded = true;
+        logBody.textContent = "Loading...";
+        try {
+          const resp = await fetch(
+            `/api/task-log?token=${encodeURIComponent(token)}&task=${encodeURIComponent(task.task_name)}`
+          );
+          if (!resp.ok) {
+            logBody.textContent = "Failed to load log.";
+            logLoaded = false;
+            return;
+          }
+          const data = await resp.json();
+          logBody.textContent = data.log || "(empty log)";
+        } catch {
+          logBody.textContent = "Failed to load log.";
+          logLoaded = false;
+        }
+      });
+
+      body.appendChild(logDetails);
     }
 
     item.appendChild(body);
