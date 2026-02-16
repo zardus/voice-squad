@@ -169,7 +169,7 @@ function setLatestVoiceSummary(text) {
   if (voiceSummaryEl) voiceSummaryEl.textContent = t;
 }
 
-// Auto-read toggle: OFF by default, persisted in localStorage
+// Auto-read toggle: ON by default, persisted in localStorage
 function setAutoReadEnabled(enabled, { persist = true } = {}) {
   const val = !!enabled;
   if (autoreadCb) autoreadCb.checked = val;
@@ -181,7 +181,7 @@ function setAutoReadEnabled(enabled, { persist = true } = {}) {
   }
 }
 
-setAutoReadEnabled(localStorage.getItem("autoread") === "true", { persist: false });
+setAutoReadEnabled(localStorage.getItem("autoread") !== "false", { persist: false });
 [autoreadCb, voiceAutoreadCb].forEach((cb) => {
   if (!cb) return;
   cb.addEventListener("change", () => setAutoReadEnabled(cb.checked));
