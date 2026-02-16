@@ -9,8 +9,7 @@
 services:
   workspace:
     build:
-      context: src
-      dockerfile: Dockerfile.workspace
+      context: src/workspace
     entrypoint: ["/bin/bash", "-c"]
     command:
       - |
@@ -34,8 +33,7 @@ services:
 
   captain:
     build:
-      context: src
-      dockerfile: Dockerfile.captain
+      context: src/captain
     pid: "service:workspace"
     entrypoint: ["/bin/bash", "-c"]
     command:
@@ -74,8 +72,7 @@ services:
 
   voice-server:
     build:
-      context: src
-      dockerfile: Dockerfile.voice
+      context: src/voice-server
     network_mode: "service:workspace"
     pid: "service:workspace"
     depends_on:
@@ -100,8 +97,7 @@ services:
 
   pane-monitor:
     build:
-      context: src
-      dockerfile: Dockerfile.pane-monitor
+      context: src/pane-monitor
     pid: "service:workspace"
     depends_on:
       captain:

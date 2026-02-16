@@ -83,7 +83,7 @@ RUN echo "ubuntu ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 RUN mkdir -p /run/captain-tmux /run/workspace-tmux \
     && chown ubuntu:ubuntu /run/captain-tmux /run/workspace-tmux
 
-COPY entrypoint-captain.sh /opt/squad/entrypoint-captain.sh
+COPY entrypoint.sh /opt/squad/entrypoint-captain.sh
 COPY restart-captain.sh /opt/squad/restart-captain.sh
 RUN chmod +x /opt/squad/entrypoint-captain.sh /opt/squad/restart-captain.sh
 

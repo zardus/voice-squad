@@ -31,10 +31,10 @@ RUN mkdir -p /run/captain-tmux /run/workspace-tmux \
 # ── Scripts under test ──────────────────────────────────────
 # show-qr.js + its qrcode-terminal dependency
 RUN mkdir -p /opt/squad/voice && cd /opt/squad/voice && npm install --save qrcode-terminal
-COPY src/voice/show-qr.js /opt/squad/voice/show-qr.js
-COPY src/restart-captain.sh /opt/squad/restart-captain.sh
-COPY src/pane-monitor.sh /opt/squad/pane-monitor.sh
-COPY src/switch-account.sh /opt/tests/src/switch-account.sh
+COPY src/tunnel/show-qr.js /opt/squad/voice/show-qr.js
+COPY src/captain/restart-captain.sh /opt/squad/restart-captain.sh
+COPY src/pane-monitor/pane-monitor.sh /opt/squad/pane-monitor.sh
+COPY src/captain/switch-account.sh /opt/tests/src/switch-account.sh
 RUN chmod +x /opt/squad/restart-captain.sh /opt/squad/pane-monitor.sh
 
 # ── Test suite ───────────────────────────────────────────────

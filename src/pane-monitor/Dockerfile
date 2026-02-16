@@ -18,7 +18,7 @@ RUN mkdir -p /run/captain-tmux /run/workspace-tmux \
 COPY pane-monitor.sh /opt/squad/pane-monitor.sh
 RUN chmod +x /opt/squad/pane-monitor.sh
 
-COPY entrypoint-pane-monitor.sh /entrypoint-pane-monitor.sh
+COPY entrypoint.sh /entrypoint-pane-monitor.sh
 RUN chmod +x /entrypoint-pane-monitor.sh
 
 USER ubuntu

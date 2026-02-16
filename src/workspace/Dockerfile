@@ -106,9 +106,6 @@ RUN mkdir -p /run/workspace-tmux && chown ubuntu:ubuntu /run/workspace-tmux
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-# Copy only show-qr.js for URL display (voice server runs in its own container)
-COPY voice/show-qr.js /opt/squad/show-qr.js
-
 USER ubuntu
 
 WORKDIR /home/ubuntu

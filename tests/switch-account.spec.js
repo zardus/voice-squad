@@ -11,7 +11,7 @@ const fs = require("fs");
 const path = require("path");
 const os = require("os");
 
-const SCRIPT = path.resolve(__dirname, "../src/switch-account.sh");
+const SCRIPT = path.resolve(__dirname, "../src/captain/switch-account.sh");
 
 test.describe("switch-account.sh", () => {
   /** @type {string} */

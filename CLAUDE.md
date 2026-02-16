@@ -22,24 +22,19 @@ The system runs as 4 containers (see `docker-compose.yml`): workspace (dockerd +
 
 ## Project Structure
 
-All build/runtime files live in `src/`:
+Each component lives in its own self-contained directory under `src/`, with its own `Dockerfile` and `entrypoint.sh`:
 
-- `Dockerfile` — Container image definition
-- `entrypoint.sh` — Starts dockerd, fixes permissions, calls launch-squad.sh
-- `launch-squad.sh` — Creates captain tmux session (window 0: captain CLI), generates auth token
-- `captain-instructions.md` — Injected as CLAUDE.md/AGENTS.md for the captain agent at runtime
+- `src/workspace/` — Docker-in-Docker workspace with dev tools (dockerd, tmux, Claude Code, Codex, nix, python, node)
+- `src/captain/` — Captain agent (Claude or Codex CLI), instructions, restart/speak/switch-account scripts
+- `src/voice-server/` — Voice interface server and PWA (Express + WebSocket, STT, TTS, tmux bridge, status daemon)
+  - `public/` — PWA frontend (HTML, JS, CSS, manifest, icons)
+- `src/tunnel/` — Cloudflared quick tunnel for external access
+- `src/pane-monitor/` — Idle worker detection daemon
+- `src/ios/` — iOS app (unchanged)
 
-`src/voice/` — Voice interface server and PWA:
+Each component is fully self-contained with no shared build contexts.
 
-- `server.js` — Express HTTP + WebSocket server, orchestrates the voice pipeline
-- `tmux-bridge.js` — Sends commands to captain via `tmux send-keys`, polls output via `capture-pane` with done detection (3s stable + prompt pattern, 120s hard timeout)
-- `stt.js` — OpenAI Whisper API (audio buffer -> text)
-- `tts.js` — OpenAI TTS API (text -> mp3)
-- `summarize.js` — Claude API (raw terminal output -> voice-friendly 1-3 sentence summary)
-- `show-qr.js` — Renders voice URL as terminal QR code for phone scanning
-- `public/` — PWA frontend (HTML, JS, CSS, manifest, service worker, icons)
-
-`docker-compose.yml` at the root orchestrates the 3 containers. Port 3000 is exposed for LAN access.
+`docker-compose.yml` at the root orchestrates the 5 containers. Port 3000 is exposed for LAN access.
 
 `home/` is the shared persistent volume mounted into the container at `/home/ubuntu`. It is gitignored.
 
@@ -55,9 +50,9 @@ After editing source files, you **must** run the deploy script to apply changes 
 This pulls latest git, copies `src/` files to `/opt/squad/` (the installed location), and restarts the voice server. The cloudflared tunnel runs in a separate container and is unaffected by voice server restarts. The captain agent is kept alive (unless `--restart-captain` is passed).
 
 **Key paths:**
-- Source: `src/voice/` — server code; `src/voice/public/` — frontend (index.html, app.js, style.css)
+- Source: `src/voice-server/` — server code; `src/voice-server/public/` — frontend (index.html, app.js, style.css)
 - Installed (live): `/opt/squad/voice/` — the voice server runs from here, not from `src/`
-- Pane monitor: `src/pane-monitor.sh` → installed to `/opt/squad/pane-monitor.sh`
+- Pane monitor: `src/pane-monitor/pane-monitor.sh` → installed to `/opt/squad/pane-monitor.sh`
 
 **Logs:**
 - Deploy output: `/tmp/update.log`
@@ -65,7 +60,7 @@ This pulls latest git, copies `src/` files to `/opt/squad/` (the installed locat
 
 ## Key Architecture Details
 
-- **Inside the container**, files are installed to `/opt/squad/`. `launch-squad.sh` copies instruction files to `/home/ubuntu/` with the correct filename (CLAUDE.md for claude captains, AGENTS.md for codex captains).
+- **Inside the container**, files are installed to `/opt/squad/`. The captain entrypoint copies instruction files to `/home/ubuntu/` with the correct filename (CLAUDE.md for claude captains, AGENTS.md for codex captains).
 - **Captain runs in tmux**: The captain CLI runs in window 0 of a tmux session called `captain`.
 - **Voice interface**: A phone PWA connects via WebSocket through a cloudflared quick tunnel (`*.trycloudflare.com`) running in a separate `tunnel` container. Auth is via a random token embedded in the URL (shown as a QR code at startup in the tunnel container logs). The pipeline: STT (Whisper) -> send to captain via tmux -> poll output -> summarize (Claude Sonnet) -> TTS (OpenAI) -> play on phone.
 - **Environment variables**: `SQUAD_CAPTAIN` (claude|codex), `VOICE_TOKEN` (auto-generated).

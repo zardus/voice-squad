@@ -8,8 +8,7 @@
 services:
   workspace:
     build:
-      context: src
-      dockerfile: Dockerfile.workspace
+      context: src/workspace
     privileged: true
     stdin_open: true
     tty: true
@@ -30,8 +29,7 @@ services:
 
   captain:
     build:
-      context: src
-      dockerfile: Dockerfile.captain
+      context: src/captain
     depends_on:
       workspace:
         condition: service_healthy
@@ -58,8 +56,7 @@ services:
 
   voice-server:
     build:
-      context: src
-      dockerfile: Dockerfile.voice
+      context: src/voice-server
     depends_on:
       captain:
         condition: service_healthy
@@ -84,8 +81,7 @@ services:
 
   tunnel:
     build:
-      context: src
-      dockerfile: Dockerfile.tunnel
+      context: src/tunnel
     depends_on:
       voice-server:
         condition: service_healthy
@@ -97,8 +93,7 @@ services:
 
   pane-monitor:
     build:
-      context: src
-      dockerfile: Dockerfile.pane-monitor
+      context: src/pane-monitor
     depends_on:
       captain:
         condition: service_healthy
