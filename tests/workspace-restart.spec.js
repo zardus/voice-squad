@@ -115,7 +115,7 @@ test.describe("Workspace restart", () => {
 
     // 3. Wait for /api/status to include the new session
     const withWorker = await waitForStatus(
-      (s) => sessionNames(s).includes(WORKER_SESSION),
+      (s) => sessionNames(s).includes(WORKER_SESSION) && sessionNames(s).includes("captain"),
       { timeoutMs: 10000 }
     );
     expect(sessionNames(withWorker)).toContain("captain");

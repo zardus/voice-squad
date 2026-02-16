@@ -7,7 +7,9 @@ sudo chown ubuntu:ubuntu /run/workspace-tmux
 sudo chmod 755 /run/workspace-tmux
 
 # Start dockerd in the background (docker-in-docker)
-sudo sh -c 'dockerd &>/var/log/dockerd.log' &
+# Use vfs storage driver to avoid overlay-on-overlay issues when the
+# container filesystem is itself overlayfs. Slower but always works.
+sudo sh -c 'dockerd --storage-driver=vfs &>/var/log/dockerd.log' &
 
 # Wait for docker to be ready
 echo "Waiting for dockerd..."

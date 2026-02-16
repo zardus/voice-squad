@@ -67,7 +67,7 @@ for spec in "${TEST_FILES[@]}"; do
     log="$RESULTS_DIR/${name}.log"
 
     (
-        docker compose -p "$project" $COMPOSE_FILES run --rm test-runner \
+        docker compose -p "$project" $COMPOSE_FILES run --build --rm test-runner \
             tests/"$spec" > "$log" 2>&1
         echo $? > "$RESULTS_DIR/${name}.exit"
     ) &

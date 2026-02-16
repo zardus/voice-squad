@@ -18,14 +18,17 @@ function workspaceRun(cmd, { timeout = 30000 } = {}) {
   const win = "dind-test";
   try { workspaceExec(`kill-window -t workspace:${win} 2>/dev/null || true`); } catch {}
   workspaceExec(`new-window -t workspace -n ${win}`);
-  workspaceExec(`send-keys -t workspace:${win} '${cmd}; echo __DIND_DONE__' Enter`);
+  workspaceExec(`send-keys -t workspace:${win} "${cmd}; echo __DIND_DONE__" Enter`);
 
-  // Poll capture-pane until we see the sentinel
+  // Poll capture-pane until the sentinel appears on its own line.
+  // The typed command also contains __DIND_DONE__, so we need to wait
+  // for a second occurrence (the echo output) to confirm the command finished.
   const deadline = Date.now() + timeout;
   let output = "";
   while (Date.now() < deadline) {
     output = workspaceExec(`capture-pane -t workspace:${win} -p -S -200`, { timeout: 5000 });
-    if (output.includes("__DIND_DONE__")) break;
+    const matches = output.split("\n").filter((l) => l.trim() === "__DIND_DONE__");
+    if (matches.length > 0) break;
     try { workspaceExec("run-shell 'sleep 2'", { timeout: 5000 }); } catch {}
   }
   try { workspaceExec(`kill-window -t workspace:${win}`); } catch {}

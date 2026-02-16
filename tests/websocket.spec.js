@@ -6,6 +6,8 @@
 const { test, expect } = require("@playwright/test");
 const { TOKEN, pageUrl, BASE_URL } = require("./helpers/config");
 
+const WS_URL = BASE_URL.replace(/^http/, "ws");
+
 test.describe("WebSocket", () => {
   test.beforeAll(() => {
     if (!TOKEN) throw new Error("Cannot discover VOICE_TOKEN");
@@ -16,7 +18,7 @@ test.describe("WebSocket", () => {
 
     const msg = await page.evaluate(async (params) => {
       return new Promise((resolve, reject) => {
-        const ws = new WebSocket(`ws://localhost:${location.port}?token=${params.token}`);
+        const ws = new WebSocket(`${params.wsUrl}?token=${params.token}`);
         ws.onmessage = (evt) => {
           if (typeof evt.data === "string") {
             const m = JSON.parse(evt.data);
@@ -29,7 +31,7 @@ test.describe("WebSocket", () => {
         ws.onerror = () => reject(new Error("ws error"));
         setTimeout(() => reject(new Error("timeout")), 5000);
       });
-    }, { token: TOKEN });
+    }, { token: TOKEN, wsUrl: WS_URL });
 
     expect(msg.type).toBe("connected");
     expect(["claude", "codex"]).toContain(msg.captain);
@@ -40,7 +42,7 @@ test.describe("WebSocket", () => {
 
     const msg = await page.evaluate(async (params) => {
       return new Promise((resolve, reject) => {
-        const ws = new WebSocket(`ws://localhost:${location.port}?token=${params.token}`);
+        const ws = new WebSocket(`${params.wsUrl}?token=${params.token}`);
         ws.onmessage = (evt) => {
           if (typeof evt.data === "string") {
             const m = JSON.parse(evt.data);
@@ -53,7 +55,7 @@ test.describe("WebSocket", () => {
         ws.onerror = () => reject(new Error("ws error"));
         setTimeout(() => reject(new Error("timeout")), 5000);
       });
-    }, { token: TOKEN });
+    }, { token: TOKEN, wsUrl: WS_URL });
 
     expect(msg.type).toBe("voice_history");
     expect(Array.isArray(msg.entries)).toBe(true);
@@ -62,15 +64,15 @@ test.describe("WebSocket", () => {
   test("rejects connection without token", async ({ page }) => {
     await page.goto(pageUrl());
 
-    const result = await page.evaluate(async () => {
+    const result = await page.evaluate(async (params) => {
       return new Promise((resolve) => {
-        const ws = new WebSocket(`ws://localhost:${location.port}`);
+        const ws = new WebSocket(params.wsUrl);
         ws.onopen = () => resolve("connected");
         ws.onclose = () => resolve("rejected");
         ws.onerror = () => resolve("rejected");
         setTimeout(() => resolve("timeout"), 5000);
       });
-    });
+    }, { wsUrl: WS_URL });
 
     expect(result).toBe("rejected");
   });
@@ -78,15 +80,15 @@ test.describe("WebSocket", () => {
   test("rejects connection with invalid token", async ({ page }) => {
     await page.goto(pageUrl());
 
-    const result = await page.evaluate(async () => {
+    const result = await page.evaluate(async (params) => {
       return new Promise((resolve) => {
-        const ws = new WebSocket(`ws://localhost:${location.port}?token=invalid-token-xyz`);
+        const ws = new WebSocket(`${params.wsUrl}?token=invalid-token-xyz`);
         ws.onopen = () => resolve("connected");
         ws.onclose = () => resolve("rejected");
         ws.onerror = () => resolve("rejected");
         setTimeout(() => resolve("timeout"), 5000);
       });
-    });
+    }, { wsUrl: WS_URL });
 
     expect(result).toBe("rejected");
   });
@@ -96,7 +98,7 @@ test.describe("WebSocket", () => {
 
     const snapshot = await page.evaluate(async (params) => {
       return new Promise((resolve, reject) => {
-        const ws = new WebSocket(`ws://localhost:${location.port}?token=${params.token}`);
+        const ws = new WebSocket(`${params.wsUrl}?token=${params.token}`);
         ws.onmessage = (evt) => {
           if (typeof evt.data === "string") {
             const m = JSON.parse(evt.data);
@@ -110,7 +112,7 @@ test.describe("WebSocket", () => {
         // tmux_snapshot comes every 1s, give it 5s
         setTimeout(() => reject(new Error("no tmux_snapshot received within 5s")), 5000);
       });
-    }, { token: TOKEN });
+    }, { token: TOKEN, wsUrl: WS_URL });
 
     expect(snapshot.type).toBe("tmux_snapshot");
     expect(typeof snapshot.content).toBe("string");
@@ -121,7 +123,7 @@ test.describe("WebSocket", () => {
 
     const resp = await page.evaluate(async (params) => {
       return new Promise((resolve, reject) => {
-        const ws = new WebSocket(`ws://localhost:${location.port}?token=${params.token}`);
+        const ws = new WebSocket(`${params.wsUrl}?token=${params.token}`);
         let connected = false;
         ws.onmessage = (evt) => {
           if (typeof evt.data === "string") {
@@ -138,7 +140,7 @@ test.describe("WebSocket", () => {
         ws.onerror = () => reject(new Error("ws error"));
         setTimeout(() => reject(new Error("timeout")), 5000);
       });
-    }, { token: TOKEN });
+    }, { token: TOKEN, wsUrl: WS_URL });
 
     expect(resp.type).toBe("error");
     expect(resp.message).toContain("Unknown type");
@@ -149,7 +151,7 @@ test.describe("WebSocket", () => {
 
     const resp = await page.evaluate(async (params) => {
       return new Promise((resolve, reject) => {
-        const ws = new WebSocket(`ws://localhost:${location.port}?token=${params.token}`);
+        const ws = new WebSocket(`${params.wsUrl}?token=${params.token}`);
         let connected = false;
         ws.onmessage = (evt) => {
           if (typeof evt.data === "string") {
@@ -166,7 +168,7 @@ test.describe("WebSocket", () => {
         ws.onerror = () => reject(new Error("ws error"));
         setTimeout(() => reject(new Error("timeout")), 5000);
       });
-    }, { token: TOKEN });
+    }, { token: TOKEN, wsUrl: WS_URL });
 
     expect(resp.type).toBe("error");
     expect(resp.message).toContain("Invalid JSON");
@@ -177,7 +179,7 @@ test.describe("WebSocket", () => {
 
     const result = await page.evaluate(async (params) => {
       return new Promise((resolve, reject) => {
-        const ws = new WebSocket(`ws://localhost:${location.port}?token=${params.token}`);
+        const ws = new WebSocket(`${params.wsUrl}?token=${params.token}`);
         let sentCommand = false;
         ws.onmessage = (evt) => {
           if (typeof evt.data === "string") {
@@ -197,7 +199,7 @@ test.describe("WebSocket", () => {
         ws.onerror = () => reject(new Error("ws error"));
         setTimeout(() => reject(new Error("timeout")), 10000);
       });
-    }, { token: TOKEN });
+    }, { token: TOKEN, wsUrl: WS_URL });
 
     // Empty text should be silently ignored (server checks msg.text && msg.text.trim())
     expect(result).toBe("ok");
@@ -208,7 +210,7 @@ test.describe("WebSocket", () => {
 
     const result = await page.evaluate(async (params) => {
       return new Promise((resolve, reject) => {
-        const ws = new WebSocket(`ws://localhost:${location.port}?token=${params.token}`);
+        const ws = new WebSocket(`${params.wsUrl}?token=${params.token}`);
         ws.onmessage = (evt) => {
           if (typeof evt.data === "string") {
             const m = JSON.parse(evt.data);
@@ -228,7 +230,7 @@ test.describe("WebSocket", () => {
         ws.onerror = () => reject(new Error("ws error"));
         setTimeout(() => reject(new Error("timeout")), 10000);
       });
-    }, { token: TOKEN });
+    }, { token: TOKEN, wsUrl: WS_URL });
 
     expect(result).toBe("ok");
   });

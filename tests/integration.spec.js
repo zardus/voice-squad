@@ -10,8 +10,10 @@
 const { test, expect } = require("@playwright/test");
 const { execSync } = require("child_process");
 const fs = require("fs");
-const { TOKEN, pageUrl } = require("./helpers/config");
+const { TOKEN, pageUrl, BASE_URL } = require("./helpers/config");
 const { captainExec } = require("./helpers/tmux");
+
+const WS_URL = BASE_URL.replace(/^http/, "ws");
 
 const INTEGRATION = process.env.TEST_INTEGRATION === "1";
 const TEST_FILE = "/home/ubuntu/test-hello-e2e.txt";
@@ -134,7 +136,7 @@ test.describe("Integration", () => {
     const snapshotTime = await page.evaluate(async (params) => {
       return new Promise((resolve, reject) => {
         const start = Date.now();
-        const ws = new WebSocket(`ws://localhost:${location.port}?token=${params.token}`);
+        const ws = new WebSocket(`${params.wsUrl}?token=${params.token}`);
         ws.onmessage = (evt) => {
           if (typeof evt.data === "string") {
             const m = JSON.parse(evt.data);
@@ -147,7 +149,7 @@ test.describe("Integration", () => {
         ws.onerror = () => reject(new Error("ws error"));
         setTimeout(() => reject(new Error("no snapshot in 3s")), 3000);
       });
-    }, { token: TOKEN });
+    }, { token: TOKEN, wsUrl: WS_URL });
 
     expect(snapshotTime).toBeLessThan(3000);
   });

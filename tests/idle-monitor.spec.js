@@ -65,7 +65,13 @@ test.describe("Idle monitor", () => {
     const deadline = Date.now() + 90000; // 90s generous timeout
     let captainOutput = "";
     while (Date.now() < deadline) {
-      captainOutput = captainExec("capture-pane -t captain:0 -p -S -100");
+      try {
+        captainOutput = captainExec("capture-pane -t captain:0 -p -S -100");
+      } catch {
+        // Captain pane may be temporarily unavailable; retry
+        await new Promise((r) => setTimeout(r, 2000));
+        continue;
+      }
       if (captainOutput.includes("IDLE ALERT") && captainOutput.includes(WORKER_SESSION)) {
         break;
       }
