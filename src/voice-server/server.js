@@ -34,7 +34,12 @@ function readCaptainConfig() {
 }
 
 let CAPTAIN = readCaptainConfig() || process.env.SQUAD_CAPTAIN || "claude";
-const TASKS_ARCHIVED_DIR = path.join(CAPTAIN_DIR, "tasks", "archived");
+const ARCHIVE_DIR = process.env.SQUAD_ARCHIVE_DIR || path.join(CAPTAIN_DIR, "archive");
+const TASK_DEFS_DIR = process.env.SQUAD_TASK_DEFS_DIR || path.join(CAPTAIN_DIR, "tasks");
+const TASK_DEFS_PENDING_DIR = path.join(TASK_DEFS_DIR, "pending");
+const TASK_DEFS_ARCHIVED_DIR = path.join(TASK_DEFS_DIR, "archived");
+const SUMMARIES_DIR = process.env.SQUAD_SUMMARIES_DIR || path.join(ARCHIVE_DIR, "summaries");
+const COMPLETED_TASKS_LIMIT = Number(process.env.SQUAD_COMPLETED_TASKS_LIMIT || process.env.COMPLETED_TASKS_LIMIT || 2000);
 const WS_MAX_PAYLOAD_BYTES = Number(process.env.WS_MAX_PAYLOAD_BYTES || 64 * 1024 * 1024);
 const MAX_AUDIO_UPLOAD_BYTES = Number(process.env.MAX_AUDIO_UPLOAD_BYTES || 64 * 1024 * 1024);
 const VOICE_HISTORY_FILE = process.env.VOICE_HISTORY_FILE || "/tmp/voice-summary-history.json";
@@ -152,76 +157,253 @@ app.get("/api/voice-history", (req, res) => {
   res.json({ entries: voiceSummaryHistory });
 });
 
-async function listArchivedTasks() {
-  let filenames;
+function sanitizeTaskName(taskName) {
+  return String(taskName || "task")
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80) || "task";
+}
+
+function fileTimestampFromIso(isoLike) {
+  const dt = isoLike ? new Date(isoLike) : new Date();
+  const safeDate = Number.isFinite(dt.valueOf()) ? dt : new Date();
+  return safeDate.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+}
+
+function completedAtToEpoch(item) {
+  const t = Date.parse(item.completed_at || "");
+  return Number.isFinite(t) ? t : 0;
+}
+
+function createdAtToEpoch(item) {
+  const t = Date.parse(item.created_at || "");
+  return Number.isFinite(t) ? t : 0;
+}
+
+function isoNoMillis(d) {
+  const dt = d instanceof Date ? d : new Date(d);
+  if (!Number.isFinite(dt.valueOf())) return new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+  return dt.toISOString().replace(/\.\d{3}Z$/, "Z");
+}
+
+async function listExplicitCompletedTasks() {
   try {
-    filenames = await fs.readdir(TASKS_ARCHIVED_DIR);
+    await fs.mkdir(SUMMARIES_DIR, { recursive: true });
   } catch (err) {
-    console.warn(`[completed-tasks] cannot read archived tasks dir ${TASKS_ARCHIVED_DIR}: ${err.message}`);
+    console.warn(`[completed-tasks] cannot access summaries dir ${SUMMARIES_DIR}: ${err.message}`);
     return [];
   }
 
-  const KNOWN_EXTS = [".task", ".log", ".results", ".title"];
-  const taskFiles = new Map();
-
-  for (const filename of filenames) {
-    const ext = KNOWN_EXTS.find((e) => filename.endsWith(e));
-    if (!ext) continue;
-    const taskName = filename.slice(0, -ext.length);
-    if (!taskName) continue;
-    if (!taskFiles.has(taskName)) taskFiles.set(taskName, {});
-    taskFiles.get(taskName)[ext.slice(1)] = filename;
+  let entries = [];
+  try {
+    entries = await fs.readdir(SUMMARIES_DIR, { withFileTypes: true });
+  } catch (err) {
+    console.warn(`[completed-tasks] cannot read summaries dir ${SUMMARIES_DIR}: ${err.message}`);
+    return [];
   }
 
   const tasks = [];
-  for (const [taskName, files] of taskFiles) {
-    const readFile = async (fname) => {
-      if (!fname) return null;
-      try {
-        const content = await fs.readFile(path.join(TASKS_ARCHIVED_DIR, fname), "utf8");
-        return content.trim() || null;
-      } catch {
-        return null;
-      }
-    };
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
+    const fullPath = path.join(SUMMARIES_DIR, entry.name);
+    try {
+      const raw = await fs.readFile(fullPath, "utf8");
+      const parsed = JSON.parse(raw);
+      tasks.push(parsed);
+    } catch (err) {
+      console.warn(`[completed-tasks] skipping ${entry.name}: ${err.message}`);
+    }
+  }
+  tasks.sort((a, b) => completedAtToEpoch(b) - completedAtToEpoch(a));
+  return tasks;
+}
 
-    const getMtime = async (fname) => {
-      if (!fname) return null;
-      try {
-        const st = await fs.stat(path.join(TASKS_ARCHIVED_DIR, fname));
-        return st.mtime;
-      } catch {
-        return null;
-      }
-    };
+function parseArchiveLogName(filename) {
+  if (typeof filename !== "string" || !filename.endsWith(".log")) return null;
+  const base = filename.slice(0, -".log".length);
+  const parts = base.split("_");
+  if (parts.length < 4) return null;
 
-    const [title, taskDef, results, taskMtime, logMtime] = await Promise.all([
-      readFile(files.title),
-      readFile(files.task),
-      readFile(files.results),
-      getMtime(files.task),
-      getMtime(files.log),
-    ]);
+  const timePart = parts[parts.length - 1];
+  const datePart = parts[parts.length - 2];
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(datePart) || !/^\d{2}-\d{2}-\d{2}$/.test(timePart)) {
+    return null;
+  }
 
-    tasks.push({
-      task_name: taskName,
-      title,
-      task_definition: taskDef,
-      results,
-      has_log: !!files.log,
-      started_at: taskMtime ? taskMtime.toISOString() : null,
-      completed_at: logMtime ? logMtime.toISOString() : null,
+  const nameParts = parts.slice(0, -2);
+  if (nameParts.length < 2) return null;
+  const session = nameParts[0];
+  const windowName = nameParts.slice(1).join("_");
+
+  return { session, window: windowName };
+}
+
+async function readTaskDefinition(windowName) {
+  const name = String(windowName || "").trim();
+  if (!name) return null;
+
+  const candidates = [
+    path.join(TASK_DEFS_ARCHIVED_DIR, `${name}.task`),
+    path.join(TASK_DEFS_PENDING_DIR, `${name}.task`),
+    path.join(TASK_DEFS_ARCHIVED_DIR, `${name}.txt`),
+    path.join(TASK_DEFS_PENDING_DIR, `${name}.txt`),
+  ];
+
+  for (const p of candidates) {
+    try {
+      const raw = await fs.readFile(p, "utf8");
+      const trimmed = raw.trim();
+      if (trimmed) return trimmed;
+    } catch {}
+  }
+  return null;
+}
+
+async function listInferredCompletedTasksFromArchiveLogs() {
+  let entries = [];
+  try {
+    entries = await fs.readdir(ARCHIVE_DIR, { withFileTypes: true });
+  } catch (err) {
+    console.warn(`[completed-tasks] cannot read archive dir ${ARCHIVE_DIR}: ${err.message}`);
+    return [];
+  }
+
+  const logFiles = entries
+    .filter((e) => e.isFile() && e.name.endsWith(".log"))
+    .map((e) => e.name);
+
+  const latestByTarget = new Map();
+
+  for (const name of logFiles) {
+    const parsed = parseArchiveLogName(name);
+    if (!parsed) continue;
+    const fullPath = path.join(ARCHIVE_DIR, name);
+
+    let st;
+    try {
+      st = await fs.stat(fullPath);
+    } catch {
+      continue;
+    }
+
+    const key = `${parsed.session}:${parsed.window}`;
+    const existing = latestByTarget.get(key);
+    if (!existing || (st.mtimeMs || 0) > existing.mtimeMs) {
+      latestByTarget.set(key, {
+        ...parsed,
+        mtimeMs: st.mtimeMs || 0,
+        log_file: name,
+      });
+    }
+  }
+
+  const inferred = Array.from(latestByTarget.values())
+    .sort((a, b) => (b.mtimeMs || 0) - (a.mtimeMs || 0));
+
+  const out = [];
+  for (const item of inferred) {
+    const completedAt = item.mtimeMs ? isoNoMillis(new Date(item.mtimeMs)) : null;
+    out.push({
+      task_name: item.window,
+      completed_at: completedAt,
+      short_summary: "Completed (inferred from archived pane log; missing explicit completion record).",
+      worker_type: "unknown",
+      session: item.session,
+      window: item.window,
+      archive_log: item.log_file,
+      task_definition: await readTaskDefinition(item.window),
     });
   }
 
-  tasks.sort((a, b) => {
-    const aTime = Date.parse(a.completed_at || a.started_at || "") || 0;
-    const bTime = Date.parse(b.completed_at || b.started_at || "") || 0;
-    return bTime - aTime;
-  });
+  return out;
+}
 
+async function listPendingTasks() {
+  let entries = [];
+  try {
+    await fs.mkdir(TASK_DEFS_PENDING_DIR, { recursive: true });
+    entries = await fs.readdir(TASK_DEFS_PENDING_DIR, { withFileTypes: true });
+  } catch (err) {
+    console.warn(`[pending-tasks] cannot read pending tasks dir ${TASK_DEFS_PENDING_DIR}: ${err.message}`);
+    return [];
+  }
+
+  const tasks = [];
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith(".task")) continue;
+    const fullPath = path.join(TASK_DEFS_PENDING_DIR, entry.name);
+    try {
+      const [raw, stat] = await Promise.all([
+        fs.readFile(fullPath, "utf8"),
+        fs.stat(fullPath),
+      ]);
+      tasks.push({
+        task_name: path.basename(entry.name, ".task"),
+        content: raw,
+        created_at: new Date(stat.mtimeMs || Date.now()).toISOString(),
+      });
+    } catch (err) {
+      console.warn(`[pending-tasks] skipping ${entry.name}: ${err.message}`);
+    }
+  }
+
+  tasks.sort((a, b) => createdAtToEpoch(b) - createdAtToEpoch(a));
   return tasks;
 }
+
+async function listCompletedTasks() {
+  const explicit = await listExplicitCompletedTasks();
+  const inferred = await listInferredCompletedTasksFromArchiveLogs();
+
+  const mergedByKey = new Map();
+  const add = (task) => {
+    if (!task || typeof task !== "object") return;
+    const session = typeof task.session === "string" ? task.session : "";
+    const windowName = typeof task.window === "string" ? task.window : "";
+    const taskName = typeof task.task_name === "string" ? task.task_name : "";
+    const key = (session && windowName) ? `${session}:${windowName}` : `name:${taskName}`;
+    if (!key || key === "name:") return;
+
+    const prev = mergedByKey.get(key);
+    if (!prev) {
+      mergedByKey.set(key, task);
+      return;
+    }
+
+    const prevEpoch = completedAtToEpoch(prev);
+    const nextEpoch = completedAtToEpoch(task);
+    const newest = nextEpoch >= prevEpoch ? task : prev;
+    const oldest = newest === task ? prev : task;
+    mergedByKey.set(key, { ...oldest, ...newest });
+  };
+
+  for (const t of inferred) add(t);
+  for (const t of explicit) add(t);
+
+  const merged = Array.from(mergedByKey.values());
+  merged.sort((a, b) => completedAtToEpoch(b) - completedAtToEpoch(a));
+
+  if (Number.isFinite(COMPLETED_TASKS_LIMIT) && COMPLETED_TASKS_LIMIT > 0) {
+    return merged.slice(0, COMPLETED_TASKS_LIMIT);
+  }
+  return merged;
+}
+
+app.get("/api/pending-tasks", async (req, res) => {
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  if (url.searchParams.get("token") !== TOKEN) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  try {
+    const tasks = await listPendingTasks();
+    res.json({ tasks });
+  } catch (err) {
+    console.error("[pending-tasks] GET error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 app.get("/api/completed-tasks", async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
@@ -229,10 +411,54 @@ app.get("/api/completed-tasks", async (req, res) => {
     return res.status(401).json({ error: "Unauthorized" });
   }
   try {
-    const tasks = await listArchivedTasks();
+    const tasks = await listCompletedTasks();
     res.json({ tasks });
   } catch (err) {
     console.error("[completed-tasks] GET error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/completed-tasks", async (req, res) => {
+  const { token, ...summary } = req.body || {};
+  if (token !== TOKEN) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  if (!summary || typeof summary !== "object") {
+    return res.status(400).json({ error: "Missing summary object" });
+  }
+  if (!summary.task_name || typeof summary.task_name !== "string" || !summary.task_name.trim()) {
+    return res.status(400).json({ error: "Missing or empty 'task_name'" });
+  }
+
+  const completedAt = summary.completed_at && typeof summary.completed_at === "string"
+    ? summary.completed_at
+    : new Date().toISOString();
+  const finalSummary = { ...summary, completed_at: completedAt };
+
+  try {
+    await fs.mkdir(SUMMARIES_DIR, { recursive: true });
+    const baseName = `${fileTimestampFromIso(finalSummary.completed_at)}_${sanitizeTaskName(finalSummary.task_name)}`;
+    let candidate = `${baseName}.json`;
+    let suffix = 1;
+    while (true) {
+      try {
+        await fs.access(path.join(SUMMARIES_DIR, candidate));
+        candidate = `${baseName}_${suffix}.json`;
+        suffix++;
+      } catch {
+        break;
+      }
+    }
+
+    await fs.writeFile(
+      path.join(SUMMARIES_DIR, candidate),
+      JSON.stringify(finalSummary, null, 2) + "\n",
+      "utf8"
+    );
+    res.status(201).json({ ok: true, file: candidate });
+  } catch (err) {
+    console.error("[completed-tasks] POST error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -250,7 +476,7 @@ app.get("/api/task-log", async (req, res) => {
     return res.status(400).json({ error: "Invalid task name" });
   }
   try {
-    const logPath = path.join(TASKS_ARCHIVED_DIR, taskName + ".log");
+    const logPath = path.join(TASK_DEFS_ARCHIVED_DIR, taskName + ".log");
     const content = await fs.readFile(logPath, "utf8");
     res.json({ log: content });
   } catch (err) {

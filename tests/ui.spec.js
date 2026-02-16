@@ -36,14 +36,14 @@ test.describe("UI", () => {
   // ─── Tab bar ─────────────────────────────────────────────────
 
   test.describe("Tab bar", () => {
-    test("shows five tabs: Terminal, Screens, Summary, Done, Voice", async ({ page }) => {
+    test("shows five tabs: Terminal, Screens, Summary, Tasks, Voice", async ({ page }) => {
       await page.goto(pageUrl());
       const tabs = page.locator("#tab-bar .tab");
       await expect(tabs).toHaveCount(5);
       await expect(tabs.nth(0)).toHaveText("Terminal");
       await expect(tabs.nth(1)).toHaveText("Screens");
       await expect(tabs.nth(2)).toHaveText("Summary");
-      await expect(tabs.nth(3)).toHaveText("Done");
+      await expect(tabs.nth(3)).toHaveText("Tasks");
       await expect(tabs.nth(4)).toHaveText("Voice");
     });
 
@@ -502,16 +502,17 @@ test.describe("UI", () => {
     });
   });
 
-  // ─── Completed tab ──────────────────────────────────────────
+  // ─── Tasks tab ──────────────────────────────────────────────
 
-  test.describe("Completed tab", () => {
-    test("completed tab loads with header and refresh button", async ({ page }) => {
+  test.describe("Tasks tab", () => {
+    test("tasks tab loads with sections and refresh button", async ({ page }) => {
       await page.goto(pageUrl());
-      await page.click('[data-tab="completed"]');
+      await page.click('[data-tab="tasks"]');
 
-      await expect(page.locator("#completed-tab-title")).toHaveText("completed tasks");
-      await expect(page.locator("#refresh-completed-btn")).toBeVisible();
-      await expect(page.locator("#completed-tab-content")).toBeVisible();
+      await expect(page.locator("#tasks-tab-title")).toHaveText("tasks");
+      await expect(page.locator("#refresh-tasks-btn")).toBeVisible();
+      await expect(page.locator("#pending-tasks-section .tasks-section-title")).toHaveText("Pending Tasks");
+      await expect(page.locator("#completed-tasks-section .tasks-section-title")).toHaveText("Completed Tasks");
     });
 
     test("completed task accordion expands and collapses", async ({ page }) => {
@@ -536,7 +537,7 @@ test.describe("UI", () => {
       });
 
       await page.goto(pageUrl());
-      await page.click('[data-tab="completed"]');
+      await page.click('[data-tab="tasks"]');
       await expect(page.locator(".completed-task-item")).toHaveCount(1);
       await expect(page.locator(".completed-task-short")).toContainText("started");
 
