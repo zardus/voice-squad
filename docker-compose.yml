@@ -22,7 +22,7 @@ services:
       - GH_TOKEN
       - TMUX_TMPDIR=/run/workspace-tmux
     healthcheck:
-      test: ["CMD-SHELL", "tmux -S /run/workspace-tmux/default has-session 2>/dev/null"]
+      test: ["CMD-SHELL", "cat /proc/1/comm | grep -q sleep"]
       interval: 5s
       timeout: 3s
       retries: 120
