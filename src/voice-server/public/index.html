@@ -18,7 +18,7 @@
       <button class="tab active" data-tab="terminal">Terminal</button>
       <button class="tab" data-tab="screens">Screens</button>
       <button class="tab" data-tab="summary">Summary</button>
-      <button class="tab" data-tab="completed">Done</button>
+      <button class="tab" data-tab="tasks">Tasks</button>
       <button class="tab" data-tab="voice">Voice</button>
     </div>
 
@@ -90,13 +90,20 @@
       </div>
     </div>
 
-    <div id="completed-view" class="tab-content">
-      <div id="completed-tab-header">
-        <span id="completed-tab-title">completed tasks</span>
-        <button id="refresh-completed-btn" title="Refresh completed tasks">Refresh</button>
+    <div id="tasks-view" class="tab-content">
+      <div id="tasks-tab-header">
+        <span id="tasks-tab-title">tasks</span>
+        <button id="refresh-tasks-btn" title="Refresh tasks">Refresh</button>
       </div>
-      <div id="completed-tab-body">
-        <div id="completed-tab-content">No completed tasks yet.</div>
+      <div id="tasks-tab-body">
+        <section class="tasks-section" id="pending-tasks-section">
+          <h2 class="tasks-section-title">Pending Tasks</h2>
+          <div id="pending-tasks-content">No pending tasks.</div>
+        </section>
+        <section class="tasks-section" id="completed-tasks-section">
+          <h2 class="tasks-section-title">Completed Tasks</h2>
+          <div id="completed-tasks-content">No completed tasks yet.</div>
+        </section>
       </div>
     </div>
 

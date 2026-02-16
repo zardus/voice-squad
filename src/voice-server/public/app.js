@@ -35,8 +35,9 @@ const captainToolSelect = document.getElementById("captain-tool-select");
 const restartCaptainBtn = document.getElementById("restart-captain-btn");
 const voiceCaptainToolSelect = document.getElementById("voice-captain-tool-select");
 const voiceRestartCaptainBtn = document.getElementById("voice-restart-captain-btn");
-const completedTabContentEl = document.getElementById("completed-tab-content");
-const refreshCompletedBtn = document.getElementById("refresh-completed-btn");
+const pendingTasksContentEl = document.getElementById("pending-tasks-content");
+const completedTasksContentEl = document.getElementById("completed-tasks-content");
+const refreshTasksBtn = document.getElementById("refresh-tasks-btn");
 const loginBtn = document.getElementById("login-btn");
 const voiceLoginBtn = document.getElementById("voice-login-btn");
 const loginModal = document.getElementById("login-modal");
@@ -1807,7 +1808,7 @@ tabs.forEach((tab) => {
     const wasVoice = document.getElementById("voice-view").classList.contains("active");
     const wasScreens = document.getElementById("screens-view").classList.contains("active");
     const wasSummary = document.getElementById("summary-view").classList.contains("active");
-    const wasCompleted = document.getElementById("completed-view").classList.contains("active");
+    const wasTasks = document.getElementById("tasks-view").classList.contains("active");
     tabs.forEach((t) => t.classList.toggle("active", t === tab));
     scrollActiveTabIntoView(tab, smoothScroll);
     tabContents.forEach((c) => {
@@ -1841,7 +1842,7 @@ tabs.forEach((tab) => {
 
     // Summary tab: auto-refresh once on tab switch so the user sees fresh data.
     if (target === "summary" && !wasSummary) refreshSummary();
-    if (target === "completed" && !wasCompleted) refreshCompletedTasks();
+    if (target === "tasks" && !wasTasks) refreshTasks();
   });
 });
 
@@ -2279,7 +2280,7 @@ function escapeHtml(s) {
   return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-function formatCompletedAt(iso) {
+function formatTimestamp(iso) {
   const dt = new Date(iso || "");
   if (!Number.isFinite(dt.valueOf())) return "unknown time";
   return dt.toLocaleString([], {
@@ -2290,6 +2291,8 @@ function formatCompletedAt(iso) {
     minute: "2-digit",
   });
 }
+
+const formatCompletedAt = formatTimestamp;
 
 function formatDuration(startIso, endIso) {
   const start = Date.parse(startIso || "");
@@ -2305,9 +2308,58 @@ function formatDuration(startIso, endIso) {
   return hrs + "h " + (mins % 60) + "m";
 }
 
+function pendingPreview(content) {
+  const normalized = String(content || "").replace(/\s+/g, " ").trim();
+  if (!normalized) return "(No task content)";
+  if (normalized.length <= 180) return normalized;
+  return `${normalized.slice(0, 180)}...`;
+}
+
+function renderPendingTasks(tasks) {
+  if (!Array.isArray(tasks) || tasks.length === 0) {
+    pendingTasksContentEl.innerHTML = '<div class="pending-empty">No pending tasks.</div>';
+    return;
+  }
+
+  const list = document.createElement("div");
+  list.className = "pending-task-list";
+
+  for (const task of tasks) {
+    const item = document.createElement("details");
+    item.className = "pending-task-item";
+
+    const summary = document.createElement("summary");
+    summary.className = "pending-task-summary";
+
+    const heading = document.createElement("div");
+    heading.className = "pending-task-heading";
+    heading.textContent = `${task.task_name || "unnamed-task"} · ${formatTimestamp(task.created_at)}`;
+
+    const preview = document.createElement("div");
+    preview.className = "pending-task-preview";
+    preview.textContent = pendingPreview(task.content);
+
+    summary.appendChild(heading);
+    summary.appendChild(preview);
+    item.appendChild(summary);
+
+    const body = document.createElement("div");
+    body.className = "pending-task-body";
+    const content = document.createElement("pre");
+    content.className = "pending-task-content";
+    content.textContent = String(task.content || "");
+    body.appendChild(content);
+    item.appendChild(body);
+    list.appendChild(item);
+  }
+
+  pendingTasksContentEl.innerHTML = "";
+  pendingTasksContentEl.appendChild(list);
+}
+
 function renderCompletedTasks(tasks) {
   if (!Array.isArray(tasks) || tasks.length === 0) {
-    completedTabContentEl.innerHTML = '<div class="completed-empty">No completed tasks yet.</div>';
+    completedTasksContentEl.innerHTML = '<div class="completed-empty">No completed tasks yet.</div>';
     return;
   }
 
@@ -2323,7 +2375,7 @@ function renderCompletedTasks(tasks) {
 
     const heading = document.createElement("div");
     heading.className = "completed-task-heading";
-    heading.textContent = task.title || task.task_name || "unnamed-task";
+    heading.textContent = `${task.task_name || "unnamed-task"} · ${formatTimestamp(task.completed_at)}`;
 
     const timeInfo = document.createElement("div");
     timeInfo.className = "completed-task-short";
@@ -2401,42 +2453,58 @@ function renderCompletedTasks(tasks) {
     list.appendChild(item);
   }
 
-  completedTabContentEl.innerHTML = "";
-  completedTabContentEl.appendChild(list);
+  completedTasksContentEl.innerHTML = "";
+  completedTasksContentEl.appendChild(list);
 }
 
-async function refreshCompletedTasks() {
-  if (refreshCompletedBtn.disabled) return;
+async function refreshTasks() {
+  if (refreshTasksBtn.disabled) return;
 
-  refreshCompletedBtn.disabled = true;
-  refreshCompletedBtn.textContent = "Loading...";
-  completedTabContentEl.innerHTML = '<div class="completed-loading">Loading completed tasks...</div>';
+  refreshTasksBtn.disabled = true;
+  refreshTasksBtn.textContent = "Loading...";
+  pendingTasksContentEl.innerHTML = '<div class="pending-loading">Loading pending tasks...</div>';
+  completedTasksContentEl.innerHTML = '<div class="completed-loading">Loading completed tasks...</div>';
 
   try {
-    const resp = await fetch(`/api/completed-tasks?token=${encodeURIComponent(token)}`);
-    if (!resp.ok) {
-      const err = await resp.json().catch(() => ({ error: "Request failed" }));
-      completedTabContentEl.innerHTML = '<div class="completed-error">Error: ' +
+    const [pendingResp, completedResp] = await Promise.all([
+      fetch(`/api/pending-tasks?token=${encodeURIComponent(token)}`),
+      fetch(`/api/completed-tasks?token=${encodeURIComponent(token)}`),
+    ]);
+
+    if (pendingResp.ok) {
+      const pendingData = await pendingResp.json();
+      renderPendingTasks(pendingData.tasks || []);
+    } else {
+      const err = await pendingResp.json().catch(() => ({ error: "Request failed" }));
+      pendingTasksContentEl.innerHTML = '<div class="pending-error">Error: ' +
         escapeHtml(err.error || "Request failed") + "</div>";
-      return;
     }
-    const data = await resp.json();
-    renderCompletedTasks(data.tasks || []);
+
+    if (completedResp.ok) {
+      const completedData = await completedResp.json();
+      renderCompletedTasks(completedData.tasks || []);
+    } else {
+      const err = await completedResp.json().catch(() => ({ error: "Request failed" }));
+      completedTasksContentEl.innerHTML = '<div class="completed-error">Error: ' +
+        escapeHtml(err.error || "Request failed") + "</div>";
+    }
   } catch (err) {
-    completedTabContentEl.innerHTML = '<div class="completed-error">Error: ' +
+    pendingTasksContentEl.innerHTML = '<div class="pending-error">Error: ' +
+      escapeHtml(err.message || "Request failed") + "</div>";
+    completedTasksContentEl.innerHTML = '<div class="completed-error">Error: ' +
       escapeHtml(err.message || "Request failed") + "</div>";
   } finally {
-    refreshCompletedBtn.disabled = false;
-    refreshCompletedBtn.textContent = "Refresh";
+    refreshTasksBtn.disabled = false;
+    refreshTasksBtn.textContent = "Refresh";
   }
 }
 
 refreshSummaryBtn.addEventListener("click", refreshSummary);
-refreshCompletedBtn.addEventListener("click", refreshCompletedTasks);
+refreshTasksBtn.addEventListener("click", refreshTasks);
 
 setInterval(() => {
-  if (document.getElementById("completed-view").classList.contains("active")) {
-    refreshCompletedTasks();
+  if (document.getElementById("tasks-view").classList.contains("active")) {
+    refreshTasks();
   }
 }, 30000);
 
