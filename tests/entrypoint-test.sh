@@ -21,8 +21,29 @@ if ! tmux -S "$CAPTAIN_TMUX_SOCKET" has-session -t captain 2>/dev/null; then
 fi
 echo "[ok] captain tmux session found"
 
+# Wait for workspace tmux session (started by workspace container)
+echo "Waiting for workspace tmux session..."
+timeout=30
+while ! tmux -S "$WORKSPACE_TMUX_SOCKET" has-session -t workspace 2>/dev/null && [ $timeout -gt 0 ]; do
+    sleep 1
+    timeout=$((timeout - 1))
+done
+
+if ! tmux -S "$WORKSPACE_TMUX_SOCKET" has-session -t workspace 2>/dev/null; then
+    echo "WARNING: workspace tmux session not available after 30s (some tests may fail)"
+else
+    echo "[ok] workspace tmux session found"
+fi
+
+# Discover VOICE_TOKEN from shared volume if not set in environment
+if [ -z "${VOICE_TOKEN:-}" ] && [ -f /home/ubuntu/.voice-token ]; then
+    VOICE_TOKEN=$(cat /home/ubuntu/.voice-token | head -1)
+    export VOICE_TOKEN
+    echo "[ok] Discovered VOICE_TOKEN from .voice-token"
+fi
+
 # Write voice URL for tests
-echo "http://localhost:3000?token=${VOICE_TOKEN}" > /tmp/voice-url.txt
+echo "http://voice-server:3000?token=${VOICE_TOKEN}" > /tmp/voice-url.txt
 
 # Run tests
 cd /opt/tests

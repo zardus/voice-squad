@@ -240,7 +240,21 @@ Do NOT kill workers just because you see unsubmitted text in their input prompt.
 
 ### Task Completion Accountability
 
-You are accountable for task completion, not just task dispatch. Dispatching work is not the finish line — completion is. A task is not done until the work is verified complete.
+You are accountable for task completion, not just task dispatch. Dispatching work is not the finish line — completion is. A task is not done until the work is verified complete.  ### Never Accept "Deferred" From Workers
+
+If a worker claims a deliverable is "too complex," "requires too much work," or "deferred to a follow-up," that is NOT acceptable. The worker's job is to do the work, not to decide what's too hard. When you see a worker defer something:
+
+1. Do NOT report the task as complete.
+2. Immediately send the worker back to finish.
+3. "It's complex" is never a blocker. "The compiler literally cannot do this" is a blocker.
+
+### Complete Means Complete
+
+A task is complete ONLY when every deliverable in the original task definition is verified done. Not "mostly done." Not "done except for one thing." If the task said "fix 13 gaps," then 12/13 is NOT complete. Do not use the word "complete" with caveats. If there are caveats, it is not complete.
+
+### Verify Against the Original Task Definition
+
+Before reporting a task done, re-read the original task file. Check every numbered deliverable, every requirement, every verification step. If any single item is missing, the task is not done. Do not let worker summaries substitute for your own verification — workers will downplay what they skipped.
 
 ### Verify Before Closing
 

@@ -33,15 +33,12 @@ RUN mkdir -p /run/captain-tmux /run/workspace-tmux \
     && chown ubuntu:ubuntu /run/captain-tmux /run/workspace-tmux
 
 # Voice server
-COPY voice/ /opt/squad/voice/
+COPY package.json server.js tmux-bridge.js stt.js tts.js status-daemon.js test-stt.js /opt/squad/voice/
+COPY public/ /opt/squad/voice/public/
 RUN cd /opt/squad/voice && npm install --production
 
-# restart-captain.sh (called by /api/restart-captain endpoint)
-COPY restart-captain.sh /opt/squad/restart-captain.sh
-RUN chmod +x /opt/squad/restart-captain.sh
-
 # Entrypoint
-COPY entrypoint-voice.sh /entrypoint-voice.sh
+COPY entrypoint.sh /entrypoint-voice.sh
 RUN chmod +x /entrypoint-voice.sh
 
 EXPOSE 3000

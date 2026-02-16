@@ -50,7 +50,7 @@ function activateStatusDaemon(page) {
   return page.evaluate(async (params) => {
     return new Promise((resolve, reject) => {
       const ws = new WebSocket(
-        `ws://localhost:3000?token=${encodeURIComponent(params.token)}`
+        `ws://voice-server:3000?token=${encodeURIComponent(params.token)}`
       );
       ws.onopen = () => {
         ws.send(JSON.stringify({ type: "status_tab_active" }));
@@ -115,7 +115,7 @@ test.describe("Workspace restart", () => {
 
     // 3. Wait for /api/status to include the new session
     const withWorker = await waitForStatus(
-      (s) => sessionNames(s).includes(WORKER_SESSION),
+      (s) => sessionNames(s).includes(WORKER_SESSION) && sessionNames(s).includes("captain"),
       { timeoutMs: 10000 }
     );
     expect(sessionNames(withWorker)).toContain("captain");

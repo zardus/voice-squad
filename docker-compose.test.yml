@@ -1,124 +1,33 @@
-# Test stack: reuses real images with a lightweight test-runner.
+# Test overrides — layered on top of docker-compose.yml.
 #
 # Usage (via test.sh):
-#   docker compose -p voice-squad-test -f docker-compose.test.yml run --build --rm test-runner
+#   docker compose -p voice-squad-test -f docker-compose.yml -f docker-compose.test.yml \
+#     run --build --rm test-runner
 #
-# All services share the workspace PID/network namespace so localhost:3000,
-# pgrep, and tmux commands work transparently from the test-runner.
+# All real services run their real entrypoints with real API keys.
+# The only override is swapping ./home for an ephemeral volume.
 
 services:
   workspace:
-    build:
-      context: src
-      dockerfile: Dockerfile.workspace
-    entrypoint: ["/bin/bash", "-c"]
-    command:
-      - |
-        set -e
-        sudo mkdir -p /run/workspace-tmux && sudo chown ubuntu:ubuntu /run/workspace-tmux && sudo chmod 755 /run/workspace-tmux
-        tmux -S /run/workspace-tmux/default new-session -d -s workspace -c /home/ubuntu
-        mkdir -p /run/workspace-tmux/tmux-$(id -u)
-        ln -sf /run/workspace-tmux/default /run/workspace-tmux/tmux-$(id -u)/default
-        exec sleep infinity
     volumes:
       - test-home:/home/ubuntu
-      - workspace-tmux:/run/workspace-tmux
-    environment:
-      - TMUX_TMPDIR=/run/workspace-tmux
-    healthcheck:
-      test: ["CMD-SHELL", "tmux -S /run/workspace-tmux/default has-session 2>/dev/null"]
-      interval: 2s
-      timeout: 3s
-      retries: 30
-      start_period: 3s
 
   captain:
-    build:
-      context: src
-      dockerfile: Dockerfile.captain
-    pid: "service:workspace"
-    entrypoint: ["/bin/bash", "-c"]
-    command:
-      - |
-        set -e
-        sudo mkdir -p /run/captain-tmux /run/workspace-tmux
-        sudo chown ubuntu:ubuntu /run/captain-tmux /run/workspace-tmux
-        sudo chmod 755 /run/captain-tmux /run/workspace-tmux
-        mkdir -p /home/ubuntu/captain/archive/summaries
-        mkdir -p /home/ubuntu/captain/task-definitions/pending
-        mkdir -p /home/ubuntu/captain/task-definitions/archived
-        cp /opt/squad/captain/instructions.md /home/ubuntu/captain/CLAUDE.md
-        printf 'OPENAI_API_KEY="%s"\nANTHROPIC_API_KEY="%s"\n' "$$OPENAI_API_KEY" "$$ANTHROPIC_API_KEY" > /home/ubuntu/env
-        echo "$$VOICE_TOKEN" > /home/ubuntu/.voice-token
-        tmux -S /run/captain-tmux/default new-session -d -s captain -c /home/ubuntu
-        exec sleep infinity
-    depends_on:
-      workspace:
-        condition: service_healthy
     volumes:
       - test-home:/home/ubuntu
-      - captain-tmux:/run/captain-tmux
-      - workspace-tmux:/run/workspace-tmux
-    environment:
-      - VOICE_TOKEN=test-token-for-ci
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-sk-test-dummy}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-sk-ant-test-dummy}
-      - CAPTAIN_TMUX_SOCKET=/run/captain-tmux/default
-      - TMUX_TMPDIR=/run/workspace-tmux
-    healthcheck:
-      test: ["CMD-SHELL", "tmux -S /run/captain-tmux/default has-session -t captain 2>/dev/null"]
-      interval: 2s
-      timeout: 3s
-      retries: 30
-      start_period: 3s
 
   voice-server:
-    build:
-      context: src
-      dockerfile: Dockerfile.voice
-    network_mode: "service:workspace"
-    pid: "service:workspace"
-    depends_on:
-      captain:
-        condition: service_healthy
     volumes:
       - test-home:/home/ubuntu
-      - captain-tmux:/run/captain-tmux
-      - workspace-tmux:/run/workspace-tmux
-    environment:
-      - VOICE_TOKEN=test-token-for-ci
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-sk-test-dummy}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-sk-ant-test-dummy}
-      - CAPTAIN_TMUX_SOCKET=/run/captain-tmux/default
-      - WORKSPACE_TMUX_SOCKET=/run/workspace-tmux/default
-    healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:3000/ || exit 1"]
-      interval: 3s
-      timeout: 3s
-      retries: 30
-      start_period: 5s
 
-  pane-monitor:
-    build:
-      context: src
-      dockerfile: Dockerfile.pane-monitor
-    pid: "service:workspace"
-    depends_on:
-      captain:
-        condition: service_healthy
+  tunnel:
     volumes:
-      - captain-tmux:/run/captain-tmux
-      - workspace-tmux:/run/workspace-tmux
-    environment:
-      - CAPTAIN_TMUX_SOCKET=/run/captain-tmux/default
-      - WORKSPACE_TMUX_SOCKET=/run/workspace-tmux/default
+      - test-home:/home/ubuntu
 
   test-runner:
     build:
       context: .
       dockerfile: tests/Dockerfile.test
-    network_mode: "service:workspace"
-    pid: "service:workspace"
     depends_on:
       voice-server:
         condition: service_healthy
@@ -129,15 +38,13 @@ services:
       - captain-tmux:/run/captain-tmux
       - workspace-tmux:/run/workspace-tmux
     environment:
-      - VOICE_TOKEN=test-token-for-ci
+      - VOICE_TOKEN
       - TEST_INTEGRATION=1
       - TEST_CAPTAIN=${TEST_CAPTAIN:-}
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-sk-test-dummy}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-sk-ant-test-dummy}
+      - OPENAI_API_KEY
+      - ANTHROPIC_API_KEY
       - CAPTAIN_TMUX_SOCKET=/run/captain-tmux/default
       - WORKSPACE_TMUX_SOCKET=/run/workspace-tmux/default
 
 volumes:
-  captain-tmux:
-  workspace-tmux:
   test-home:

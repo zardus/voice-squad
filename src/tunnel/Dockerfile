@@ -19,13 +19,13 @@ RUN curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/downloa
     && chmod +x /usr/local/bin/cloudflared
 
 # QR code display
-COPY voice/show-qr.js /opt/squad/show-qr.js
+COPY show-qr.js /opt/squad/show-qr.js
 RUN cd /opt/squad && npm init -y > /dev/null 2>&1 && npm install --production qrcode-terminal
 
 # Set up ubuntu user
 RUN echo "ubuntu ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
-COPY entrypoint-tunnel.sh /entrypoint-tunnel.sh
+COPY entrypoint.sh /entrypoint-tunnel.sh
 RUN chmod +x /entrypoint-tunnel.sh
 
 USER ubuntu

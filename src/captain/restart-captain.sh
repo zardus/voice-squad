@@ -194,7 +194,7 @@ echo "[restart-captain] Launching: $CMD"
 # Ensure we're in the captain working directory and have env vars.
 # Unset TMUX so the captain CLI doesn't think it's already inside tmux
 # (it has its own tmux server; its TMUX_TMPDIR points to the workspace).
-tmux "${TMUX_OPTS[@]}" send-keys -t captain:0 "cd /home/ubuntu/captain && unset TMUX && set -a && . /home/ubuntu/env && set +a && $CMD" Enter
+tmux "${TMUX_OPTS[@]}" send-keys -t captain:0 "cd /home/ubuntu/captain && unset TMUX && { [ -f /home/ubuntu/env ] && set -a && . /home/ubuntu/env && set +a || true; } && $CMD" Enter
 
 # ---------------------------------------------------------------------------
 # Verify the new captain started

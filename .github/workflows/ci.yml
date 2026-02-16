@@ -12,4 +12,8 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Run tests
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY || 'sk-test-dummy' }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY || 'sk-ant-test-dummy' }}
+          VOICE_TOKEN: test-token-for-ci
         run: ./test.sh
