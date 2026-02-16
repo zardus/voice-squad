@@ -83,11 +83,10 @@ TEST_CAPTAIN=1 ./test.sh captain.spec.js
 `test.sh` uses `docker compose -p voice-squad-test -f docker-compose.yml -f docker-compose.test.yml` to namespace everything away from production. On exit it tears everything down (`down -v --remove-orphans`).
 
 **Test overrides** (see `docker-compose.test.yml`):
-- **workspace** — real image + real entrypoint (dockerd, tmux, DinD — the works)
-- **captain** — stub entrypoint (tmux session + config, no real agent)
-- **voice-server** — real entrypoint, shared PID/network namespace
-- **pane-monitor** — real entrypoint, shared PID namespace
-- **tunnel** — excluded via profile
+- All services run their **real entrypoints** with real API keys
+- `./home` is swapped for an ephemeral `test-home` volume
+- PID/network namespaces are shared so the test-runner can reach `localhost:3000` and inspect processes
+- **tunnel** is excluded via profile
 - **test-runner** — lightweight: Ubuntu + Node + Playwright + Chromium + tmux client
 
 All services share the workspace PID/network namespace so `localhost:3000`, `pgrep`, and `tmux` commands work transparently from the test-runner.

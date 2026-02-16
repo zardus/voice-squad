@@ -21,6 +21,13 @@ if ! tmux -S "$CAPTAIN_TMUX_SOCKET" has-session -t captain 2>/dev/null; then
 fi
 echo "[ok] captain tmux session found"
 
+# Discover VOICE_TOKEN from shared volume if not set in environment
+if [ -z "${VOICE_TOKEN:-}" ] && [ -f /home/ubuntu/.voice-token ]; then
+    VOICE_TOKEN=$(cat /home/ubuntu/.voice-token | head -1)
+    export VOICE_TOKEN
+    echo "[ok] Discovered VOICE_TOKEN from .voice-token"
+fi
+
 # Write voice URL for tests
 echo "http://localhost:3000?token=${VOICE_TOKEN}" > /tmp/voice-url.txt
 

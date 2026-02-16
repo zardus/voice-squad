@@ -4,66 +4,28 @@
 #   docker compose -p voice-squad-test -f docker-compose.yml -f docker-compose.test.yml \
 #     run --build --rm test-runner
 #
-# Overrides: swap ./home for an ephemeral test-home volume, inject dummy API
-# keys, stub the captain (no real agent), share PID/network namespaces so
-# localhost:3000/pgrep/tmux work from the test-runner, and disable tunnel.
+# All real services run their real entrypoints with real API keys.
+# Overrides only swap ./home for an ephemeral volume, share PID/network
+# namespaces so the test-runner can reach localhost:3000 and inspect
+# processes, and disable the tunnel.
 
 services:
   workspace:
     volumes:
       - test-home:/home/ubuntu
-    healthcheck:
-      interval: 2s
-      retries: 30
-      start_period: 10s
 
   captain:
     pid: "service:workspace"
-    # Stub: set up tmux + config without launching a real agent
-    entrypoint: ["/bin/bash", "-c"]
-    command:
-      - |
-        set -e
-        sudo mkdir -p /run/captain-tmux /run/workspace-tmux
-        sudo chown ubuntu:ubuntu /run/captain-tmux /run/workspace-tmux
-        sudo chmod 755 /run/captain-tmux /run/workspace-tmux
-        mkdir -p /home/ubuntu/captain/archive/summaries
-        mkdir -p /home/ubuntu/captain/task-definitions/pending
-        mkdir -p /home/ubuntu/captain/task-definitions/archived
-        cp /opt/squad/captain/instructions.md /home/ubuntu/captain/CLAUDE.md
-        printf 'OPENAI_API_KEY="%s"\nANTHROPIC_API_KEY="%s"\n' "$$OPENAI_API_KEY" "$$ANTHROPIC_API_KEY" > /home/ubuntu/env
-        echo "$$VOICE_TOKEN" > /home/ubuntu/.voice-token
-        tmux -S /run/captain-tmux/default new-session -d -s captain -c /home/ubuntu
-        exec sleep infinity
-    restart: "no"
     volumes:
       - test-home:/home/ubuntu
-    environment:
-      - VOICE_TOKEN=test-token-for-ci
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-sk-test-dummy}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-sk-ant-test-dummy}
-    healthcheck:
-      interval: 2s
-      retries: 30
-      start_period: 3s
 
   voice-server:
     network_mode: "service:workspace"
     pid: "service:workspace"
-    restart: "no"
     volumes:
       - test-home:/home/ubuntu
-    environment:
-      - VOICE_TOKEN=test-token-for-ci
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-sk-test-dummy}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-sk-ant-test-dummy}
-    healthcheck:
-      interval: 3s
-      retries: 30
-      start_period: 5s
 
   tunnel:
-    # Not needed in tests — exclude unless explicitly requested
     profiles: ["with-tunnel"]
 
   pane-monitor:
@@ -85,11 +47,11 @@ services:
       - captain-tmux:/run/captain-tmux
       - workspace-tmux:/run/workspace-tmux
     environment:
-      - VOICE_TOKEN=test-token-for-ci
+      - VOICE_TOKEN
       - TEST_INTEGRATION=1
       - TEST_CAPTAIN=${TEST_CAPTAIN:-}
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-sk-test-dummy}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-sk-ant-test-dummy}
+      - OPENAI_API_KEY
+      - ANTHROPIC_API_KEY
       - CAPTAIN_TMUX_SOCKET=/run/captain-tmux/default
       - WORKSPACE_TMUX_SOCKET=/run/workspace-tmux/default
 
