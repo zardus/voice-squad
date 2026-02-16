@@ -19,7 +19,7 @@ if [ -f home/env ]; then
 fi
 
 PROJECT=voice-squad-test
-COMPOSE="docker compose -p $PROJECT -f docker-compose.test.yml"
+COMPOSE="docker compose -p $PROJECT -f docker-compose.yml -f docker-compose.test.yml"
 
 cleanup() {
   $COMPOSE down -v --remove-orphans 2>/dev/null || true

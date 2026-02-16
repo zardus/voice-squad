@@ -67,7 +67,7 @@ This pulls latest git, copies `src/` files to `/opt/squad/` (the installed locat
 - The container runs `--privileged` for Docker-in-Docker support. The Docker container itself is the sandbox boundary.
 ## Running Tests
 
-**Tests run in a separate Docker Compose stack** (`docker-compose.test.yml`), fully isolated from any live squad deployment. The test stack reuses the real workspace, voice-server, and pane-monitor images alongside a lightweight test-runner container (Playwright + Chromium).
+**Tests run as overrides on the real compose stack** via `docker-compose.test.yml`, fully isolated from any live deployment. The test file layers on top of `docker-compose.yml` — services inherit their real images and entrypoints, with only test-specific overrides (ephemeral volumes, dummy API keys, shared PID/network namespaces).
 
 ```bash
 # Run all tests (from the repo root)
@@ -80,12 +80,14 @@ This pulls latest git, copies `src/` files to `/opt/squad/` (the installed locat
 TEST_CAPTAIN=1 ./test.sh captain.spec.js
 ```
 
-`test.sh` uses `docker compose -p voice-squad-test` to namespace containers, networks, and volumes away from production. On exit it tears everything down (`down -v --remove-orphans`).
+`test.sh` uses `docker compose -p voice-squad-test -f docker-compose.yml -f docker-compose.test.yml` to namespace everything away from production. On exit it tears everything down (`down -v --remove-orphans`).
 
-**Test architecture** (see `docker-compose.test.yml`):
-- **workspace** — real image, entrypoint overridden to just start tmux (no agents, no dockerd)
-- **voice-server** — real image + real entrypoint with dummy API keys
-- **pane-monitor** — real image + real entrypoint
+**Test overrides** (see `docker-compose.test.yml`):
+- **workspace** — real image + real entrypoint (dockerd, tmux, DinD — the works)
+- **captain** — stub entrypoint (tmux session + config, no real agent)
+- **voice-server** — real entrypoint, shared PID/network namespace
+- **pane-monitor** — real entrypoint, shared PID namespace
+- **tunnel** — excluded via profile
 - **test-runner** — lightweight: Ubuntu + Node + Playwright + Chromium + tmux client
 
 All services share the workspace PID/network namespace so `localhost:3000`, `pgrep`, and `tmux` commands work transparently from the test-runner.

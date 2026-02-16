@@ -1,43 +1,25 @@
-# Test stack: reuses real images with a lightweight test-runner.
+# Test overrides — layered on top of docker-compose.yml.
 #
 # Usage (via test.sh):
-#   docker compose -p voice-squad-test -f docker-compose.test.yml run --build --rm test-runner
+#   docker compose -p voice-squad-test -f docker-compose.yml -f docker-compose.test.yml \
+#     run --build --rm test-runner
 #
-# All services share the workspace PID/network namespace so localhost:3000,
-# pgrep, and tmux commands work transparently from the test-runner.
+# Overrides: swap ./home for an ephemeral test-home volume, inject dummy API
+# keys, stub the captain (no real agent), share PID/network namespaces so
+# localhost:3000/pgrep/tmux work from the test-runner, and disable tunnel.
 
 services:
   workspace:
-    build:
-      context: src/workspace
-    privileged: true
-    entrypoint: ["/bin/bash", "-c"]
-    command:
-      - |
-        set -e
-        # Start dockerd for DinD tests
-        sudo sh -c 'dockerd &>/var/log/dockerd.log' &
-        sudo mkdir -p /run/workspace-tmux && sudo chown ubuntu:ubuntu /run/workspace-tmux && sudo chmod 755 /run/workspace-tmux
-        tmux -S /run/workspace-tmux/default new-session -d -s workspace -c /home/ubuntu
-        mkdir -p /run/workspace-tmux/tmux-$(id -u)
-        ln -sf /run/workspace-tmux/default /run/workspace-tmux/tmux-$(id -u)/default
-        exec sleep infinity
     volumes:
       - test-home:/home/ubuntu
-      - workspace-tmux:/run/workspace-tmux
-    environment:
-      - TMUX_TMPDIR=/run/workspace-tmux
     healthcheck:
-      test: ["CMD-SHELL", "tmux -S /run/workspace-tmux/default has-session 2>/dev/null"]
       interval: 2s
-      timeout: 3s
       retries: 30
-      start_period: 3s
+      start_period: 10s
 
   captain:
-    build:
-      context: src/captain
     pid: "service:workspace"
+    # Stub: set up tmux + config without launching a real agent
     entrypoint: ["/bin/bash", "-c"]
     command:
       - |
@@ -53,64 +35,39 @@ services:
         echo "$$VOICE_TOKEN" > /home/ubuntu/.voice-token
         tmux -S /run/captain-tmux/default new-session -d -s captain -c /home/ubuntu
         exec sleep infinity
-    depends_on:
-      workspace:
-        condition: service_healthy
+    restart: "no"
     volumes:
       - test-home:/home/ubuntu
-      - captain-tmux:/run/captain-tmux
-      - workspace-tmux:/run/workspace-tmux
     environment:
       - VOICE_TOKEN=test-token-for-ci
       - OPENAI_API_KEY=${OPENAI_API_KEY:-sk-test-dummy}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-sk-ant-test-dummy}
-      - CAPTAIN_TMUX_SOCKET=/run/captain-tmux/default
-      - TMUX_TMPDIR=/run/workspace-tmux
     healthcheck:
-      test: ["CMD-SHELL", "tmux -S /run/captain-tmux/default has-session -t captain 2>/dev/null"]
       interval: 2s
-      timeout: 3s
       retries: 30
       start_period: 3s
 
   voice-server:
-    build:
-      context: src/voice-server
     network_mode: "service:workspace"
     pid: "service:workspace"
-    depends_on:
-      captain:
-        condition: service_healthy
+    restart: "no"
     volumes:
       - test-home:/home/ubuntu
-      - captain-tmux:/run/captain-tmux
-      - workspace-tmux:/run/workspace-tmux
     environment:
       - VOICE_TOKEN=test-token-for-ci
       - OPENAI_API_KEY=${OPENAI_API_KEY:-sk-test-dummy}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-sk-ant-test-dummy}
-      - CAPTAIN_TMUX_SOCKET=/run/captain-tmux/default
-      - WORKSPACE_TMUX_SOCKET=/run/workspace-tmux/default
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:3000/ || exit 1"]
       interval: 3s
-      timeout: 3s
       retries: 30
       start_period: 5s
 
+  tunnel:
+    # Not needed in tests — exclude unless explicitly requested
+    profiles: ["with-tunnel"]
+
   pane-monitor:
-    build:
-      context: src/pane-monitor
     pid: "service:workspace"
-    depends_on:
-      captain:
-        condition: service_healthy
-    volumes:
-      - captain-tmux:/run/captain-tmux
-      - workspace-tmux:/run/workspace-tmux
-    environment:
-      - CAPTAIN_TMUX_SOCKET=/run/captain-tmux/default
-      - WORKSPACE_TMUX_SOCKET=/run/workspace-tmux/default
 
   test-runner:
     build:
@@ -137,6 +94,4 @@ services:
       - WORKSPACE_TMUX_SOCKET=/run/workspace-tmux/default
 
 volumes:
-  captain-tmux:
-  workspace-tmux:
   test-home:
