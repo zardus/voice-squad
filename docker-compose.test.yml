@@ -10,10 +10,13 @@ services:
   workspace:
     build:
       context: src/workspace
+    privileged: true
     entrypoint: ["/bin/bash", "-c"]
     command:
       - |
         set -e
+        # Start dockerd for DinD tests
+        sudo sh -c 'dockerd &>/var/log/dockerd.log' &
         sudo mkdir -p /run/workspace-tmux && sudo chown ubuntu:ubuntu /run/workspace-tmux && sudo chmod 755 /run/workspace-tmux
         tmux -S /run/workspace-tmux/default new-session -d -s workspace -c /home/ubuntu
         mkdir -p /run/workspace-tmux/tmux-$(id -u)
