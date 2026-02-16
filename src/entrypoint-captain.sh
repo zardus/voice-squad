@@ -1,10 +1,22 @@
 #!/bin/bash
 set -e
 
-CAPTAIN="${SQUAD_CAPTAIN:-claude}"
+# Read captain type from config file (shared volume), fall back to env var
+CONFIG_FILE="/home/ubuntu/captain/config.yml"
+if [ -f "$CONFIG_FILE" ]; then
+    CONFIG_TYPE=$(grep -oP '^type:\s*\K\S+' "$CONFIG_FILE" 2>/dev/null || true)
+    if [ -n "$CONFIG_TYPE" ]; then
+        CAPTAIN="$CONFIG_TYPE"
+        echo "[captain-entrypoint] Read captain type from config: $CAPTAIN"
+    else
+        CAPTAIN="${SQUAD_CAPTAIN:-claude}"
+    fi
+else
+    CAPTAIN="${SQUAD_CAPTAIN:-claude}"
+fi
 
 if [ "$CAPTAIN" != "claude" ] && [ "$CAPTAIN" != "codex" ]; then
-    echo "Error: SQUAD_CAPTAIN must be 'claude' or 'codex' (got '$CAPTAIN')"
+    echo "Error: Captain type must be 'claude' or 'codex' (got '$CAPTAIN')"
     exit 1
 fi
 
@@ -27,6 +39,9 @@ fi
 # Captain instructions in ~/captain/ — workers in ~/project/ never walk into here
 mkdir -p /home/ubuntu/captain
 mkdir -p /home/ubuntu/captain/archive
+
+# Write config.yml so the voice server (and next restart) know the captain type
+echo "type: $CAPTAIN" > "$CONFIG_FILE"
 cp /opt/squad/captain/instructions.md /home/ubuntu/captain/CLAUDE.md
 cp /opt/squad/captain/instructions.md /home/ubuntu/captain/AGENTS.md
 
@@ -87,5 +102,9 @@ fi
 # Select the captain window
 tmux -S /run/captain-tmux/default select-window -t captain:0
 
-# Keep the container alive
-exec sleep infinity
+# Keep the container alive.
+# NOTE: no `exec` — bash stays PID 1, sleep is a killable child.
+# The voice server triggers a restart via: sudo pkill -P 1 sleep
+# That kills this sleep, bash falls through to EOF and exits,
+# and docker-compose restarts the container (reading config.yml for the captain type).
+sleep infinity

@@ -19,9 +19,21 @@ const { synthesize } = require("./tts");
 const statusDaemon = require("./status-daemon");
 
 const PORT = process.env.VOICE_PORT || 3000;
-let CAPTAIN = process.env.SQUAD_CAPTAIN || "claude";
 const TOKEN = process.env.VOICE_TOKEN;
 const CAPTAIN_DIR = process.env.SQUAD_CAPTAIN_DIR || path.join(os.homedir(), "captain");
+const CAPTAIN_CONFIG_FILE = path.join(CAPTAIN_DIR, "config.yml");
+
+// Read captain type from config.yml (written by captain entrypoint), fall back to env var
+function readCaptainConfig() {
+  try {
+    const content = fsSync.readFileSync(CAPTAIN_CONFIG_FILE, "utf8");
+    const match = content.match(/^type:\s*(\S+)/m);
+    if (match && (match[1] === "claude" || match[1] === "codex")) return match[1];
+  } catch {}
+  return null;
+}
+
+let CAPTAIN = readCaptainConfig() || process.env.SQUAD_CAPTAIN || "claude";
 const TASKS_ARCHIVED_DIR = path.join(CAPTAIN_DIR, "tasks", "archived");
 const WS_MAX_PAYLOAD_BYTES = Number(process.env.WS_MAX_PAYLOAD_BYTES || 64 * 1024 * 1024);
 const MAX_AUDIO_UPLOAD_BYTES = Number(process.env.MAX_AUDIO_UPLOAD_BYTES || 64 * 1024 * 1024);
@@ -350,34 +362,34 @@ app.post("/api/restart-captain", async (req, res) => {
     return res.status(409).json({ error: "A restart is already in progress" });
   }
 
-  const { exec } = require("child_process");
   restartInProgress = true;
 
-  console.log(`[restart] launching restart-captain.sh ${tool}...`);
   try {
-    // Wait for the restart script to finish so we can report real success/failure
-    const output = await new Promise((resolve, reject) => {
-      exec(
-        `/opt/squad/restart-captain.sh ${tool}`,
-        { timeout: 60000 },
-        (err, stdout, stderr) => {
-          const combined = (stdout + stderr).trim();
-          if (err) {
-            reject(new Error(combined || err.message));
-          } else {
-            resolve(combined);
-          }
-        }
-      );
-    });
-    console.log(`[restart] restart-captain.sh completed for ${tool}`);
+    // Write the desired captain type to config.yml — the captain entrypoint reads this on boot
+    await fs.mkdir(CAPTAIN_DIR, { recursive: true });
+    await fs.writeFile(CAPTAIN_CONFIG_FILE, `type: ${tool}\n`);
+    console.log(`[restart] wrote ${CAPTAIN_CONFIG_FILE}: type=${tool}`);
+
+    // Kill the sleep infinity process in the captain container via its tmux socket.
+    // The captain entrypoint runs `sleep infinity` (without exec) so bash is PID 1.
+    // Killing sleep causes bash to exit -> container dies -> docker-compose restarts it.
+    const captainSocket = process.env.CAPTAIN_TMUX_SOCKET || "";
+    const socketArgs = captainSocket ? `-S ${captainSocket}` : "";
+    // pkill -P 1 targets children of PID 1 (the entrypoint bash) — avoids self-match
+    const killCmd = `tmux ${socketArgs} new-window 'sudo pkill -P 1 sleep'`;
+    console.log(`[restart] sending: ${killCmd}`);
+    execSync(killCmd, { timeout: 10000 });
+
     CAPTAIN = tool;
+    console.log(`[restart] captain container kill triggered, will restart as ${tool}`);
     res.json({ ok: true, tool });
   } catch (err) {
-    console.error(`[restart] restart-captain.sh failed: ${err.message}`);
+    console.error(`[restart] failed: ${err.message}`);
     res.status(500).json({ error: err.message });
   } finally {
-    restartInProgress = false;
+    // Clear the flag after a delay — the captain container needs time to die and restart.
+    // The voice server itself stays up; restartInProgress just prevents double-clicks.
+    setTimeout(() => { restartInProgress = false; }, 15000);
   }
 });
 
