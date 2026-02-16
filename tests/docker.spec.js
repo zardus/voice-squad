@@ -4,7 +4,6 @@
  * expected processes and services alive.
  */
 const { test, expect } = require("@playwright/test");
-const { execSync } = require("child_process");
 const { BASE_URL, TOKEN } = require("./helpers/config");
 const { captainExec, workspaceExec } = require("./helpers/tmux");
 const http = require("http");
@@ -26,9 +25,19 @@ test.describe("Docker infrastructure", () => {
     expect(resp.statusCode).toBe(200);
   });
 
-  test("voice server Node.js process is running", () => {
-    const out = execSync("pgrep -af 'node.*server\\.js'", { encoding: "utf8", timeout: 5000 });
-    expect(out.trim()).toBeTruthy();
+  test("voice server /api/status responds", async () => {
+    const resp = await new Promise((resolve, reject) => {
+      const req = http.get(`${BASE_URL}/api/status?token=${TOKEN}`, (res) => {
+        let data = "";
+        res.on("data", (chunk) => { data += chunk; });
+        res.on("end", () => resolve({ status: res.statusCode, data }));
+      });
+      req.on("error", reject);
+      req.setTimeout(5000, () => { req.destroy(); reject(new Error("timeout")); });
+    });
+    expect(resp.status).toBe(200);
+    const json = JSON.parse(resp.data);
+    expect(json).toHaveProperty("sessions");
   });
 
   test("workspace tmux server is running", () => {
@@ -48,38 +57,9 @@ test.describe("Docker infrastructure", () => {
     expect(windows.length).toBeGreaterThanOrEqual(1);
   });
 
-  test("pane monitor process is running", () => {
-    try {
-      const out = execSync("pgrep -af pane-monitor", { encoding: "utf8", timeout: 5000 });
-      expect(out.trim()).toBeTruthy();
-    } catch {
-      // pane-monitor.sh may not be running in all configurations — warn but don't fail
-      console.warn("pane-monitor process not found (may be expected in dev)");
-    }
-  });
-
-  test("cloudflared tunnel process exists", () => {
-    try {
-      const out = execSync("pgrep -af cloudflared", { encoding: "utf8", timeout: 5000 });
-      expect(out.trim()).toBeTruthy();
-    } catch {
-      // cloudflared may not be running if tunnel is disabled
-      console.warn("cloudflared process not found (may be expected in dev)");
-    }
-  });
-
   test("captain pane has content", () => {
     const out = captainExec("capture-pane -t captain:0 -p -S -50");
     // Should have some content (even if just a shell prompt)
     expect(out.trim().length).toBeGreaterThan(0);
-  });
-
-  test("port 3000 is listening", () => {
-    // Check /proc/net/tcp and tcp6 for port 3000 (hex 0BB8)
-    const out = execSync("grep ':0BB8' /proc/net/tcp /proc/net/tcp6 2>/dev/null || true", {
-      encoding: "utf8",
-      timeout: 5000,
-    });
-    expect(out.trim()).toBeTruthy();
   });
 });

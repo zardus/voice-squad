@@ -22,23 +22,16 @@ function discoverToken() {
     if (match) return match[1];
   } catch {}
 
-  // Try reading from voice server process environ
+  // Try reading from shared volume (captain writes .voice-token on boot)
   try {
-    const pid = execSync("pgrep -f 'node.*server\\.js' | head -1", {
-      encoding: "utf8",
-      timeout: 3000,
-    }).trim();
-    if (pid) {
-      const environ = fs.readFileSync(`/proc/${pid}/environ`, "utf8");
-      const match = environ.match(/VOICE_TOKEN=([^\0]+)/);
-      if (match) return match[1];
-    }
+    const token = fs.readFileSync("/home/ubuntu/.voice-token", "utf8").trim();
+    if (token) return token;
   } catch {}
 
   return null;
 }
 
-const BASE_URL = process.env.TEST_BASE_URL || "http://localhost:3000";
+const BASE_URL = process.env.TEST_BASE_URL || "http://voice-server:3000";
 const TOKEN = discoverToken();
 
 function pageUrl(token) {

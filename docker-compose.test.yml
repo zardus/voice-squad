@@ -5,9 +5,7 @@
 #     run --build --rm test-runner
 #
 # All real services run their real entrypoints with real API keys.
-# Overrides only swap ./home for an ephemeral volume, share PID/network
-# namespaces so the test-runner can reach localhost:3000 and inspect
-# processes, and disable the tunnel.
+# The only override is swapping ./home for an ephemeral volume.
 
 services:
   workspace:
@@ -15,13 +13,10 @@ services:
       - test-home:/home/ubuntu
 
   captain:
-    pid: "service:workspace"
     volumes:
       - test-home:/home/ubuntu
 
   voice-server:
-    network_mode: "service:workspace"
-    pid: "service:workspace"
     volumes:
       - test-home:/home/ubuntu
 
@@ -29,15 +24,10 @@ services:
     volumes:
       - test-home:/home/ubuntu
 
-  pane-monitor:
-    pid: "service:workspace"
-
   test-runner:
     build:
       context: .
       dockerfile: tests/Dockerfile.test
-    network_mode: "service:workspace"
-    pid: "service:workspace"
     depends_on:
       voice-server:
         condition: service_healthy

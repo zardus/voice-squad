@@ -85,7 +85,4 @@ TEST_CAPTAIN=1 ./test.sh captain.spec.js
 **Test overrides** (see `docker-compose.test.yml`):
 - All services run their **real entrypoints** with real API keys
 - `./home` is swapped for an ephemeral `test-home` volume
-- PID/network namespaces are shared so the test-runner can reach `localhost:3000` and inspect processes
-- **test-runner** — lightweight: Ubuntu + Node + Playwright + Chromium + tmux client
-
-All services share the workspace PID/network namespace so `localhost:3000`, `pgrep`, and `tmux` commands work transparently from the test-runner.
+- **test-runner** — lightweight container (Ubuntu + Node + Playwright + Chromium) that connects to services via Docker networking (`voice-server:3000`) and tmux via shared socket volumes

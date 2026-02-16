@@ -110,7 +110,7 @@ test.describe("Integration", () => {
     await expect(page.locator("#status")).toHaveClass(/connected/, { timeout: 5000 });
 
     // Send interrupt via API
-    const resp = await fetch(`http://localhost:3000/api/interrupt`, {
+    const resp = await fetch(`http://voice-server:3000/api/interrupt`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ token: TOKEN }),

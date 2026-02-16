@@ -29,7 +29,7 @@ if [ -z "${VOICE_TOKEN:-}" ] && [ -f /home/ubuntu/.voice-token ]; then
 fi
 
 # Write voice URL for tests
-echo "http://localhost:3000?token=${VOICE_TOKEN}" > /tmp/voice-url.txt
+echo "http://voice-server:3000?token=${VOICE_TOKEN}" > /tmp/voice-url.txt
 
 # Run tests
 cd /opt/tests

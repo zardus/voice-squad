@@ -50,7 +50,7 @@ function activateStatusDaemon(page) {
   return page.evaluate(async (params) => {
     return new Promise((resolve, reject) => {
       const ws = new WebSocket(
-        `ws://localhost:3000?token=${encodeURIComponent(params.token)}`
+        `ws://voice-server:3000?token=${encodeURIComponent(params.token)}`
       );
       ws.onopen = () => {
         ws.send(JSON.stringify({ type: "status_tab_active" }));
