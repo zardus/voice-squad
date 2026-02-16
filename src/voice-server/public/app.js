@@ -1817,6 +1817,20 @@ tabs.forEach((tab) => {
     if (target === "screens" && !wasScreens) sendScreensTabState(true);
     if (target !== "screens" && wasScreens) { sendScreensTabState(false); closeActivePaneInteract(); }
 
+    // Auto-scroll to bottom when switching to Terminal tab
+    if (target === "terminal") {
+      autoScroll = true;
+      terminalEl.scrollTop = terminalEl.scrollHeight;
+    }
+    // Auto-scroll all expanded screen panels to bottom when switching to Screens tab
+    if (target === "screens") {
+      for (const [, entry] of panelMap) {
+        if (!entry.panel.classList.contains("collapsed")) {
+          entry.pre.scrollTop = entry.pre.scrollHeight;
+        }
+      }
+    }
+
     // Voice tab: hide bottom controls (Auto-read and Auto Listen toggles are duplicated inside Voice tab).
     if (target === "voice") {
       if (isTextPopoutOpen()) closeTextPopout();
@@ -2100,6 +2114,9 @@ function renderStreamUpdate(data) {
           header.title = pane.target || "";
           header.addEventListener("click", () => {
             panel.classList.toggle("collapsed");
+            if (!panel.classList.contains("collapsed")) {
+              pre.scrollTop = pre.scrollHeight;
+            }
           });
           panel.appendChild(header);
 
