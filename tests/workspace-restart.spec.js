@@ -2,10 +2,15 @@
 /**
  * Workspace restart resilience — verify the voice server recovers
  * and lists all tmux terminals after the workspace (tmux) is restarted.
+ *
+ * In the split-container architecture, captain runs on its own tmux server
+ * and survives workspace restarts. We only kill/recreate the workspace
+ * tmux server and verify both servers are reported correctly.
  */
 const { test, expect } = require("@playwright/test");
 const { execSync } = require("child_process");
 const { BASE_URL, TOKEN, pageUrl } = require("./helpers/config");
+const { captainExec, workspaceExec, WORKSPACE_SOCKET } = require("./helpers/tmux");
 
 const WORKER_SESSION = "test-project";
 
@@ -87,10 +92,7 @@ test.describe("Workspace restart", () => {
   test.afterAll(() => {
     // Clean up the worker session if it still exists
     try {
-      execSync(`tmux kill-session -t ${WORKER_SESSION} 2>/dev/null || true`, {
-        encoding: "utf8",
-        timeout: 5000,
-      });
+      workspaceExec(`kill-session -t ${WORKER_SESSION} 2>/dev/null || true`);
     } catch {}
   });
 
@@ -108,11 +110,8 @@ test.describe("Workspace restart", () => {
     );
     expect(sessionNames(initial)).toContain("captain");
 
-    // 2. Create an additional tmux session to simulate a worker
-    execSync(
-      `tmux new-session -d -s ${WORKER_SESSION} -c /home/ubuntu`,
-      { encoding: "utf8", timeout: 5000 }
-    );
+    // 2. Create an additional tmux session on workspace to simulate a worker
+    workspaceExec(`new-session -d -s ${WORKER_SESSION} -c /home/ubuntu`);
 
     // 3. Wait for /api/status to include the new session
     const withWorker = await waitForStatus(
@@ -122,23 +121,29 @@ test.describe("Workspace restart", () => {
     expect(sessionNames(withWorker)).toContain("captain");
     expect(sessionNames(withWorker)).toContain(WORKER_SESSION);
 
-    // 4. Simulate a workspace restart: kill tmux, then recreate sessions
-    execSync("tmux kill-server", { encoding: "utf8", timeout: 5000 });
+    // 4. Simulate a workspace restart: kill workspace tmux server only
+    //    (captain stays alive on its own server)
+    const killCmd = WORKSPACE_SOCKET
+      ? `tmux -S ${WORKSPACE_SOCKET} kill-server`
+      : "tmux kill-server";
+    execSync(killCmd, { encoding: "utf8", timeout: 5000 });
 
     // Brief pause to let the kill propagate
     await new Promise((r) => setTimeout(r, 1000));
 
-    // Recreate the captain session and worker session
-    execSync("tmux new-session -d -s captain -c /home/ubuntu", {
-      encoding: "utf8",
-      timeout: 5000,
-    });
-    execSync(`tmux new-session -d -s ${WORKER_SESSION} -c /home/ubuntu`, {
-      encoding: "utf8",
-      timeout: 5000,
-    });
+    // Recreate the workspace session and worker session
+    const newCmd = WORKSPACE_SOCKET
+      ? `tmux -S ${WORKSPACE_SOCKET} new-session -d -s workspace -c /home/ubuntu`
+      : "tmux new-session -d -s workspace -c /home/ubuntu";
+    execSync(newCmd, { encoding: "utf8", timeout: 5000 });
+
+    const workerCmd = WORKSPACE_SOCKET
+      ? `tmux -S ${WORKSPACE_SOCKET} new-session -d -s ${WORKER_SESSION} -c /home/ubuntu`
+      : `tmux new-session -d -s ${WORKER_SESSION} -c /home/ubuntu`;
+    execSync(workerCmd, { encoding: "utf8", timeout: 5000 });
 
     // 5-6. Wait for the status-daemon to pick up the recreated sessions
+    //      Captain should still be there (on its own server) + workspace sessions
     const recovered = await waitForStatus(
       (s) => {
         const names = sessionNames(s);
@@ -149,7 +154,7 @@ test.describe("Workspace restart", () => {
     expect(sessionNames(recovered)).toContain("captain");
     expect(sessionNames(recovered)).toContain(WORKER_SESSION);
 
-    // Verify sessions have windows and panes
+    // Verify captain session has windows and panes
     const captainSession = recovered.sessions.find((s) => s.name === "captain");
     expect(captainSession.windows.length).toBeGreaterThanOrEqual(1);
     expect(captainSession.windows[0].panes.length).toBeGreaterThanOrEqual(1);
@@ -162,9 +167,8 @@ test.describe("Workspace restart", () => {
 
     // 7. Clean up
     await deactivateStatusDaemon(page);
-    execSync(`tmux kill-session -t ${WORKER_SESSION}`, {
-      encoding: "utf8",
-      timeout: 5000,
-    });
+    try {
+      workspaceExec(`kill-session -t ${WORKER_SESSION}`);
+    } catch {}
   });
 });

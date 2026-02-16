@@ -1,10 +1,10 @@
 #!/bin/bash
 set -e
 
-# Ensure tmux socket directory is accessible
-sudo mkdir -p /run/tmux
-sudo chown ubuntu:ubuntu /run/tmux
-sudo chmod 755 /run/tmux
+# Ensure tmux socket directories are accessible
+sudo mkdir -p /run/captain-tmux /run/workspace-tmux
+sudo chown ubuntu:ubuntu /run/captain-tmux /run/workspace-tmux
+sudo chmod 755 /run/captain-tmux /run/workspace-tmux
 
 # Source user environment if present
 if [ -f /home/ubuntu/env ]; then
@@ -19,7 +19,7 @@ export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-${_ANTHROPIC_API_KEY:-}}"
 
 # Read VOICE_TOKEN from shared volume if not set via environment
 if [ -z "${VOICE_TOKEN:-}" ]; then
-    echo "[voice-entrypoint] Waiting for voice token from workspace..."
+    echo "[voice-entrypoint] Waiting for voice token from captain..."
     for i in $(seq 1 120); do
         if [ -f /home/ubuntu/.voice-token ]; then
             VOICE_TOKEN=$(cat /home/ubuntu/.voice-token)
@@ -35,19 +35,19 @@ if [ -z "${VOICE_TOKEN:-}" ]; then
 fi
 echo "[voice-entrypoint] VOICE_TOKEN set"
 
-# Wait for tmux captain session to be available (workspace container must start first)
-echo "[voice-entrypoint] Waiting for tmux captain session..."
+# Wait for captain tmux session to be available (captain container must start first)
+echo "[voice-entrypoint] Waiting for captain tmux session..."
 timeout=120
-while ! tmux has-session -t captain 2>/dev/null && [ $timeout -gt 0 ]; do
+while ! tmux -S "$CAPTAIN_TMUX_SOCKET" has-session -t captain 2>/dev/null && [ $timeout -gt 0 ]; do
     sleep 1
     timeout=$((timeout - 1))
 done
 
-if ! tmux has-session -t captain 2>/dev/null; then
-    echo "[voice-entrypoint] ERROR: tmux captain session not available after 120s"
+if ! tmux -S "$CAPTAIN_TMUX_SOCKET" has-session -t captain 2>/dev/null; then
+    echo "[voice-entrypoint] ERROR: captain tmux session not available after 120s"
     exit 1
 fi
-echo "[voice-entrypoint] tmux captain session found"
+echo "[voice-entrypoint] captain tmux session found"
 
 # Start voice server
 echo "[voice-entrypoint] Starting voice server..."
@@ -91,7 +91,7 @@ else
     VOICE_URL="http://localhost:3000?token=${VOICE_TOKEN}"
 fi
 
-# Write URL to shared volume so workspace container can display it
+# Write URL to shared volume so captain container can display it
 echo "$VOICE_URL" > /tmp/voice-url.txt
 echo "$VOICE_URL" > /home/ubuntu/.voice-url.txt 2>/dev/null || true
 

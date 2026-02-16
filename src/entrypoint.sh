@@ -1,12 +1,10 @@
 #!/bin/bash
 set -e
 
-# Ensure tmux socket directory is accessible (for compose mode socket sharing)
-if [ -n "${TMUX_TMPDIR:-}" ]; then
-    sudo mkdir -p "$TMUX_TMPDIR"
-    sudo chown ubuntu:ubuntu "$TMUX_TMPDIR"
-    sudo chmod 755 "$TMUX_TMPDIR"
-fi
+# Ensure workspace tmux socket directory is accessible
+sudo mkdir -p /run/workspace-tmux
+sudo chown ubuntu:ubuntu /run/workspace-tmux
+sudo chmod 755 /run/workspace-tmux
 
 # Start dockerd in the background (docker-in-docker)
 sudo sh -c 'dockerd &>/var/log/dockerd.log' &
@@ -35,8 +33,13 @@ if [ -f /home/ubuntu/env ]; then
     set +a
 fi
 
-# Launch the squad
-/opt/squad/launch-squad.sh "$@" > /tmp/launch-squad.log 2>&1 &
+# Create workspace tmux session at a fixed socket path (workers run here)
+tmux -S /run/workspace-tmux/default new-session -d -s workspace -c /home/ubuntu
 
-# Launch the main menu
-exec /opt/squad/main-menu.sh
+# Create TMUX_TMPDIR compatibility symlink so captain's raw tmux commands
+# (which resolve $TMUX_TMPDIR/tmux-{UID}/default) find this socket
+mkdir -p /run/workspace-tmux/tmux-$(id -u)
+ln -sf /run/workspace-tmux/default /run/workspace-tmux/tmux-$(id -u)/default
+
+# Keep the container alive
+exec sleep infinity

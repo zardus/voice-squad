@@ -2,9 +2,13 @@ const { execFile } = require("child_process");
 
 const POLL_INTERVAL_MS = 1000;
 
-function tmuxExecAsync(args) {
+const CAPTAIN_TMUX_SOCKET = process.env.CAPTAIN_TMUX_SOCKET || "";
+const WORKSPACE_TMUX_SOCKET = process.env.WORKSPACE_TMUX_SOCKET || "";
+
+function tmuxExecAsync(args, socket) {
+  const fullArgs = socket ? ["-S", socket, ...args] : args;
   return new Promise((resolve) => {
-    execFile("tmux", args, { encoding: "utf8", timeout: 5000 }, (err, stdout) => {
+    execFile("tmux", fullArgs, { encoding: "utf8", timeout: 5000 }, (err, stdout) => {
       resolve(err ? "" : stdout);
     });
   });
@@ -15,9 +19,9 @@ function safeInt(s, fallback) {
   return Number.isFinite(n) ? n : fallback;
 }
 
-async function collectPanes() {
-  const sessionsRaw = await tmuxExecAsync(["list-sessions", "-F", "#{session_name}\t#{session_id}"]);
-  if (!sessionsRaw.trim()) return { sessions: [] };
+async function collectPanesFromSocket(socket) {
+  const sessionsRaw = await tmuxExecAsync(["list-sessions", "-F", "#{session_name}\t#{session_id}"], socket);
+  if (!sessionsRaw.trim()) return [];
 
   const sessionLines = sessionsRaw.trim().split("\n");
 
@@ -34,7 +38,7 @@ async function collectPanes() {
       sessionId || sessionName,
       "-F",
       "#{window_name}\t#{window_id}\t#{window_index}",
-    ]);
+    ], socket);
     if (!windowsRaw.trim()) return null;
 
     const windowLines = windowsRaw.trim().split("\n");
@@ -52,7 +56,7 @@ async function collectPanes() {
         windowId || `${sessionName}:${windowName}`,
         "-F",
         "#{pane_index}\t#{pane_id}",
-      ]);
+      ], socket);
 
       const paneLines = panesRaw.trim() ? panesRaw.trim().split("\n") : [];
       const panes = (await Promise.all(paneLines.map(async (pLine) => {
@@ -62,7 +66,7 @@ async function collectPanes() {
         const paneId = pParts[1];
         if (paneIndex === null || !paneId) return null;
 
-        const raw = await tmuxExecAsync(["capture-pane", "-t", paneId, "-p", "-S", "-200"]);
+        const raw = await tmuxExecAsync(["capture-pane", "-t", paneId, "-p", "-S", "-200"], socket);
         const content = raw;
 
         const winIdx = windowIndex === null ? 0 : windowIndex;
@@ -77,6 +81,21 @@ async function collectPanes() {
     return { name: sessionName, windows };
   }))).filter(Boolean);
 
+  return sessions;
+}
+
+async function collectPanes() {
+  // If dual-socket mode is configured, query both servers and merge
+  if (CAPTAIN_TMUX_SOCKET || WORKSPACE_TMUX_SOCKET) {
+    const [captainSessions, workspaceSessions] = await Promise.all([
+      CAPTAIN_TMUX_SOCKET ? collectPanesFromSocket(CAPTAIN_TMUX_SOCKET) : [],
+      WORKSPACE_TMUX_SOCKET ? collectPanesFromSocket(WORKSPACE_TMUX_SOCKET) : [],
+    ]);
+    return { sessions: [...captainSessions, ...workspaceSessions] };
+  }
+
+  // Legacy single-server mode (TMUX_TMPDIR)
+  const sessions = await collectPanesFromSocket(null);
   return { sessions };
 }
 

@@ -475,11 +475,13 @@ app.post("/api/interrupt", (req, res) => {
     return res.status(401).json({ error: "Unauthorized" });
   }
   try {
+    const captainSocket = process.env.CAPTAIN_TMUX_SOCKET || "";
+    const socketArgs = captainSocket ? `-S ${captainSocket} ` : "";
     // Some captain runs need multiple SIGINT attempts before returning to prompt.
     for (let i = 0; i < 3; i++) {
-      execSync("tmux send-keys -t %0 C-c", { timeout: 5000 });
+      execSync(`tmux ${socketArgs}send-keys -t captain:0 C-c`, { timeout: 5000 });
     }
-    console.log("[interrupt] sent Ctrl+C x3 to captain pane %0");
+    console.log("[interrupt] sent Ctrl+C x3 to captain pane captain:0");
     res.json({ ok: true });
   } catch (err) {
     console.error("[interrupt] error:", err.message);

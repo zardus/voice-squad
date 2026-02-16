@@ -1,11 +1,12 @@
 // @ts-check
 /**
- * Docker / infrastructure tests — verify the running container has all
+ * Docker / infrastructure tests — verify the running containers have all
  * expected processes and services alive.
  */
 const { test, expect } = require("@playwright/test");
 const { execSync } = require("child_process");
 const { BASE_URL, TOKEN } = require("./helpers/config");
+const { captainExec, workspaceExec } = require("./helpers/tmux");
 const http = require("http");
 
 test.describe("Docker infrastructure", () => {
@@ -30,19 +31,19 @@ test.describe("Docker infrastructure", () => {
     expect(out.trim()).toBeTruthy();
   });
 
-  test("tmux server is running", () => {
-    const out = execSync("tmux list-sessions 2>&1 || true", { encoding: "utf8", timeout: 5000 });
+  test("workspace tmux server is running", () => {
+    const out = workspaceExec("list-sessions 2>&1 || true");
     expect(out).not.toContain("no server running");
     expect(out).not.toContain("error connecting");
   });
 
   test("captain tmux session exists", () => {
-    const out = execSync("tmux list-sessions -F '#{session_name}'", { encoding: "utf8", timeout: 5000 });
+    const out = captainExec("list-sessions -F '#{session_name}'");
     expect(out).toContain("captain");
   });
 
   test("captain tmux session has expected windows", () => {
-    const out = execSync("tmux list-windows -t captain -F '#{window_name}'", { encoding: "utf8", timeout: 5000 });
+    const out = captainExec("list-windows -t captain -F '#{window_name}'");
     const windows = out.trim().split("\n");
     expect(windows.length).toBeGreaterThanOrEqual(1);
   });
@@ -68,10 +69,7 @@ test.describe("Docker infrastructure", () => {
   });
 
   test("captain pane has content", () => {
-    const out = execSync("tmux capture-pane -t captain:0 -p -S -50", {
-      encoding: "utf8",
-      timeout: 5000,
-    });
+    const out = captainExec("capture-pane -t captain:0 -p -S -50");
     // Should have some content (even if just a shell prompt)
     expect(out.trim().length).toBeGreaterThan(0);
   });

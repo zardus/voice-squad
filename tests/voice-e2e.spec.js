@@ -11,6 +11,7 @@ const { BASE_URL, TOKEN, pageUrl } = require("./helpers/config");
 const https = require("https");
 const { execSync } = require("child_process");
 const fs = require("fs");
+const { captainExec } = require("./helpers/tmux");
 
 const CAPTAIN = process.env.TEST_CAPTAIN === "1";
 
@@ -166,29 +167,25 @@ async function ensureCaptainRunning() {
     );
   }
   try {
-    execSync(`tmux set-environment -t captain ANTHROPIC_API_KEY '${apiKey}'`, {
-      timeout: 5000,
-    });
+    captainExec(`set-environment -t captain ANTHROPIC_API_KEY '${apiKey}'`);
   } catch {}
   const voiceToken = process.env.VOICE_TOKEN || "test-token-for-ci";
   try {
-    execSync(`tmux set-environment -t captain VOICE_TOKEN '${voiceToken}'`, {
-      timeout: 5000,
-    });
+    captainExec(`set-environment -t captain VOICE_TOKEN '${voiceToken}'`);
   } catch {}
 
   // Kill anything currently running in captain:0
   for (let i = 0; i < 3; i++) {
     try {
-      execSync("tmux send-keys -t captain:0 C-c", { timeout: 5000 });
+      captainExec("send-keys -t captain:0 C-c");
     } catch {}
   }
   await sleep(1000);
 
   // Start Claude
   console.log("[voice-e2e] Starting Claude captain...");
-  execSync(
-    'tmux send-keys -t captain:0 "cd /home/ubuntu/captain && source ~/.bashrc && claude --dangerously-skip-permissions" Enter',
+  captainExec(
+    'send-keys -t captain:0 "cd /home/ubuntu/captain && unset TMUX && source ~/.bashrc && claude --dangerously-skip-permissions" Enter',
     { timeout: 10000 }
   );
 
@@ -197,9 +194,8 @@ async function ensureCaptainRunning() {
   for (let i = 0; i < 90; i++) {
     await sleep(2000);
     try {
-      const shellPid = execSync(
-        "tmux list-panes -t captain:0 -F '#{pane_pid}'",
-        { encoding: "utf8", timeout: 5000 }
+      const shellPid = captainExec(
+        "list-panes -t captain:0 -F '#{pane_pid}'"
       ).trim();
       const childPid = execSync(
         `ps -o pid= --ppid ${shellPid} 2>/dev/null | head -1`,
@@ -207,32 +203,26 @@ async function ensureCaptainRunning() {
       ).trim();
 
       if (!childPid) {
-        const raw = execSync("tmux capture-pane -t captain:0 -p -S -50", {
-          encoding: "utf8",
-          timeout: 5000,
-        });
+        const raw = captainExec("capture-pane -t captain:0 -p -S -50");
         if (stripAnsi(raw).includes("Yes, I accept")) {
-          execSync("tmux send-keys -t captain:0 Enter", { timeout: 5000 });
+          captainExec("send-keys -t captain:0 Enter");
           await sleep(1000);
-          execSync(
-            'tmux send-keys -t captain:0 "claude --dangerously-skip-permissions" Enter',
+          captainExec(
+            'send-keys -t captain:0 "unset TMUX && claude --dangerously-skip-permissions" Enter',
             { timeout: 10000 }
           );
         }
         continue;
       }
 
-      const raw = execSync("tmux capture-pane -t captain:0 -p", {
-        encoding: "utf8",
-        timeout: 5000,
-      });
+      const raw = captainExec("capture-pane -t captain:0 -p");
       const cleaned = stripAnsi(raw);
 
       if (
         cleaned.includes("Choose the text style") ||
         cleaned.includes("Let's get started")
       ) {
-        execSync("tmux send-keys -t captain:0 Enter", { timeout: 5000 });
+        captainExec("send-keys -t captain:0 Enter");
         await sleep(1000);
         continue;
       }
@@ -240,14 +230,14 @@ async function ensureCaptainRunning() {
         cleaned.includes("Yes, I accept") &&
         cleaned.includes("Enter to confirm")
       ) {
-        execSync("tmux send-keys -t captain:0 2", { timeout: 5000 });
+        captainExec("send-keys -t captain:0 2");
         await sleep(500);
-        execSync("tmux send-keys -t captain:0 Enter", { timeout: 5000 });
+        captainExec("send-keys -t captain:0 Enter");
         await sleep(3000);
         continue;
       }
       if (cleaned.includes("Enter to confirm")) {
-        execSync("tmux send-keys -t captain:0 Enter", { timeout: 5000 });
+        captainExec("send-keys -t captain:0 Enter");
         await sleep(2000);
         continue;
       }
@@ -596,8 +586,8 @@ test.describe("Voice E2E", () => {
 
     // Cleanup: stop captain
     try {
-      execSync("tmux send-keys -t captain:0 C-c", { timeout: 5000 });
-      execSync("tmux send-keys -t captain:0 C-c", { timeout: 5000 });
+      captainExec("send-keys -t captain:0 C-c");
+      captainExec("send-keys -t captain:0 C-c");
     } catch {}
   });
 });

@@ -33,9 +33,9 @@ RUN curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/downloa
 # Set up ubuntu user
 RUN echo "ubuntu ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
-# Tmux socket directory for cross-container sharing
-ENV TMUX_TMPDIR=/run/tmux
-RUN mkdir -p /run/tmux && chown ubuntu:ubuntu /run/tmux
+# Tmux socket directories for cross-container sharing
+RUN mkdir -p /run/captain-tmux /run/workspace-tmux \
+    && chown ubuntu:ubuntu /run/captain-tmux /run/workspace-tmux
 
 # Voice server
 COPY voice/ /opt/squad/voice/

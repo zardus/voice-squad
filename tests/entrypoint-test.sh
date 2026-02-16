@@ -2,26 +2,26 @@
 # Test-runner entrypoint: waits for infrastructure, then runs Playwright.
 set -euo pipefail
 
-# Ensure tmux socket is accessible
-sudo mkdir -p /run/tmux 2>/dev/null || true
-sudo chown ubuntu:ubuntu /run/tmux 2>/dev/null || true
-sudo chmod 755 /run/tmux 2>/dev/null || true
+# Ensure tmux socket dirs are accessible
+sudo mkdir -p /run/captain-tmux /run/workspace-tmux 2>/dev/null || true
+sudo chown ubuntu:ubuntu /run/captain-tmux /run/workspace-tmux 2>/dev/null || true
+sudo chmod 755 /run/captain-tmux /run/workspace-tmux 2>/dev/null || true
 
-# Wait for tmux captain session (started by workspace container)
-echo "Waiting for tmux captain session..."
+# Wait for captain tmux session (started by captain container)
+echo "Waiting for captain tmux session..."
 timeout=30
-while ! tmux has-session -t captain 2>/dev/null && [ $timeout -gt 0 ]; do
+while ! tmux -S "$CAPTAIN_TMUX_SOCKET" has-session -t captain 2>/dev/null && [ $timeout -gt 0 ]; do
     sleep 1
     timeout=$((timeout - 1))
 done
 
-if ! tmux has-session -t captain 2>/dev/null; then
-    echo "ERROR: tmux captain session not available after 30s"
+if ! tmux -S "$CAPTAIN_TMUX_SOCKET" has-session -t captain 2>/dev/null; then
+    echo "ERROR: captain tmux session not available after 30s"
     exit 1
 fi
-echo "[ok] tmux captain session found"
+echo "[ok] captain tmux session found"
 
-# Write voice URL for main-menu.spec.js (reads /tmp/voice-url.txt)
+# Write voice URL for tests
 echo "http://localhost:3000?token=${VOICE_TOKEN}" > /tmp/voice-url.txt
 
 # Run tests

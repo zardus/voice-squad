@@ -11,6 +11,7 @@ const { test, expect } = require("@playwright/test");
 const { execSync } = require("child_process");
 const fs = require("fs");
 const { TOKEN, pageUrl } = require("./helpers/config");
+const { captainExec } = require("./helpers/tmux");
 
 const INTEGRATION = process.env.TEST_INTEGRATION === "1";
 const TEST_FILE = "/home/ubuntu/test-hello-e2e.txt";
@@ -20,7 +21,7 @@ test.describe("Integration", () => {
     if (!TOKEN) throw new Error("Cannot discover VOICE_TOKEN");
     // Ensure captain:0 has a clean bash shell — earlier tests (e.g. restart-captain)
     // may have started a real captain agent if API keys are present.
-    try { execSync("tmux respawn-pane -k -t captain:0 bash", { timeout: 5000 }); } catch {}
+    try { captainExec("respawn-pane -k -t captain:0 bash"); } catch {}
   });
 
   test("send text command and observe tmux_snapshot change", async ({ page }) => {
@@ -62,7 +63,7 @@ test.describe("Integration", () => {
     // Other tests (notably /api/restart-captain) may leave captain:0 running something other than a shell.
     // Force a predictable bash pane so the redirection command works deterministically.
     try {
-      execSync("tmux respawn-pane -k -t captain:0 bash", { timeout: 5000 });
+      captainExec("respawn-pane -k -t captain:0 bash");
     } catch {}
 
     await page.goto(pageUrl());
@@ -120,10 +121,7 @@ test.describe("Integration", () => {
     expect(json.ok).toBe(true);
 
     // Verify captain pane is still alive after interrupt
-    const paneContent = execSync("tmux capture-pane -t captain:0 -p -S -10", {
-      encoding: "utf8",
-      timeout: 5000,
-    });
+    const paneContent = captainExec("capture-pane -t captain:0 -p -S -10");
     expect(paneContent).toBeTruthy();
   });
 

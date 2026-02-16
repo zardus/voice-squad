@@ -1,18 +1,38 @@
 #!/bin/bash
-# pane-monitor.sh — Unified monitor for all tmux panes (captain + workers).
+# pane-monitor.sh — Monitor worker tmux panes for idle detection.
 #
-# Captain pane (captain:0): 300-second idle threshold → injects HEARTBEAT nudge
-# Worker panes (everything else): 30-second idle threshold → sends IDLE ALERT to captain
+# Worker panes (on workspace tmux server): 30-second idle threshold → sends IDLE ALERT to captain
+#
+# Captain monitoring is no longer needed — the captain runs in its own container.
 #
 # Checks every 1 second, tracks per-pane state via content hashing.
 # One-shot notification per idle period; resets when activity resumes.
 # Dynamically discovers new/killed sessions/windows.
+#
+# Environment:
+#   CAPTAIN_TMUX_SOCKET   — socket path for captain tmux server (for sending alerts)
+#   WORKSPACE_TMUX_SOCKET — socket path for workspace tmux server (for monitoring workers)
 
-CAPTAIN_PANE="captain:0"
-CAPTAIN_THRESHOLD=300   # 5 minutes
 WORKER_THRESHOLD=30     # 30 seconds
 
 LOGFILE="/tmp/pane-monitor.log"
+
+# Build tmux command helpers for each socket
+captain_tmux() {
+    if [ -n "${CAPTAIN_TMUX_SOCKET:-}" ]; then
+        tmux -S "$CAPTAIN_TMUX_SOCKET" "$@"
+    else
+        tmux "$@"
+    fi
+}
+
+workspace_tmux() {
+    if [ -n "${WORKSPACE_TMUX_SOCKET:-}" ]; then
+        tmux -S "$WORKSPACE_TMUX_SOCKET" "$@"
+    else
+        tmux "$@"
+    fi
+}
 
 declare -A last_hash
 declare -A seconds_unchanged
@@ -23,15 +43,15 @@ log() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') $1" >> "$LOGFILE"
 }
 
-log "Pane monitor started (pid=$$, captain_threshold=${CAPTAIN_THRESHOLD}s, worker_threshold=${WORKER_THRESHOLD}s)"
+log "Pane monitor started (pid=$$, worker_threshold=${WORKER_THRESHOLD}s)"
 
 while true; do
-    # Discover all current panes across all sessions
+    # Discover all current panes on the WORKSPACE tmux server (workers only)
     current_panes=()
     while IFS= read -r pane_target; do
         [[ -z "$pane_target" ]] && continue
         current_panes+=("$pane_target")
-    done < <(tmux list-panes -a -F '#{session_name}:#{window_index}.#{pane_index}' 2>/dev/null)
+    done < <(workspace_tmux list-panes -a -F '#{session_name}:#{window_index}.#{pane_index}' 2>/dev/null)
 
     # Build a set for quick lookup
     declare -A current_set
@@ -52,21 +72,11 @@ while true; do
 
     # Check each pane
     for pane in "${current_panes[@]}"; do
-        # Determine if this is the captain pane or a worker pane
-        # Captain pane is captain:0.0 (session captain, window 0, pane 0)
-        if [[ "$pane" == captain:0.* ]]; then
-            threshold=$CAPTAIN_THRESHOLD
-            is_captain=1
-        elif [[ "$pane" == captain:* ]]; then
-            # Other windows in the captain session (voice, monitor) — skip
-            continue
-        else
-            threshold=$WORKER_THRESHOLD
-            is_captain=0
-        fi
+        # All panes on the workspace server are workers
+        threshold=$WORKER_THRESHOLD
 
         # Capture pane content and hash it
-        content_hash=$(tmux capture-pane -t "$pane" -p 2>/dev/null | md5sum | cut -d' ' -f1)
+        content_hash=$(workspace_tmux capture-pane -t "$pane" -p 2>/dev/null | md5sum | cut -d' ' -f1)
         if [[ -z "$content_hash" ]]; then
             continue
         fi
@@ -86,28 +96,18 @@ while true; do
         if [[ "$content_hash" == "$prev_hash" ]]; then
             seconds_unchanged["$pane"]=$(( ${seconds_unchanged[$pane]} + 1 ))
 
-            # Check idle threshold (workers require prior activity; captain always eligible)
+            # Check idle threshold (workers require prior activity)
             if (( seconds_unchanged[$pane] >= threshold )) && \
                (( already_notified[$pane] == 0 )) && \
-               (( is_captain == 1 || has_had_activity[$pane] == 1 )); then
+               (( has_had_activity[$pane] == 1 )); then
 
-                if (( is_captain )); then
-                    # Captain stale — inject heartbeat nudge directly into captain pane
-                    log "HEARTBEAT: Captain pane idle for ${threshold}s — injecting nudge"
-                    tmux send-keys -t "$CAPTAIN_PANE" \
-                        'HEARTBEAT MESSAGE: please do a check of the current tasks and nudge them along or clean them up if reasonable. If there are any concrete developments worth reporting, use the speak command to give the human a voice update via text-to-speech.' 2>/dev/null || true
-                    sleep 0.5
-                    tmux send-keys -t "$CAPTAIN_PANE" Enter 2>/dev/null || true
-                    log "Heartbeat injected. Resetting counter."
-                else
-                    # Worker idle — alert the captain
-                    sw="${pane%.*}"   # drop .pane_index → session:window
-                    log "IDLE ALERT: Worker $sw idle for ${threshold}s — notifying captain"
-                    tmux send-keys -t "$CAPTAIN_PANE" \
-                        "IDLE ALERT: Worker $sw has been idle for ${threshold} seconds" 2>/dev/null || true
-                    sleep 0.5
-                    tmux send-keys -t "$CAPTAIN_PANE" Enter 2>/dev/null || true
-                fi
+                # Worker idle — alert the captain
+                sw="${pane%.*}"   # drop .pane_index → session:window
+                log "IDLE ALERT: Worker $sw idle for ${threshold}s — notifying captain"
+                captain_tmux send-keys -t captain:0 \
+                    "IDLE ALERT: Worker $sw has been idle for ${threshold} seconds" 2>/dev/null || true
+                sleep 0.5
+                captain_tmux send-keys -t captain:0 Enter 2>/dev/null || true
 
                 already_notified["$pane"]=1
                 # Reset hash so we re-trigger if still idle after another full threshold

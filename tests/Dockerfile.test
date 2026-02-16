@@ -1,5 +1,5 @@
 # Lightweight test-runner: Playwright + Chromium + tmux client.
-# The voice server and tmux session run in separate containers
+# The voice server and tmux sessions run in separate containers
 # (see docker-compose.test.yml).
 
 FROM ubuntu:24.04
@@ -24,19 +24,18 @@ RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
 RUN usermod -aG sudo ubuntu \
     && echo "ubuntu ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
-# Tmux socket directory for cross-container sharing
-ENV TMUX_TMPDIR=/run/tmux
-RUN mkdir -p /run/tmux && chown ubuntu:ubuntu /run/tmux
+# Tmux socket directories for cross-container sharing
+RUN mkdir -p /run/captain-tmux /run/workspace-tmux \
+    && chown ubuntu:ubuntu /run/captain-tmux /run/workspace-tmux
 
 # ── Scripts under test ──────────────────────────────────────
-# show-qr.js + its qrcode-terminal dependency (for main-menu tests)
+# show-qr.js + its qrcode-terminal dependency
 RUN mkdir -p /opt/squad/voice && cd /opt/squad/voice && npm install --save qrcode-terminal
 COPY src/voice/show-qr.js /opt/squad/voice/show-qr.js
-COPY src/main-menu.sh /opt/squad/main-menu.sh
 COPY src/restart-captain.sh /opt/squad/restart-captain.sh
 COPY src/pane-monitor.sh /opt/squad/pane-monitor.sh
 COPY src/switch-account.sh /opt/tests/src/switch-account.sh
-RUN chmod +x /opt/squad/main-menu.sh /opt/squad/restart-captain.sh /opt/squad/pane-monitor.sh
+RUN chmod +x /opt/squad/restart-captain.sh /opt/squad/pane-monitor.sh
 
 # ── Test suite ───────────────────────────────────────────────
 COPY tests/package.json tests/playwright.config.js /opt/tests/

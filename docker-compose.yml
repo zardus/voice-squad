@@ -15,7 +15,30 @@ services:
     tty: true
     volumes:
       - ./home:/home/ubuntu
-      - tmux-socket:/run/tmux
+      - workspace-tmux:/run/workspace-tmux
+    environment:
+      - ANTHROPIC_API_KEY
+      - OPENAI_API_KEY
+      - GH_TOKEN
+      - TMUX_TMPDIR=/run/workspace-tmux
+    healthcheck:
+      test: ["CMD-SHELL", "tmux -S /run/workspace-tmux/default has-session 2>/dev/null"]
+      interval: 5s
+      timeout: 3s
+      retries: 120
+      start_period: 10s
+
+  captain:
+    build:
+      context: src
+      dockerfile: Dockerfile.captain
+    depends_on:
+      workspace:
+        condition: service_healthy
+    volumes:
+      - ./home:/home/ubuntu
+      - captain-tmux:/run/captain-tmux
+      - workspace-tmux:/run/workspace-tmux
     environment:
       - ANTHROPIC_API_KEY
       - OPENAI_API_KEY
@@ -23,10 +46,10 @@ services:
       - SQUAD_CAPTAIN=${SQUAD_CAPTAIN:-claude}
       - VOICE_TOKEN
       - VOICE_SERVER_URL=http://voice-server:3000
-      - COMPOSE_MODE=1
-      - TMUX_TMPDIR=/run/tmux
+      - TMUX_TMPDIR=/run/workspace-tmux
+      - CAPTAIN_TMUX_SOCKET=/run/captain-tmux/default
     healthcheck:
-      test: ["CMD-SHELL", "tmux has-session -t captain 2>/dev/null"]
+      test: ["CMD-SHELL", "tmux -S /run/captain-tmux/default has-session -t captain 2>/dev/null"]
       interval: 5s
       timeout: 3s
       retries: 120
@@ -37,17 +60,19 @@ services:
       context: src
       dockerfile: Dockerfile.voice
     depends_on:
-      workspace:
+      captain:
         condition: service_healthy
     volumes:
       - ./home:/home/ubuntu
-      - tmux-socket:/run/tmux
+      - captain-tmux:/run/captain-tmux
+      - workspace-tmux:/run/workspace-tmux
     environment:
       - OPENAI_API_KEY
       - ANTHROPIC_API_KEY
       - VOICE_TOKEN
       - SQUAD_CAPTAIN=${SQUAD_CAPTAIN:-claude}
-      - TMUX_TMPDIR=/run/tmux
+      - CAPTAIN_TMUX_SOCKET=/run/captain-tmux/default
+      - WORKSPACE_TMUX_SOCKET=/run/workspace-tmux/default
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:3000/ || exit 1"]
       interval: 15s
@@ -61,12 +86,15 @@ services:
       context: src
       dockerfile: Dockerfile.pane-monitor
     depends_on:
-      workspace:
+      captain:
         condition: service_healthy
     volumes:
-      - tmux-socket:/run/tmux
+      - captain-tmux:/run/captain-tmux
+      - workspace-tmux:/run/workspace-tmux
     environment:
-      - TMUX_TMPDIR=/run/tmux
+      - CAPTAIN_TMUX_SOCKET=/run/captain-tmux/default
+      - WORKSPACE_TMUX_SOCKET=/run/workspace-tmux/default
 
 volumes:
-  tmux-socket:
+  captain-tmux:
+  workspace-tmux:

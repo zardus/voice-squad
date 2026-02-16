@@ -15,30 +15,58 @@ services:
     command:
       - |
         set -e
-        sudo mkdir -p /run/tmux && sudo chown ubuntu:ubuntu /run/tmux && sudo chmod 755 /run/tmux
-        mkdir -p /home/ubuntu/captain/archive/summaries
-        mkdir -p /home/ubuntu/captain/task-definitions/pending
-        mkdir -p /home/ubuntu/captain/task-definitions/archived
-        # Stub pane-monitor so restart-idle-monitor test can start it via tmux
-        printf '#!/bin/bash\necho "pane-monitor stub running"\nwhile true; do sleep 60; done\n' | sudo tee /opt/squad/pane-monitor.sh >/dev/null
-        sudo chmod +x /opt/squad/pane-monitor.sh
-        # Copy captain instructions so restart-captain.sh can find them
-        cp /opt/squad/captain/instructions.md /home/ubuntu/captain/CLAUDE.md
-        # Write ~/env so restart-captain.sh can source API keys
-        printf 'OPENAI_API_KEY="%s"\nANTHROPIC_API_KEY="%s"\n' "$$OPENAI_API_KEY" "$$ANTHROPIC_API_KEY" > /home/ubuntu/env
-        echo "$$VOICE_TOKEN" > /home/ubuntu/.voice-token
-        tmux new-session -d -s captain -c /home/ubuntu
+        sudo mkdir -p /run/workspace-tmux && sudo chown ubuntu:ubuntu /run/workspace-tmux && sudo chmod 755 /run/workspace-tmux
+        tmux -S /run/workspace-tmux/default new-session -d -s workspace -c /home/ubuntu
+        mkdir -p /run/workspace-tmux/tmux-$(id -u)
+        ln -sf /run/workspace-tmux/default /run/workspace-tmux/tmux-$(id -u)/default
         exec sleep infinity
     volumes:
       - test-home:/home/ubuntu
-      - tmux-socket:/run/tmux
+      - workspace-tmux:/run/workspace-tmux
+    environment:
+      - TMUX_TMPDIR=/run/workspace-tmux
+    healthcheck:
+      test: ["CMD-SHELL", "tmux -S /run/workspace-tmux/default has-session 2>/dev/null"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 3s
+
+  captain:
+    build:
+      context: src
+      dockerfile: Dockerfile.captain
+    pid: "service:workspace"
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        set -e
+        sudo mkdir -p /run/captain-tmux /run/workspace-tmux
+        sudo chown ubuntu:ubuntu /run/captain-tmux /run/workspace-tmux
+        sudo chmod 755 /run/captain-tmux /run/workspace-tmux
+        mkdir -p /home/ubuntu/captain/archive/summaries
+        mkdir -p /home/ubuntu/captain/task-definitions/pending
+        mkdir -p /home/ubuntu/captain/task-definitions/archived
+        cp /opt/squad/captain/instructions.md /home/ubuntu/captain/CLAUDE.md
+        printf 'OPENAI_API_KEY="%s"\nANTHROPIC_API_KEY="%s"\n' "$$OPENAI_API_KEY" "$$ANTHROPIC_API_KEY" > /home/ubuntu/env
+        echo "$$VOICE_TOKEN" > /home/ubuntu/.voice-token
+        tmux -S /run/captain-tmux/default new-session -d -s captain -c /home/ubuntu
+        exec sleep infinity
+    depends_on:
+      workspace:
+        condition: service_healthy
+    volumes:
+      - test-home:/home/ubuntu
+      - captain-tmux:/run/captain-tmux
+      - workspace-tmux:/run/workspace-tmux
     environment:
       - VOICE_TOKEN=test-token-for-ci
       - OPENAI_API_KEY=${OPENAI_API_KEY:-sk-test-dummy}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-sk-ant-test-dummy}
-      - TMUX_TMPDIR=/run/tmux
+      - CAPTAIN_TMUX_SOCKET=/run/captain-tmux/default
+      - TMUX_TMPDIR=/run/workspace-tmux
     healthcheck:
-      test: ["CMD-SHELL", "tmux has-session -t captain 2>/dev/null"]
+      test: ["CMD-SHELL", "tmux -S /run/captain-tmux/default has-session -t captain 2>/dev/null"]
       interval: 2s
       timeout: 3s
       retries: 30
@@ -51,16 +79,18 @@ services:
     network_mode: "service:workspace"
     pid: "service:workspace"
     depends_on:
-      workspace:
+      captain:
         condition: service_healthy
     volumes:
       - test-home:/home/ubuntu
-      - tmux-socket:/run/tmux
+      - captain-tmux:/run/captain-tmux
+      - workspace-tmux:/run/workspace-tmux
     environment:
       - VOICE_TOKEN=test-token-for-ci
       - OPENAI_API_KEY=${OPENAI_API_KEY:-sk-test-dummy}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-sk-ant-test-dummy}
-      - TMUX_TMPDIR=/run/tmux
+      - CAPTAIN_TMUX_SOCKET=/run/captain-tmux/default
+      - WORKSPACE_TMUX_SOCKET=/run/workspace-tmux/default
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:3000/ || exit 1"]
       interval: 3s
@@ -74,12 +104,14 @@ services:
       dockerfile: Dockerfile.pane-monitor
     pid: "service:workspace"
     depends_on:
-      workspace:
+      captain:
         condition: service_healthy
     volumes:
-      - tmux-socket:/run/tmux
+      - captain-tmux:/run/captain-tmux
+      - workspace-tmux:/run/workspace-tmux
     environment:
-      - TMUX_TMPDIR=/run/tmux
+      - CAPTAIN_TMUX_SOCKET=/run/captain-tmux/default
+      - WORKSPACE_TMUX_SOCKET=/run/workspace-tmux/default
 
   test-runner:
     build:
@@ -94,15 +126,18 @@ services:
         condition: service_started
     volumes:
       - test-home:/home/ubuntu
-      - tmux-socket:/run/tmux
+      - captain-tmux:/run/captain-tmux
+      - workspace-tmux:/run/workspace-tmux
     environment:
       - VOICE_TOKEN=test-token-for-ci
       - TEST_INTEGRATION=1
       - TEST_CAPTAIN=${TEST_CAPTAIN:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-sk-test-dummy}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-sk-ant-test-dummy}
-      - TMUX_TMPDIR=/run/tmux
+      - CAPTAIN_TMUX_SOCKET=/run/captain-tmux/default
+      - WORKSPACE_TMUX_SOCKET=/run/workspace-tmux/default
 
 volumes:
-  tmux-socket:
+  captain-tmux:
+  workspace-tmux:
   test-home:

@@ -10,6 +10,9 @@
 # If the account file doesn't exist yet, creates a blank one and runs login.
 # After login, restarts the captain with instructions to sequentially restart
 # all workers of that tool type.
+#
+# Environment:
+#   CAPTAIN_TMUX_SOCKET  Path to the captain's tmux socket.
 
 set -euo pipefail
 
@@ -32,6 +35,12 @@ fi
 if [ "$TOOL" != "claude" ] && [ "$TOOL" != "codex" ]; then
     echo "Error: tool must be 'claude' or 'codex' (got '$TOOL')"
     exit 1
+fi
+
+# Build tmux opts for captain socket
+TMUX_OPTS=()
+if [ -n "${CAPTAIN_TMUX_SOCKET:-}" ]; then
+    TMUX_OPTS=("-S" "$CAPTAIN_TMUX_SOCKET")
 fi
 
 ACCOUNTS_DIR="$HOME/captain/accounts"
@@ -71,10 +80,10 @@ echo ""
 echo "==> Login complete. Restarting captain..."
 
 # ---------------------------------------------------------------------------
-# Restart the captain (mirrors update.sh --restart-captain logic)
+# Restart the captain
 # ---------------------------------------------------------------------------
 
-if ! tmux has-session -t captain 2>/dev/null; then
+if ! tmux "${TMUX_OPTS[@]}" has-session -t captain 2>/dev/null; then
     echo "ERROR: tmux session 'captain' not found! Cannot restart captain."
     exit 1
 fi
@@ -82,7 +91,7 @@ fi
 CAPTAIN="${SQUAD_CAPTAIN:-claude}"
 
 # Find and kill the old captain process
-SHELL_PID=$(tmux list-panes -t captain:0 -F '#{pane_pid}')
+SHELL_PID=$(tmux "${TMUX_OPTS[@]}" list-panes -t captain:0 -F '#{pane_pid}')
 CAPTAIN_PID=$(ps -o pid= --ppid "$SHELL_PID" 2>/dev/null | head -1 | tr -d ' ')
 
 if [ -n "$CAPTAIN_PID" ]; then
@@ -104,7 +113,7 @@ else
 fi
 
 sleep 1
-tmux send-keys -t captain:0 C-c
+tmux "${TMUX_OPTS[@]}" send-keys -t captain:0 C-c
 sleep 0.5
 
 # Build the restart instruction for the new captain
@@ -113,9 +122,9 @@ RESTART_MSG="The $TOOL account was just switched to $EMAIL. Restart all $TOOL wo
 # Launch new captain with the restart instruction as its initial prompt
 echo "    Launching new captain ($CAPTAIN) with worker restart instructions..."
 if [ "$CAPTAIN" = "claude" ]; then
-    tmux send-keys -t captain:0 "claude --dangerously-skip-permissions '$RESTART_MSG'" Enter
+    tmux "${TMUX_OPTS[@]}" send-keys -t captain:0 "unset TMUX && claude --dangerously-skip-permissions '$RESTART_MSG'" Enter
 else
-    tmux send-keys -t captain:0 "codex --dangerously-bypass-approvals-and-sandbox '$RESTART_MSG'" Enter
+    tmux "${TMUX_OPTS[@]}" send-keys -t captain:0 "unset TMUX && codex --dangerously-bypass-approvals-and-sandbox '$RESTART_MSG'" Enter
 fi
 
 # Verify the new captain started

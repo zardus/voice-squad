@@ -32,19 +32,7 @@ RUN chown -R ubuntu:ubuntu /nix \
 ENV NIX_REMOTE="" \
     NIX_PATH="nixpkgs=channel:nixpkgs-unstable"
 
-# Docker-in-docker
-RUN install -m 0755 -d /etc/apt/keyrings \
-    && curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg \
-    && chmod a+r /etc/apt/keyrings/docker.gpg \
-    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" \
-    > /etc/apt/sources.list.d/docker.list \
-    && apt-get update && apt-get install -y \
-    docker-ce \
-    docker-ce-cli \
-    containerd.io \
-    && rm -rf /var/lib/apt/lists/*
-
-# Node.js (for workers that need it)
+# Node.js (for claude code and codex)
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
@@ -85,32 +73,28 @@ RUN pip3 install --break-system-packages --no-cache-dir \
     mypy \
     ipython
 
-# cloudflared (may be useful for worker tasks)
-RUN curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-$(dpkg --print-architecture) \
-    -o /usr/local/bin/cloudflared \
-    && chmod +x /usr/local/bin/cloudflared
-
-# Claude Code + Codex (workers run here)
+# Claude Code + Codex
 RUN npm install -g @anthropic-ai/claude-code @openai/codex@0.98.0
 
-# qrcode-terminal for showing voice URL QR codes
-RUN npm install -g qrcode-terminal
-
 # Set up ubuntu user (already exists in 24.04 base image)
-RUN usermod -aG docker ubuntu \
-    && echo "ubuntu ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+RUN echo "ubuntu ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
-# Workspace tmux socket directory for cross-container sharing
-RUN mkdir -p /run/workspace-tmux && chown ubuntu:ubuntu /run/workspace-tmux
+# Tmux socket directories for cross-container sharing
+RUN mkdir -p /run/captain-tmux /run/workspace-tmux \
+    && chown ubuntu:ubuntu /run/captain-tmux /run/workspace-tmux
 
-COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+COPY entrypoint-captain.sh /opt/squad/entrypoint-captain.sh
+COPY restart-captain.sh /opt/squad/restart-captain.sh
+RUN chmod +x /opt/squad/entrypoint-captain.sh /opt/squad/restart-captain.sh
 
-# Copy only show-qr.js for URL display (voice server runs in its own container)
-COPY voice/show-qr.js /opt/squad/show-qr.js
+COPY captain-instructions.md /opt/squad/captain/instructions.md
+
+COPY speak /usr/local/bin/speak
+COPY switch-account.sh /usr/local/bin/switch-account.sh
+RUN chmod +x /usr/local/bin/speak /usr/local/bin/switch-account.sh
 
 USER ubuntu
 
 WORKDIR /home/ubuntu
 
-ENTRYPOINT ["/entrypoint.sh"]
+ENTRYPOINT ["/opt/squad/entrypoint-captain.sh"]

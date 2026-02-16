@@ -6,6 +6,7 @@
 const { test, expect } = require("@playwright/test");
 const { execSync } = require("child_process");
 const { TOKEN } = require("./helpers/config");
+const { captainExec, workspaceExec, captainTmuxCmd, workspaceTmuxCmd } = require("./helpers/tmux");
 
 const WORKER_SESSION = "idle-test-worker";
 
@@ -15,13 +16,13 @@ test.describe("Idle monitor", () => {
     // Earlier tests (e.g. api.spec restart-captain) may leave captain:0 running
     // Claude Code instead of a clean shell. Respawn with bash so our tmux
     // send-keys / capture-pane assertions work against a plain prompt.
-    try { execSync("tmux respawn-pane -k -t captain:0 bash", { timeout: 5000 }); } catch {}
+    try { captainExec("respawn-pane -k -t captain:0 bash"); } catch {}
   });
 
   test.afterAll(() => {
     // Cleanup: kill worker session and stop our pane-monitor process
     try {
-      execSync(`tmux kill-session -t ${WORKER_SESSION}`, { encoding: "utf8", timeout: 5000 });
+      workspaceExec(`kill-session -t ${WORKER_SESSION}`);
     } catch {}
     try {
       execSync("pkill -f 'pane-monitor-test'", { encoding: "utf8", timeout: 5000 });
@@ -31,12 +32,9 @@ test.describe("Idle monitor", () => {
   test("detects idle worker pane and sends IDLE ALERT to captain", async () => {
     test.setTimeout(120000);
 
-    // Create the worker tmux session FIRST (before starting the monitor)
+    // Create the worker tmux session on the WORKSPACE server FIRST (before starting the monitor)
     // so the monitor can discover the pane in its initial state.
-    execSync(`tmux new-session -d -s ${WORKER_SESSION} -c /home/ubuntu`, {
-      encoding: "utf8",
-      timeout: 5000,
-    });
+    workspaceExec(`new-session -d -s ${WORKER_SESSION} -c /home/ubuntu`);
 
     // Start the real pane-monitor.sh in the background.
     // Use a wrapper script name so we can target it in cleanup.
@@ -51,20 +49,14 @@ test.describe("Idle monitor", () => {
 
     // Now generate activity — the monitor will see the content change and
     // set has_had_activity=1 for this pane.
-    execSync(`tmux send-keys -t ${WORKER_SESSION} 'echo worker starting' Enter`, {
-      encoding: "utf8",
-      timeout: 5000,
-    });
+    workspaceExec(`send-keys -t ${WORKER_SESSION} 'echo worker starting' Enter`);
 
     // Let the activity register (monitor needs at least one cycle to see
     // the changed hash).
     await new Promise((r) => setTimeout(r, 3000));
 
     // Clear the captain pane so we can detect the IDLE ALERT cleanly.
-    execSync("tmux send-keys -t captain:0 'clear' Enter", {
-      encoding: "utf8",
-      timeout: 5000,
-    });
+    captainExec("send-keys -t captain:0 'clear' Enter");
 
     // Poll for the IDLE ALERT instead of waiting a fixed time.
     // The monitor's 30-second idle counter increments once per loop iteration,
@@ -73,10 +65,7 @@ test.describe("Idle monitor", () => {
     const deadline = Date.now() + 90000; // 90s generous timeout
     let captainOutput = "";
     while (Date.now() < deadline) {
-      captainOutput = execSync("tmux capture-pane -t captain:0 -p -S -100", {
-        encoding: "utf8",
-        timeout: 5000,
-      });
+      captainOutput = captainExec("capture-pane -t captain:0 -p -S -100");
       if (captainOutput.includes("IDLE ALERT") && captainOutput.includes(WORKER_SESSION)) {
         break;
       }

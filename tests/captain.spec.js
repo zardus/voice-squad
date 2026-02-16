@@ -12,6 +12,7 @@ const { test, expect } = require("@playwright/test");
 const { execSync } = require("child_process");
 const fs = require("fs");
 const { BASE_URL, TOKEN, pageUrl } = require("./helpers/config");
+const { captainExec } = require("./helpers/tmux");
 
 const CAPTAIN = process.env.TEST_CAPTAIN === "1";
 const TEST_FILE = "/home/ubuntu/captain-test.txt";
@@ -64,18 +65,18 @@ test.describe("Captain E2E", () => {
     fs.appendFileSync("/home/ubuntu/.bashrc",
       `\nexport ANTHROPIC_API_KEY='${apiKey}'\n`
     );
-    execSync(`tmux set-environment -t captain ANTHROPIC_API_KEY '${apiKey}'`, { timeout: 5000 });
+    captainExec(`set-environment -t captain ANTHROPIC_API_KEY '${apiKey}'`);
 
     // --- Start Claude ---
     console.log("[captain-test] Starting claude captain...");
     try {
-      execSync("tmux send-keys -t captain:0 C-c", { timeout: 5000 });
-      execSync("tmux send-keys -t captain:0 C-c", { timeout: 5000 });
+      captainExec("send-keys -t captain:0 C-c");
+      captainExec("send-keys -t captain:0 C-c");
     } catch {}
     await sleep(1000);
 
-    execSync(
-      'tmux send-keys -t captain:0 "cd /home/ubuntu/captain && source ~/.bashrc && claude --dangerously-skip-permissions" Enter',
+    captainExec(
+      'send-keys -t captain:0 "cd /home/ubuntu/captain && unset TMUX && source ~/.bashrc && claude --dangerously-skip-permissions" Enter',
       { timeout: 10000 }
     );
 
@@ -85,54 +86,48 @@ test.describe("Captain E2E", () => {
     for (let i = 0; i < 90; i++) {
       await sleep(2000);
       try {
-        const shellPid = execSync("tmux list-panes -t captain:0 -F '#{pane_pid}'", {
-          encoding: "utf8", timeout: 5000,
-        }).trim();
+        const shellPid = captainExec("list-panes -t captain:0 -F '#{pane_pid}'").trim();
         const childPid = execSync(`ps -o pid= --ppid ${shellPid} 2>/dev/null | head -1`, {
           encoding: "utf8", timeout: 5000,
         }).trim();
 
         if (!childPid) {
           // Claude may have exited at a trust prompt — restart
-          const raw = execSync("tmux capture-pane -t captain:0 -p -S -50", {
-            encoding: "utf8", timeout: 5000,
-          });
+          const raw = captainExec("capture-pane -t captain:0 -p -S -50");
           if (stripAnsi(raw).includes("Yes, I accept")) {
-            execSync("tmux send-keys -t captain:0 Enter", { timeout: 5000 });
+            captainExec("send-keys -t captain:0 Enter");
             await sleep(1000);
-            execSync(
-              'tmux send-keys -t captain:0 "claude --dangerously-skip-permissions" Enter',
+            captainExec(
+              'send-keys -t captain:0 "unset TMUX && claude --dangerously-skip-permissions" Enter',
               { timeout: 10000 }
             );
           }
           continue;
         }
 
-        const raw = execSync("tmux capture-pane -t captain:0 -p", {
-          encoding: "utf8", timeout: 5000,
-        });
+        const raw = captainExec("capture-pane -t captain:0 -p");
         const cleaned = stripAnsi(raw);
 
         // Handle setup dialogs
         if (cleaned.includes("Choose the text style") ||
             cleaned.includes("Let's get started")) {
-          execSync("tmux send-keys -t captain:0 Enter", { timeout: 5000 });
+          captainExec("send-keys -t captain:0 Enter");
           await sleep(1000);
           continue;
         }
 
         // Trust dialog — select "Yes, I accept" (option 2)
         if (cleaned.includes("Yes, I accept") && cleaned.includes("Enter to confirm")) {
-          execSync("tmux send-keys -t captain:0 2", { timeout: 5000 });
+          captainExec("send-keys -t captain:0 2");
           await sleep(500);
-          execSync("tmux send-keys -t captain:0 Enter", { timeout: 5000 });
+          captainExec("send-keys -t captain:0 Enter");
           await sleep(3000);
           continue;
         }
 
         // Other "Enter to confirm" dialogs — accept default
         if (cleaned.includes("Enter to confirm")) {
-          execSync("tmux send-keys -t captain:0 Enter", { timeout: 5000 });
+          captainExec("send-keys -t captain:0 Enter");
           await sleep(2000);
           continue;
         }
@@ -162,9 +157,31 @@ test.describe("Captain E2E", () => {
     // --- Send task ---
     const task = `Create a file at ${TEST_FILE} with the text 'hello from captain test'`;
     console.log(`[captain-test] Sending task: ${task}`);
-    execSync(`tmux send-keys -t captain:0 -l "${task.replace(/"/g, '\\"')}"`, { timeout: 5000 });
-    await sleep(500);
-    execSync("tmux send-keys -t captain:0 Enter", { timeout: 5000 });
+
+    // Capture pane BEFORE sending task for comparison
+    try {
+      const pre = captainExec("capture-pane -t captain:0 -p");
+      const preClean = stripAnsi(pre).split("\n").filter((l) => l.trim());
+      console.log(`[captain-test] PRE-SEND pane (${preClean.length} lines):`);
+      preClean.slice(-8).forEach((l) => console.log(`  | ${l.slice(0, 120)}`));
+    } catch (e) { console.log(`[captain-test] PRE-SEND capture failed: ${e.message}`); }
+
+    captainExec(`send-keys -t captain:0 -l "${task.replace(/"/g, '\\"')}"`);
+    // Send Enter twice with delay — matches tmux-bridge.js sendToCaptain() which
+    // retries Enter to work around Claude Code's autocomplete consuming the first one.
+    await sleep(400);
+    captainExec("send-keys -t captain:0 Enter");
+    await sleep(400);
+    captainExec("send-keys -t captain:0 Enter");
+
+    // Capture pane AFTER sending task to verify input was received
+    await sleep(2000);
+    try {
+      const post = captainExec("capture-pane -t captain:0 -p");
+      const postClean = stripAnsi(post).split("\n").filter((l) => l.trim());
+      console.log(`[captain-test] POST-SEND pane (${postClean.length} lines):`);
+      postClean.forEach((l) => console.log(`  | ${l.slice(0, 120)}`));
+    } catch (e) { console.log(`[captain-test] POST-SEND capture failed: ${e.message}`); }
 
     // --- Poll for file creation (up to 5 minutes) ---
     console.log("[captain-test] Polling for test file...");
@@ -177,12 +194,20 @@ test.describe("Captain E2E", () => {
       }
       if (i > 0 && i % 15 === 0) {
         try {
-          const raw = execSync("tmux capture-pane -t captain:0 -p", {
-            encoding: "utf8", timeout: 5000,
-          });
+          const raw = captainExec("capture-pane -t captain:0 -p");
           const lines = stripAnsi(raw).split("\n").filter((l) => l.trim());
-          const tail = lines.slice(-2).map((l) => l.slice(-80));
-          console.log(`[captain-test] Polling (${i * 2}s)... ${JSON.stringify(tail)}`);
+          // Show MORE context — last 8 lines instead of just 2
+          const tail = lines.slice(-8).map((l) => l.slice(0, 120));
+          console.log(`[captain-test] Polling (${i * 2}s), ${lines.length} lines:`);
+          tail.forEach((l) => console.log(`  | ${l}`));
+          // Also check if claude process is still alive
+          try {
+            const shellPid = captainExec("list-panes -t captain:0 -F '#{pane_pid}'").trim();
+            const childPid = execSync(`ps -o pid= --ppid ${shellPid} 2>/dev/null | head -1`, {
+              encoding: "utf8", timeout: 5000,
+            }).trim();
+            console.log(`[captain-test] Shell PID=${shellPid}, Claude PID=${childPid || "NONE"}`);
+          } catch {}
         } catch {}
       }
     }
@@ -194,17 +219,15 @@ test.describe("Captain E2E", () => {
     console.log(`[captain-test] File created: ${contents.trim()}`);
 
     // Verify worker was spawned (should have >1 tmux window)
-    const windowList = execSync("tmux list-windows -t captain", {
-      encoding: "utf8", timeout: 5000,
-    });
+    const windowList = captainExec("list-windows -t captain");
     const windowCount = windowList.trim().split("\n").length;
     console.log(`[captain-test] tmux windows: ${windowCount}`);
     expect(windowCount).toBeGreaterThan(1);
 
     // Cleanup
     try {
-      execSync("tmux send-keys -t captain:0 C-c", { timeout: 5000 });
-      execSync("tmux send-keys -t captain:0 C-c", { timeout: 5000 });
+      captainExec("send-keys -t captain:0 C-c");
+      captainExec("send-keys -t captain:0 C-c");
     } catch {}
     try { fs.unlinkSync(TEST_FILE); } catch {}
   });

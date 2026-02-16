@@ -5,6 +5,19 @@ const ENTER_RETRY_COUNT = 2;
 const ENTER_RETRY_DELAY_MS = 400;
 const TERMINAL_TRIM_BOTTOM_LINES = Number(process.env.TMUX_TERMINAL_TRIM_BOTTOM_LINES || 5);
 
+const CAPTAIN_TMUX_SOCKET = process.env.CAPTAIN_TMUX_SOCKET || "";
+const WORKSPACE_TMUX_SOCKET = process.env.WORKSPACE_TMUX_SOCKET || "";
+
+function captainTmuxArgs(args) {
+  if (CAPTAIN_TMUX_SOCKET) return ["-S", CAPTAIN_TMUX_SOCKET, ...args];
+  return args;
+}
+
+function workspaceTmuxArgs(args) {
+  if (WORKSPACE_TMUX_SOCKET) return ["-S", WORKSPACE_TMUX_SOCKET, ...args];
+  return args;
+}
+
 function validatePaneTarget(target) {
   const t = String(target || "").trim();
   // Expected: session:window.pane (we use numeric window/pane indexes)
@@ -28,7 +41,8 @@ function trimBottomLines(output, n) {
 
 function capturePaneOutput() {
   try {
-    const raw = execSync(`tmux capture-pane -t ${TARGET} -p -S -500`, {
+    const args = captainTmuxArgs(["capture-pane", "-t", TARGET, "-p", "-S", "-500"]);
+    const raw = execFileSync("tmux", args, {
       encoding: "utf-8",
       timeout: 5000,
     });
@@ -40,7 +54,8 @@ function capturePaneOutput() {
 
 function capturePaneOutputAsync() {
   return new Promise((resolve) => {
-    execFile("tmux", ["capture-pane", "-t", TARGET, "-p", "-S", "-500"], {
+    const args = captainTmuxArgs(["capture-pane", "-t", TARGET, "-p", "-S", "-500"]);
+    execFile("tmux", args, {
       encoding: "utf-8",
       timeout: 5000,
     }, (err, stdout) => {
@@ -54,13 +69,13 @@ function sleep(ms) {
 }
 
 async function sendToCaptain(text) {
-  execSync(`tmux send-keys -t ${TARGET} -l ${shellEscape(text)}`, {
-    timeout: 5000,
-  });
+  const sendKeysArgs = captainTmuxArgs(["send-keys", "-t", TARGET, "-l", text]);
+  execFileSync("tmux", sendKeysArgs, { timeout: 5000 });
   // Delay + repeated Enter reduces "typed but not submitted" failures caused by prompt UI/autocomplete.
   await sleep(ENTER_RETRY_DELAY_MS);
   for (let i = 0; i < ENTER_RETRY_COUNT; i++) {
-    execSync(`tmux send-keys -t ${TARGET} Enter`, { timeout: 5000 });
+    const enterArgs = captainTmuxArgs(["send-keys", "-t", TARGET, "Enter"]);
+    execFileSync("tmux", enterArgs, { timeout: 5000 });
     if (i < ENTER_RETRY_COUNT - 1) await sleep(ENTER_RETRY_DELAY_MS);
   }
 }
@@ -75,14 +90,15 @@ function sendTextToPaneTarget(target, text) {
   if (!line) return;
   if (line.length > 4000) throw new Error("Text too long");
 
-  execFileSync("tmux", ["send-keys", "-t", t, "-l", line], { timeout: 5000 });
-  execFileSync("tmux", ["send-keys", "-t", t, "Enter"], { timeout: 5000 });
-  execFileSync("tmux", ["send-keys", "-t", t, "Enter"], { timeout: 5000 });
+  const sendArgs = workspaceTmuxArgs(["send-keys", "-t", t, "-l", line]);
+  execFileSync("tmux", sendArgs, { timeout: 5000 });
+  execFileSync("tmux", workspaceTmuxArgs(["send-keys", "-t", t, "Enter"]), { timeout: 5000 });
+  execFileSync("tmux", workspaceTmuxArgs(["send-keys", "-t", t, "Enter"]), { timeout: 5000 });
 }
 
 function sendCtrlCToPaneTarget(target) {
   const t = validatePaneTarget(target);
-  execFileSync("tmux", ["send-keys", "-t", t, "C-c"], { timeout: 5000 });
+  execFileSync("tmux", workspaceTmuxArgs(["send-keys", "-t", t, "C-c"]), { timeout: 5000 });
 }
 
 async function sendCtrlCSequenceToPaneTarget(target, options = {}) {
@@ -90,13 +106,9 @@ async function sendCtrlCSequenceToPaneTarget(target, options = {}) {
   const times = Math.max(1, Math.min(5, Number(options.times) || 3));
   const intervalMs = Math.max(0, Math.min(3000, Number(options.intervalMs) || 700));
   for (let i = 0; i < times; i++) {
-    execFileSync("tmux", ["send-keys", "-t", t, "C-c"], { timeout: 5000 });
+    execFileSync("tmux", workspaceTmuxArgs(["send-keys", "-t", t, "C-c"]), { timeout: 5000 });
     if (i < times - 1 && intervalMs > 0) await sleep(intervalMs);
   }
-}
-
-function shellEscape(str) {
-  return "'" + str.replace(/'/g, "'\\''") + "'";
 }
 
 module.exports = {
