@@ -118,12 +118,12 @@ test.describe("Tasks tab", () => {
           tasks: [
             {
               task_name: "bridge-rewrite",
+              title: "Bridge rewrite",
+              started_at: "2026-02-15T08:57:00Z",
               completed_at: "2026-02-15T09:00:00Z",
-              short_summary: "Refactored bridge and added tests.",
-              detailed_summary: "## Done\n- Added API route",
-              worker_type: "codex",
-              session: "alpha",
-              window: "bridge-rewrite",
+              results: "## Done\nRefactored bridge and added tests.",
+              task_definition: "### Task\n- Improve tmux bridge",
+              has_log: true,
             },
           ],
         }),
@@ -134,7 +134,9 @@ test.describe("Tasks tab", () => {
     await page.click('[data-tab="tasks"]');
 
     await expect(page.locator(".completed-task-item")).toHaveCount(1);
-    await expect(page.locator(".completed-task-short")).toHaveText("Refactored bridge and added tests.");
+    await expect(page.locator(".completed-task-short")).toContainText("done");
+    await page.locator(".completed-task-summary").first().click();
+    await expect(page.locator(".completed-task-detailed")).toContainText("Refactored bridge and added tests.");
   });
 
   test("refresh button re-fetches both endpoints", async ({ page }) => {

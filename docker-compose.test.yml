@@ -11,14 +11,23 @@ services:
   workspace:
     volumes:
       - test-home:/home/ubuntu
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-test-openai-key}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-test-anthropic-key}
 
   captain:
     volumes:
       - test-home:/home/ubuntu
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-test-openai-key}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-test-anthropic-key}
 
   voice-server:
     volumes:
       - test-home:/home/ubuntu
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-test-openai-key}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-test-anthropic-key}
 
   tunnel:
     volumes:
@@ -41,8 +50,8 @@ services:
       - VOICE_TOKEN
       - TEST_INTEGRATION=1
       - TEST_CAPTAIN=${TEST_CAPTAIN:-}
-      - OPENAI_API_KEY
-      - ANTHROPIC_API_KEY
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-test-openai-key}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-test-anthropic-key}
       - CAPTAIN_TMUX_SOCKET=/run/captain-tmux/default
       - WORKSPACE_TMUX_SOCKET=/run/workspace-tmux/default
 
