@@ -1,0 +1,33 @@
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y \
+    curl \
+    ca-certificates \
+    sudo \
+    && rm -rf /var/lib/apt/lists/*
+
+# Node.js 20 (for QR code display)
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+# cloudflared
+RUN curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-$(dpkg --print-architecture) \
+    -o /usr/local/bin/cloudflared \
+    && chmod +x /usr/local/bin/cloudflared
+
+# QR code display
+COPY voice/show-qr.js /opt/squad/show-qr.js
+RUN cd /opt/squad && npm init -y > /dev/null 2>&1 && npm install --production qrcode-terminal
+
+# Set up ubuntu user
+RUN echo "ubuntu ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+
+COPY entrypoint-tunnel.sh /entrypoint-tunnel.sh
+RUN chmod +x /entrypoint-tunnel.sh
+
+USER ubuntu
+
+ENTRYPOINT ["/entrypoint-tunnel.sh"]

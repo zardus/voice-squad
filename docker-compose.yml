@@ -81,6 +81,19 @@ services:
       start_period: 15s
     restart: unless-stopped
 
+  tunnel:
+    build:
+      context: src
+      dockerfile: Dockerfile.tunnel
+    depends_on:
+      voice-server:
+        condition: service_healthy
+    volumes:
+      - ./home:/home/ubuntu
+    environment:
+      - VOICE_TOKEN
+      - VOICE_SERVER_ORIGIN=http://voice-server:3000
+
   pane-monitor:
     build:
       context: src

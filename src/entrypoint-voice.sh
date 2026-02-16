@@ -67,43 +67,10 @@ for i in $(seq 1 20); do
 done
 
 if ! grep -q 'listening on' /tmp/voice-server.log 2>/dev/null; then
-    echo "[voice-entrypoint] WARNING: Voice server not listening after 10s — starting tunnel anyway"
+    echo "[voice-entrypoint] WARNING: Voice server not listening after 10s"
 fi
 
 echo "[voice-entrypoint] Voice server started (PID $VOICE_PID)"
-
-# Start cloudflared tunnel
-cloudflared tunnel --url http://localhost:3000 > /tmp/cloudflared.log 2>&1 &
-
-# Wait for tunnel URL (up to 15s)
-echo "[voice-entrypoint] Waiting for tunnel URL..."
-TUNNEL_URL=""
-for i in $(seq 1 30); do
-    TUNNEL_URL=$(grep -oP 'https://[a-z0-9-]+\.trycloudflare\.com' /tmp/cloudflared.log 2>/dev/null | head -1)
-    if [ -n "$TUNNEL_URL" ]; then break; fi
-    sleep 0.5
-done
-
-if [ -n "$TUNNEL_URL" ]; then
-    VOICE_URL="${TUNNEL_URL}?token=${VOICE_TOKEN}"
-else
-    echo "[voice-entrypoint] Warning: Could not detect tunnel URL. Check /tmp/cloudflared.log"
-    VOICE_URL="http://localhost:3000?token=${VOICE_TOKEN}"
-fi
-
-# Write URL to shared volume so captain container can display it
-echo "$VOICE_URL" > /tmp/voice-url.txt
-echo "$VOICE_URL" > /home/ubuntu/.voice-url.txt 2>/dev/null || true
-
-# Show QR code
-echo ""
-echo "============================================"
-echo "  Voice UI URL:"
-echo "  $VOICE_URL"
-echo "============================================"
-echo ""
-node /opt/squad/voice/show-qr.js "$VOICE_URL" 2>/dev/null || true
-echo ""
 
 # Follow voice server log (keeps container alive)
 echo "[voice-entrypoint] Voice server running. Following logs..."

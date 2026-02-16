@@ -18,7 +18,7 @@ SQUAD_CAPTAIN=codex docker compose up --build
 
 Requires `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` environment variables on the host. Optional: `GH_TOKEN`. A `VOICE_TOKEN` is auto-generated if not provided.
 
-The system runs as 3 containers (see `docker-compose.yml`): workspace (captain + tmux), voice-server (voice pipeline + cloudflared tunnel), and pane-monitor (idle worker detection).
+The system runs as 4 containers (see `docker-compose.yml`): workspace (dockerd + tmux), captain (captain CLI agent), voice-server (voice pipeline), tunnel (cloudflared quick tunnel), and pane-monitor (idle worker detection). The tunnel runs in its own container so the voice server can be restarted without losing the tunnel URL.
 
 ## Project Structure
 
@@ -52,7 +52,7 @@ After editing source files, you **must** run the deploy script to apply changes 
 ./utils/update.sh --restart-captain # also restart the captain agent
 ```
 
-This pulls latest git, copies `src/` files to `/opt/squad/` (the installed location), and restarts the voice server. The cloudflared tunnel and captain agent are kept alive (unless `--restart-captain` is passed).
+This pulls latest git, copies `src/` files to `/opt/squad/` (the installed location), and restarts the voice server. The cloudflared tunnel runs in a separate container and is unaffected by voice server restarts. The captain agent is kept alive (unless `--restart-captain` is passed).
 
 **Key paths:**
 - Source: `src/voice/` — server code; `src/voice/public/` — frontend (index.html, app.js, style.css)
@@ -67,7 +67,7 @@ This pulls latest git, copies `src/` files to `/opt/squad/` (the installed locat
 
 - **Inside the container**, files are installed to `/opt/squad/`. `launch-squad.sh` copies instruction files to `/home/ubuntu/` with the correct filename (CLAUDE.md for claude captains, AGENTS.md for codex captains).
 - **Captain runs in tmux**: The captain CLI runs in window 0 of a tmux session called `captain`.
-- **Voice interface**: A phone PWA connects via WebSocket through a cloudflared quick tunnel (`*.trycloudflare.com`). Auth is via a random token embedded in the URL (shown as a QR code at startup in the voice tmux window). The pipeline: STT (Whisper) -> send to captain via tmux -> poll output -> summarize (Claude Sonnet) -> TTS (OpenAI) -> play on phone.
+- **Voice interface**: A phone PWA connects via WebSocket through a cloudflared quick tunnel (`*.trycloudflare.com`) running in a separate `tunnel` container. Auth is via a random token embedded in the URL (shown as a QR code at startup in the tunnel container logs). The pipeline: STT (Whisper) -> send to captain via tmux -> poll output -> summarize (Claude Sonnet) -> TTS (OpenAI) -> play on phone.
 - **Environment variables**: `SQUAD_CAPTAIN` (claude|codex), `VOICE_TOKEN` (auto-generated).
 - The container runs `--privileged` for Docker-in-Docker support. The Docker container itself is the sandbox boundary.
 ## Running Tests
