@@ -26,7 +26,8 @@ services:
       - test-home:/home/ubuntu
 
   tunnel:
-    profiles: ["with-tunnel"]
+    volumes:
+      - test-home:/home/ubuntu
 
   pane-monitor:
     pid: "service:workspace"
