@@ -43,7 +43,7 @@ test.describe("Heartbeat", () => {
     }
 
     // Join lines to handle tmux line-wrapping that splits words across lines
-    const joined = captainOutput.replace(/\n/g, "");
+    const joined = captainOutput.replace(/\n/g, " ");
     expect(joined).toContain("HEARTBEAT MESSAGE");
     expect(joined).toContain("please do a check of the current tasks");
     expect(joined).toContain("use the speak command");
