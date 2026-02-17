@@ -1087,6 +1087,67 @@ body.voice-history-open {
   color: #4ecca3;
 }
 
+.worker-status-section {
+  margin-top: 12px;
+  border: 1px solid #2a4a6b;
+  border-radius: 6px;
+  background: #0f1e36;
+  padding: 10px 12px;
+}
+
+.worker-status-heading {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: #f0a500;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.worker-status-content {
+  font-size: 13px;
+  line-height: 1.5;
+  color: #d0d8e0;
+}
+
+.worker-status-content p {
+  margin: 2px 0;
+}
+
+.worker-status-content ul {
+  list-style: none;
+  padding-left: 12px;
+  margin: 4px 0 8px;
+}
+
+.worker-status-content li {
+  position: relative;
+  padding-left: 14px;
+  margin: 4px 0;
+}
+
+.worker-status-content li::before {
+  content: "\2022";
+  position: absolute;
+  left: 0;
+  color: #f0a500;
+  font-weight: bold;
+}
+
+.worker-status-content strong {
+  color: #fff;
+}
+
+.worker-status-content code {
+  font-family: "SF Mono", "Cascadia Code", "Fira Code", Consolas, monospace;
+  font-size: 12px;
+  background: rgba(240, 165, 0, 0.1);
+  border: 1px solid #2a4a6b;
+  border-radius: 3px;
+  padding: 1px 5px;
+  color: #f0a500;
+}
+
 .pending-loading {
   color: #a0a0a0;
   font-style: italic;

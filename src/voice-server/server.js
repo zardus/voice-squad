@@ -312,6 +312,66 @@ app.get("/api/pending-tasks", async (req, res) => {
 
   try {
     const tasks = await listPendingTasks();
+
+    // Ensure stable API shape: always include worker_status field
+    for (const task of tasks) {
+      task.worker_status = null;
+    }
+
+    // Enrich each task with a Haiku-generated worker status summary (opt-in via query param)
+    const enrichStatus = url.searchParams.get("worker_status") === "1";
+    if (enrichStatus) {
+      try {
+        const { sessions } = await statusDaemon.collectPanes();
+
+        // Build map: lowercase window name -> combined pane content
+        const windowContentMap = new Map();
+        for (const session of sessions) {
+          for (const win of session.windows) {
+            let content = "";
+            if (Array.isArray(win.panes) && win.panes.length) {
+              content = win.panes.map((p) => p.content || "").join("\n");
+            } else if (typeof win.content === "string") {
+              content = win.content;
+            }
+            if (content.trim()) {
+              windowContentMap.set(win.name.toLowerCase(), content);
+            }
+          }
+        }
+
+        const enrichmentTasks = tasks
+          .filter((task) => {
+            const taskName = (task.task_name || "").toLowerCase();
+            return windowContentMap.has(taskName);
+          })
+          .map((task) => () => {
+            const taskName = (task.task_name || "").toLowerCase();
+            const paneContent = windowContentMap.get(taskName);
+            const lines = paneContent.split("\n");
+            const recentLines = scrubSecrets(lines.slice(-50).join("\n"));
+            const dump = `## Task Definition\n${task.content || "(no content)"}\n\n## Recent Terminal Output\n${recentLines}`;
+
+            // Per-request timeout to avoid stalling the entire response
+            return Promise.race([
+              callHaiku(dump, WORKER_STATUS_PROMPT).then((result) => {
+                task.worker_status = result;
+              }),
+              new Promise((_, reject) =>
+                setTimeout(() => reject(new Error("timeout")), WORKER_STATUS_TIMEOUT_MS)
+              ),
+            ]).catch((err) => {
+              console.warn(`[pending-tasks] haiku status failed for ${task.task_name}: ${err.message}`);
+              task.worker_status = null;
+            });
+          });
+
+        await limitedConcurrency(enrichmentTasks, WORKER_STATUS_CONCURRENCY);
+      } catch (err) {
+        console.warn(`[pending-tasks] worker status enrichment failed: ${err.message}`);
+      }
+    }
+
     res.json({ tasks });
   } catch (err) {
     console.error("[pending-tasks] GET error:", err.message);
@@ -659,11 +719,55 @@ app.get("/api/login-status", (req, res) => {
 const HAIKU_PROMPT =
   "You are summarizing the state of a multi-agent coding squad. Below are the terminal outputs from all active tmux sessions and windows. Give a concise status overview: what tasks are running, their progress, any errors or completions. Be specific about what each worker is doing. Format as a clean bullet list. Keep it under 300 words.";
 
-function callHaiku(dump) {
+const WORKER_STATUS_PROMPT =
+  "You are summarizing a single worker agent's progress. Below is the task definition it was assigned, followed by its recent terminal output. Give a concise status covering: (1) what the worker is currently doing, (2) any issues or errors encountered, (3) what it has completed so far. Use bullet points. Keep it under 100 words.";
+
+// Scrub common secret patterns from terminal output before sending to external APIs
+const SECRET_PATTERNS = [
+  /(?:ANTHROPIC_API_KEY|OPENAI_API_KEY|GH_TOKEN|GITHUB_TOKEN|AWS_SECRET_ACCESS_KEY|AWS_ACCESS_KEY_ID|VOICE_TOKEN|API_KEY|SECRET_KEY|DATABASE_URL|REDIS_URL)=[^\s'";]+/gi,
+  /(?:sk-[a-zA-Z0-9_-]{20,})/g,           // OpenAI-style keys
+  /(?:AKIA[0-9A-Z]{16})/g,                 // AWS access key IDs
+  /(?:ghp_[a-zA-Z0-9]{36,})/g,            // GitHub personal access tokens
+  /(?:gho_[a-zA-Z0-9]{36,})/g,            // GitHub OAuth tokens
+  /(?:ghs_[a-zA-Z0-9]{36,})/g,            // GitHub server tokens
+  /(?:github_pat_[a-zA-Z0-9_]{22,})/g,    // GitHub fine-grained PATs
+  /(?:xox[bpsr]-[a-zA-Z0-9-]+)/g,         // Slack tokens
+  /(?:Bearer\s+[a-zA-Z0-9._~+\/=-]{20,})/gi, // Bearer tokens
+  /(?:-----BEGIN[A-Z ]*PRIVATE KEY-----[\s\S]*?-----END[A-Z ]*PRIVATE KEY-----)/g,
+];
+
+function scrubSecrets(text) {
+  let scrubbed = text;
+  for (const pattern of SECRET_PATTERNS) {
+    scrubbed = scrubbed.replace(pattern, "[REDACTED]");
+  }
+  return scrubbed;
+}
+
+// Concurrency-limited Promise.all helper
+const WORKER_STATUS_CONCURRENCY = 3;
+const WORKER_STATUS_TIMEOUT_MS = 10000;
+
+async function limitedConcurrency(tasks, concurrency) {
+  const results = [];
+  const executing = new Set();
+  for (const task of tasks) {
+    const p = task().then((r) => { executing.delete(p); return r; });
+    executing.add(p);
+    results.push(p);
+    if (executing.size >= concurrency) {
+      await Promise.race(executing);
+    }
+  }
+  return Promise.all(results);
+}
+
+function callHaiku(dump, prompt) {
+  const systemPrompt = prompt || HAIKU_PROMPT;
   const body = JSON.stringify({
     model: "claude-haiku-4-5-20251001",
     max_tokens: 1024,
-    messages: [{ role: "user", content: `${HAIKU_PROMPT}\n\n${dump}` }],
+    messages: [{ role: "user", content: `${systemPrompt}\n\n${dump}` }],
   });
 
   return new Promise((resolve, reject) => {

@@ -195,3 +195,118 @@ test.describe("Tasks tab", () => {
     await expect(page.locator("#completed-tasks-content")).toContainText("No completed tasks yet.");
   });
 });
+
+test.describe("Worker status in Tasks tab", () => {
+  test.beforeAll(() => {
+    if (!TOKEN) throw new Error("Cannot discover VOICE_TOKEN");
+  });
+
+  test("renders worker status section when worker_status is present", async ({ page }) => {
+    await page.route("**/api/pending-tasks?**", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          tasks: [
+            {
+              task_name: "fix-memory-leak",
+              content: "Find and fix the memory leak in the worker pool.",
+              created_at: "2026-02-16T12:00:00Z",
+              worker_status: "- Currently profiling heap allocations\n- No errors so far\n- Identified 2 suspect modules",
+            },
+          ],
+        }),
+      });
+    });
+
+    await page.route("**/api/completed-tasks?**", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ tasks: [] }),
+      });
+    });
+
+    await page.goto(pageUrl());
+    await page.click('[data-tab="tasks"]');
+    await expect(page.locator(".pending-task-item")).toHaveCount(1);
+
+    // Expand the task to reveal worker status
+    await page.locator(".pending-task-summary").first().click();
+
+    await expect(page.locator(".worker-status-section")).toBeVisible();
+    await expect(page.locator(".worker-status-heading")).toHaveText("Worker Status");
+    await expect(page.locator(".worker-status-content")).toContainText("profiling heap allocations");
+  });
+
+  test("does not render worker status section when worker_status is null", async ({ page }) => {
+    await page.route("**/api/pending-tasks?**", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          tasks: [
+            {
+              task_name: "setup-ci",
+              content: "Configure CI pipeline for the project.",
+              created_at: "2026-02-16T14:00:00Z",
+              worker_status: null,
+            },
+          ],
+        }),
+      });
+    });
+
+    await page.route("**/api/completed-tasks?**", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ tasks: [] }),
+      });
+    });
+
+    await page.goto(pageUrl());
+    await page.click('[data-tab="tasks"]');
+    await expect(page.locator(".pending-task-item")).toHaveCount(1);
+
+    // Expand the task
+    await page.locator(".pending-task-summary").first().click();
+
+    await expect(page.locator(".worker-status-section")).toHaveCount(0);
+  });
+
+  test("does not render worker status section when worker_status is undefined", async ({ page }) => {
+    await page.route("**/api/pending-tasks?**", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          tasks: [
+            {
+              task_name: "add-logging",
+              content: "Add structured logging to all endpoints.",
+              created_at: "2026-02-16T15:00:00Z",
+            },
+          ],
+        }),
+      });
+    });
+
+    await page.route("**/api/completed-tasks?**", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ tasks: [] }),
+      });
+    });
+
+    await page.goto(pageUrl());
+    await page.click('[data-tab="tasks"]');
+    await expect(page.locator(".pending-task-item")).toHaveCount(1);
+
+    // Expand the task
+    await page.locator(".pending-task-summary").first().click();
+
+    await expect(page.locator(".worker-status-section")).toHaveCount(0);
+  });
+});
