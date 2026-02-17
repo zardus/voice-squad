@@ -87,7 +87,10 @@ COPY entrypoint.sh /opt/squad/entrypoint-captain.sh
 COPY restart-captain.sh /opt/squad/restart-captain.sh
 RUN chmod +x /opt/squad/entrypoint-captain.sh /opt/squad/restart-captain.sh
 
-COPY captain-instructions.md /opt/squad/captain/instructions.md
+COPY captain-CLAUDE.md /opt/squad/captain/CLAUDE.md
+COPY skills/ /opt/squad/captain/.claude/skills/
+RUN git init /opt/squad/captain \
+    && chown -R ubuntu:ubuntu /opt/squad/captain
 
 COPY speak /usr/local/bin/speak
 COPY switch-account.sh /usr/local/bin/switch-account.sh
