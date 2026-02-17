@@ -106,6 +106,7 @@ services:
       - CAPTAIN_TMUX_SOCKET=/run/captain-tmux/default
       - WORKSPACE_TMUX_SOCKET=/run/workspace-tmux/default
       - HEARTBEAT_INTERVAL_SECONDS=${HEARTBEAT_INTERVAL_SECONDS:-900}
+      - WORKER_IDLE_SECONDS=${WORKER_IDLE_SECONDS:-120}
 
 volumes:
   captain-tmux:

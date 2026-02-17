@@ -2,7 +2,7 @@
 # pane-monitor.sh — Monitor all tmux panes (captain heartbeat + worker idle detection).
 #
 # Captain pane (captain:0): configurable idle threshold → injects HEARTBEAT nudge
-# Worker panes (on workspace tmux server): 30-second idle threshold → sends IDLE ALERT to captain
+# Worker panes (on workspace tmux server): configurable idle threshold → sends IDLE ALERT to captain
 #
 # Checks every 1 second, tracks per-pane state via content hashing.
 # One-shot notification per idle period; resets when activity resumes.
@@ -11,10 +11,17 @@
 # Environment:
 #   CAPTAIN_TMUX_SOCKET       — socket path for captain tmux server (for sending alerts + monitoring captain)
 #   WORKSPACE_TMUX_SOCKET     — socket path for workspace tmux server (for monitoring workers)
+#   WORKER_IDLE_SECONDS         — worker idle threshold in seconds (default: 120 = 2 minutes)
 #   HEARTBEAT_INTERVAL_SECONDS — captain heartbeat threshold in seconds (default: 900 = 15 minutes)
 
-WORKER_THRESHOLD=30     # 30 seconds
+WORKER_THRESHOLD="${WORKER_IDLE_SECONDS:-120}"   # default 2 minutes (configurable)
 HEARTBEAT_THRESHOLD="${HEARTBEAT_INTERVAL_SECONDS:-900}"
+
+# Shells that indicate a worker is idle at a prompt (not running a command)
+IDLE_SHELLS="bash|zsh|sh|fish|dash"
+
+# Patterns in pane content that indicate active AI tool processing
+ACTIVE_PATTERNS="Thinking|Booping|Generating|Streaming|⠋|⠙|⠹|⠸|⠼|⠴|⠦|⠧|⠇|⠏|\\.\\.\\."
 
 LOGFILE="/tmp/pane-monitor.log"
 
@@ -105,7 +112,8 @@ while true; do
         threshold=$WORKER_THRESHOLD
 
         # Capture pane content and hash it
-        content_hash=$(workspace_tmux capture-pane -t "$pane" -p 2>/dev/null | md5sum | cut -d' ' -f1)
+        pane_content=$(workspace_tmux capture-pane -t "$pane" -p 2>/dev/null)
+        content_hash=$(echo "$pane_content" | md5sum | cut -d' ' -f1)
         if [[ -z "$content_hash" ]]; then
             continue
         fi
@@ -129,6 +137,24 @@ while true; do
             if (( seconds_unchanged[$pane] >= threshold )) && \
                (( already_notified[$pane] == 0 )) && \
                (( has_had_activity[$pane] == 1 )); then
+
+                # Before alerting, check if the pane is running an active process
+                # (not just sitting at a shell prompt). If so, the worker is busy.
+                pane_cmd=$(workspace_tmux display-message -t "$pane" -p '#{pane_current_command}' 2>/dev/null || true)
+                if [[ -n "$pane_cmd" ]] && ! echo "$pane_cmd" | grep -qE "^($IDLE_SHELLS)$"; then
+                    log "Pane $pane unchanged for ${threshold}s but process '$pane_cmd' is running — skipping alert"
+                    seconds_unchanged["$pane"]=0
+                    last_hash["$pane"]=""
+                    continue
+                fi
+
+                # Also check for spinner / active-processing indicators in pane content
+                if echo "$pane_content" | grep -qE "$ACTIVE_PATTERNS"; then
+                    log "Pane $pane unchanged for ${threshold}s but active indicator found — skipping alert"
+                    seconds_unchanged["$pane"]=0
+                    last_hash["$pane"]=""
+                    continue
+                fi
 
                 # Worker idle — alert the captain
                 sw="${pane%.*}"   # drop .pane_index → session:window

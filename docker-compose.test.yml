@@ -32,6 +32,7 @@ services:
   pane-monitor:
     environment:
       HEARTBEAT_INTERVAL_SECONDS: 5
+      WORKER_IDLE_SECONDS: 30
 
   tunnel:
     volumes:
@@ -58,6 +59,7 @@ services:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-test-anthropic-key}
       - CAPTAIN_TMUX_SOCKET=/run/captain-tmux/default
       - WORKSPACE_TMUX_SOCKET=/run/workspace-tmux/default
+      - WORKER_IDLE_SECONDS=30
 
 volumes:
   test-home:
