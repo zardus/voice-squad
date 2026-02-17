@@ -8,12 +8,9 @@ const fs = require("fs/promises");
 const path = require("path");
 
 const CAPTAIN_DIR = process.env.SQUAD_CAPTAIN_DIR || "/home/ubuntu/captain";
-const ARCHIVE_DIR = process.env.SQUAD_ARCHIVE_DIR || path.join(CAPTAIN_DIR, "archive");
 const TASK_DEFS_DIR = process.env.SQUAD_TASK_DEFS_DIR || path.join(CAPTAIN_DIR, "tasks");
 const TASK_DEFS_PENDING_DIR = path.join(TASK_DEFS_DIR, "pending");
 const TASK_DEFS_ARCHIVED_DIR = path.join(TASK_DEFS_DIR, "archived");
-const SUMMARIES_DIR =
-  process.env.SQUAD_SUMMARIES_DIR || "/home/ubuntu/captain/archive/summaries";
 const TEST_PREFIX = `playwright-completed-${Date.now()}`;
 
 test.describe("API endpoints", () => {
@@ -22,18 +19,6 @@ test.describe("API endpoints", () => {
   });
 
   async function cleanupTestSummaries() {
-    await fs.mkdir(SUMMARIES_DIR, { recursive: true });
-    const entries = await fs.readdir(SUMMARIES_DIR);
-    await Promise.all(entries
-      .filter((name) => name.includes(TEST_PREFIX))
-      .map((name) => fs.unlink(path.join(SUMMARIES_DIR, name)).catch(() => {})));
-
-    await fs.mkdir(ARCHIVE_DIR, { recursive: true });
-    const archiveEntries = await fs.readdir(ARCHIVE_DIR).catch(() => []);
-    await Promise.all(archiveEntries
-      .filter((name) => name.includes(TEST_PREFIX))
-      .map((name) => fs.unlink(path.join(ARCHIVE_DIR, name)).catch(() => {})));
-
     await fs.mkdir(TASK_DEFS_PENDING_DIR, { recursive: true });
     await fs.mkdir(TASK_DEFS_ARCHIVED_DIR, { recursive: true });
     const pendingEntries = await fs.readdir(TASK_DEFS_PENDING_DIR).catch(() => []);
@@ -318,36 +303,22 @@ test.describe("API endpoints", () => {
   // --- Completed Tasks API ---
 
   test("GET /api/completed-tasks returns summaries sorted by completed_at desc", async () => {
-    const older = {
-      task_name: `${TEST_PREFIX}-older`,
-      completed_at: "2026-02-11T09:40:00Z",
-      short_summary: "Older summary",
-      detailed_summary: "Older details",
-      task_definition: "Older definition",
-      worker_type: "codex",
-      session: "alpha",
-      window: "w1",
-    };
-    const newer = {
-      task_name: `${TEST_PREFIX}-newer`,
-      completed_at: "2026-02-11T09:43:00Z",
-      short_summary: "Newer summary",
-      detailed_summary: "Newer details",
-      task_definition: "Newer definition",
-      worker_type: "codex",
-      session: "alpha",
-      window: "w2",
-    };
+    const olderName = `${TEST_PREFIX}-older`;
+    const newerName = `${TEST_PREFIX}-newer`;
 
-    await fs.mkdir(SUMMARIES_DIR, { recursive: true });
-    await fs.writeFile(
-      path.join(SUMMARIES_DIR, `20260211T094000Z_${TEST_PREFIX}-older.json`),
-      JSON.stringify(older, null, 2)
-    );
-    await fs.writeFile(
-      path.join(SUMMARIES_DIR, `20260211T094300Z_${TEST_PREFIX}-newer.json`),
-      JSON.stringify(newer, null, 2)
-    );
+    await fs.mkdir(TASK_DEFS_ARCHIVED_DIR, { recursive: true });
+
+    // Write older task files
+    await fs.writeFile(path.join(TASK_DEFS_ARCHIVED_DIR, `${olderName}.summary`), "Older summary\n");
+    await fs.writeFile(path.join(TASK_DEFS_ARCHIVED_DIR, `${olderName}.task`), "Older definition\n");
+    const olderTime = new Date("2026-02-11T09:40:00Z");
+    await fs.utimes(path.join(TASK_DEFS_ARCHIVED_DIR, `${olderName}.summary`), olderTime, olderTime);
+
+    // Write newer task files
+    await fs.writeFile(path.join(TASK_DEFS_ARCHIVED_DIR, `${newerName}.summary`), "Newer summary\n");
+    await fs.writeFile(path.join(TASK_DEFS_ARCHIVED_DIR, `${newerName}.task`), "Newer definition\n");
+    const newerTime = new Date("2026-02-11T09:43:00Z");
+    await fs.utimes(path.join(TASK_DEFS_ARCHIVED_DIR, `${newerName}.summary`), newerTime, newerTime);
 
     const resp = await fetch(`${BASE_URL}/api/completed-tasks?token=${encodeURIComponent(TOKEN)}`);
     expect(resp.status).toBe(200);
@@ -356,8 +327,10 @@ test.describe("API endpoints", () => {
 
     const ours = json.tasks.filter((task) => String(task.task_name || "").startsWith(TEST_PREFIX));
     expect(ours).toHaveLength(2);
-    expect(ours[0].task_name).toBe(newer.task_name);
-    expect(ours[1].task_name).toBe(older.task_name);
+    expect(ours[0].task_name).toBe(newerName);
+    expect(ours[1].task_name).toBe(olderName);
+    expect(ours[0].summary).toBe("Newer summary");
+    expect(ours[1].summary).toBe("Older summary");
   });
 
   test("POST /api/completed-tasks writes summary file", async () => {
@@ -365,13 +338,9 @@ test.describe("API endpoints", () => {
     const payload = {
       token: TOKEN,
       task_name: taskName,
-      completed_at: "2026-02-11T10:00:00Z",
       short_summary: "One-line done summary",
       detailed_summary: "## Done\n- Added tests",
       task_definition: "Original task markdown",
-      worker_type: "codex",
-      session: "challenges",
-      window: "v8-redo",
     };
 
     const resp = await fetch(`${BASE_URL}/api/completed-tasks`, {
@@ -382,44 +351,51 @@ test.describe("API endpoints", () => {
     expect(resp.status).toBe(201);
     const json = await resp.json();
     expect(json.ok).toBe(true);
-    expect(json.file).toContain(taskName);
+    expect(json.task_name).toContain(TEST_PREFIX);
 
-    const createdPath = path.join(SUMMARIES_DIR, json.file);
-    const raw = await fs.readFile(createdPath, "utf8");
-    const saved = JSON.parse(raw);
-    expect(saved.task_name).toBe(taskName);
-    expect(saved.completed_at).toBe(payload.completed_at);
-    expect(saved.short_summary).toBe(payload.short_summary);
+    // Verify files were written to the archived directory
+    const sanitized = json.task_name;
+    const summaryContent = await fs.readFile(
+      path.join(TASK_DEFS_ARCHIVED_DIR, `${sanitized}.summary`), "utf8"
+    );
+    expect(summaryContent.trim()).toBe(payload.short_summary);
+
+    const resultsContent = await fs.readFile(
+      path.join(TASK_DEFS_ARCHIVED_DIR, `${sanitized}.results`), "utf8"
+    );
+    expect(resultsContent.trim()).toBe(payload.detailed_summary);
+
+    const taskContent = await fs.readFile(
+      path.join(TASK_DEFS_ARCHIVED_DIR, `${sanitized}.task`), "utf8"
+    );
+    expect(taskContent.trim()).toBe(payload.task_definition);
   });
 
-  test("GET /api/completed-tasks includes inferred tasks from archived pane logs (even without explicit completion record)", async () => {
-    const taskName = `${TEST_PREFIX}-inferred`;
-    const session = `${TEST_PREFIX}-sess`;
-    const window = taskName;
-    const logName = `${session}_${window}_2026-02-11_10-05-00.log`;
-    const logPath = path.join(ARCHIVE_DIR, logName);
+  test("GET /api/completed-tasks reads task, summary, title, results, and log files from archived dir", async () => {
+    const taskName = `${TEST_PREFIX}-full`;
 
-    await fs.mkdir(ARCHIVE_DIR, { recursive: true });
-    await fs.writeFile(logPath, "dummy archived pane output\n", "utf8");
-    // Force a stable mtime so the server can turn it into completed_at.
+    await fs.mkdir(TASK_DEFS_ARCHIVED_DIR, { recursive: true });
+    await fs.writeFile(path.join(TASK_DEFS_ARCHIVED_DIR, `${taskName}.task`), `Task definition for ${taskName}\n`);
+    await fs.writeFile(path.join(TASK_DEFS_ARCHIVED_DIR, `${taskName}.summary`), "Short summary text\n");
+    await fs.writeFile(path.join(TASK_DEFS_ARCHIVED_DIR, `${taskName}.title`), "My Task Title\n");
+    await fs.writeFile(path.join(TASK_DEFS_ARCHIVED_DIR, `${taskName}.results`), "## Results\n- All tests pass\n");
+    await fs.writeFile(path.join(TASK_DEFS_ARCHIVED_DIR, `${taskName}.log`), "full pane log output\n");
     const mtime = new Date("2026-02-11T10:05:00Z");
-    await fs.utimes(logPath, mtime, mtime);
-
-    // Definition lives in pending (stale pending file should still be attachable for done items).
-    const defPath = path.join(TASK_DEFS_PENDING_DIR, `${window}.txt`);
-    await fs.mkdir(TASK_DEFS_PENDING_DIR, { recursive: true });
-    await fs.writeFile(defPath, `Test task definition for ${taskName}\n`, "utf8");
+    await fs.utimes(path.join(TASK_DEFS_ARCHIVED_DIR, `${taskName}.summary`), mtime, mtime);
 
     const resp = await fetch(`${BASE_URL}/api/completed-tasks?token=${encodeURIComponent(TOKEN)}`);
     expect(resp.status).toBe(200);
     const json = await resp.json();
     expect(Array.isArray(json.tasks)).toBe(true);
 
-    const found = json.tasks.find((t) => t && t.session === session && t.window === window);
+    const found = json.tasks.find((t) => t && t.task_name === taskName);
     expect(found).toBeTruthy();
-    expect(found.task_name).toBe(window);
+    expect(found.summary).toBe("Short summary text");
+    expect(found.title).toBe("My Task Title");
+    expect(found.results).toContain("All tests pass");
+    expect(found.task_definition).toContain(`Task definition for ${taskName}`);
+    expect(found.has_log).toBe(true);
     expect(String(found.completed_at)).toContain("2026-02-11T10:05:00");
-    expect(found.task_definition).toContain(`Test task definition for ${taskName}`);
   });
 
   // --- Task Log API ---
