@@ -2380,7 +2380,7 @@ function renderCompletedTasks(tasks) {
 
     const heading = document.createElement("div");
     heading.className = "completed-task-heading";
-    heading.textContent = `${task.task_name || "unnamed-task"} · ${formatTimestamp(task.completed_at)}`;
+    heading.textContent = `${task.title || task.task_name || "unnamed-task"} · ${formatTimestamp(task.completed_at)}`;
 
     const timeInfo = document.createElement("div");
     timeInfo.className = "completed-task-short";
@@ -2393,6 +2393,14 @@ function renderCompletedTasks(tasks) {
 
     summary.appendChild(heading);
     summary.appendChild(timeInfo);
+
+    if (task.summary) {
+      const summaryText = document.createElement("div");
+      summaryText.className = "completed-task-summary-text";
+      summaryText.textContent = task.summary;
+      summary.appendChild(summaryText);
+    }
+
     item.appendChild(summary);
 
     const body = document.createElement("div");
