@@ -291,6 +291,41 @@ A worker dying or exiting early is normal. Workers hit errors, get rate-limited,
 
 There is no third option. Tasks do not disappear because a worker did.
 
+### Mandatory Auditor Verification
+
+When a worker reports a task as complete (or the captain observes that a worker has finished), the captain must NOT mark the task as done or archive it yet. Instead, the captain spins up a separate **auditor worker** to independently verify the work.
+
+**Auditor setup:**
+
+- The auditor is a fresh worker in a new tmux window, working in the same repository as the original worker.
+- The auditor receives the original task definition (from the `.task` file) so it knows exactly what was required.
+- Name the auditor window `audit-<task-name>` so it is clearly distinguishable from the original worker.
+
+**What the auditor checks:**
+
+- Code compiles and builds successfully.
+- All tests pass (run the actual test commands, do not just read code).
+- Required features actually work — not stubbed, not partially implemented, not mocked.
+- Git commits exist with the expected scope and message.
+- Git push happened (no unpushed commits left behind).
+- No shortcuts, stubs, TODOs-as-implementation, or deferred work.
+- Every numbered deliverable in the original task definition is satisfied.
+
+**Auditor rules:**
+
+- Auditors must NEVER modify code — they only read, build, and test.
+- Auditors must be brutal and honest — no "it's mostly done" or "close enough."
+- Auditors must run actual verification commands (`build`, `test`, `lint`, `ldd`, etc.), not just eyeball the code.
+- A task with ANY failing test is a FAIL, period.
+- A task with ANY missing deliverable is a FAIL, period.
+
+**Auditor verdict:**
+
+The auditor reports one of two outcomes:
+
+- **PASS**: every deliverable verified, all builds and tests green, git state correct. The captain archives the task and reports completion to the human.
+- **FAIL**: with a specific list of what is missing or broken. The captain does NOT report the task as done. Instead, the captain spins up a new worker (or sends the original worker back) with explicit instructions about what the auditor found. The cycle repeats — work, audit, work, audit — until the auditor passes.
+
 ### Heartbeat Reviews
 
 During idle periods (heartbeat nudges with no active workers), review whether any previously dispatched tasks were left incomplete. Check:
