@@ -835,6 +835,51 @@ body.voice-history-open {
   color: #e0e0e0;
 }
 
+.completed-task-summary-text {
+  margin-top: 6px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #c8c8d0;
+}
+
+.completed-task-summary-text p {
+  margin: 2px 0;
+}
+
+.completed-task-summary-text ul {
+  list-style: none;
+  padding-left: 12px;
+  margin: 4px 0;
+}
+
+.completed-task-summary-text li {
+  position: relative;
+  padding-left: 14px;
+  margin: 2px 0;
+}
+
+.completed-task-summary-text li::before {
+  content: "\2022";
+  position: absolute;
+  left: 0;
+  color: #4ecca3;
+  font-weight: bold;
+}
+
+.completed-task-summary-text strong {
+  color: #fff;
+}
+
+.completed-task-summary-text code {
+  font-family: "SF Mono", "Cascadia Code", "Fira Code", Consolas, monospace;
+  font-size: 11px;
+  background: rgba(78, 204, 163, 0.1);
+  border: 1px solid #0f3460;
+  border-radius: 3px;
+  padding: 1px 4px;
+  color: #4ecca3;
+}
+
 .completed-task-body {
   padding: 10px 12px 12px;
 }
@@ -992,12 +1037,54 @@ body.voice-history-open {
 
 .pending-task-content {
   margin: 0;
-  white-space: pre-wrap;
-  word-break: break-word;
+  font-size: 14px;
+  line-height: 1.6;
+  color: #e0e0e0;
+}
+
+.pending-task-content h2,
+.pending-task-content h3,
+.pending-task-content h4 {
+  color: #a78bfa;
+  margin: 12px 0 6px;
+}
+
+.pending-task-content p {
+  margin: 3px 0;
+}
+
+.pending-task-content ul {
+  list-style: none;
+  padding-left: 12px;
+  margin: 4px 0 8px;
+}
+
+.pending-task-content li {
+  position: relative;
+  padding-left: 14px;
+  margin: 4px 0;
+}
+
+.pending-task-content li::before {
+  content: "\2022";
+  position: absolute;
+  left: 0;
+  color: #4ecca3;
+  font-weight: bold;
+}
+
+.pending-task-content strong {
+  color: #fff;
+}
+
+.pending-task-content code {
   font-family: "SF Mono", "Cascadia Code", "Fira Code", Consolas, monospace;
   font-size: 12px;
-  line-height: 1.5;
-  color: #c8c8d0;
+  background: rgba(78, 204, 163, 0.1);
+  border: 1px solid #0f3460;
+  border-radius: 3px;
+  padding: 1px 5px;
+  color: #4ecca3;
 }
 
 .pending-loading {

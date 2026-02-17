@@ -2350,9 +2350,9 @@ function renderPendingTasks(tasks) {
 
     const body = document.createElement("div");
     body.className = "pending-task-body";
-    const content = document.createElement("pre");
+    const content = document.createElement("div");
     content.className = "pending-task-content";
-    content.textContent = String(task.content || "");
+    content.innerHTML = mdToHtml(String(task.content || ""));
     body.appendChild(content);
     item.appendChild(body);
     list.appendChild(item);
@@ -2397,7 +2397,7 @@ function renderCompletedTasks(tasks) {
     if (task.summary) {
       const summaryText = document.createElement("div");
       summaryText.className = "completed-task-summary-text";
-      summaryText.textContent = task.summary;
+      summaryText.innerHTML = mdToHtml(task.summary);
       summary.appendChild(summaryText);
     }
 
