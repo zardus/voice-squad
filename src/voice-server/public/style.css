@@ -1572,6 +1572,25 @@ body.voice-history-open {
   color: #a78bfa;
   font-weight: 700;
   margin-bottom: 6px;
+  cursor: pointer;
+  list-style: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+#voice-summary-label::-webkit-details-marker {
+  display: none;
+}
+
+#voice-summary-label::after {
+  content: " \25B8";
+  font-size: 9px;
+  transition: transform 0.15s;
+  display: inline-block;
+}
+
+#voice-summary-panel[open] > #voice-summary-label::after {
+  transform: rotate(90deg);
 }
 
 #voice-summary {
@@ -2278,4 +2297,263 @@ body.login-modal-open {
 
 #login-cancel-btn:active {
   background: rgba(127, 142, 163, 0.25);
+}
+
+/* ====== Voice tab: mobile responsive layout ====== */
+
+/* Prevent rubber-band overscroll on iOS Safari */
+#voice-view {
+  overscroll-behavior: none;
+}
+
+#voice-center {
+  padding: 12px 0 env(safe-area-inset-bottom, 0);
+}
+
+/* Medium phones (iPhone 14 and smaller, ≤ 740px viewport height) */
+@media (max-height: 740px) {
+  #voice-center {
+    gap: 14px;
+    justify-content: flex-start;
+    padding: 10px 0 env(safe-area-inset-bottom, 0);
+  }
+
+  #voice-status-btn,
+  #voice-interrupt-btn {
+    width: 100px;
+    height: 100px;
+  }
+
+  #voice-replay-btn,
+  #voice-history-modal-btn {
+    width: 100px;
+    height: 100px;
+  }
+
+  #voice-mic-btn {
+    width: 110px;
+    height: 110px;
+  }
+
+  .voice-status-mark {
+    font-size: 48px;
+  }
+
+  #voice-interrupt-btn svg,
+  #voice-replay-btn svg,
+  #voice-history-modal-btn svg {
+    width: 44px;
+    height: 44px;
+  }
+
+  #voice-mic-btn svg {
+    width: 50px;
+    height: 50px;
+  }
+
+  #voice-top-row {
+    gap: 16px;
+  }
+
+  #voice-hint {
+    font-size: 12px;
+    letter-spacing: 1px;
+  }
+
+  #voice-summary-panel {
+    padding: 10px 12px;
+  }
+
+  #voice-summary {
+    font-size: 14px;
+    max-height: min(16vh, 140px);
+  }
+
+  #voice-captain-switch {
+    margin-top: 4px;
+  }
+
+  #voice-restart-captain-btn,
+  #voice-login-btn {
+    padding: 6px 14px;
+    font-size: 13px;
+  }
+
+  #voice-history-select {
+    width: 110px;
+    height: 38px;
+    font-size: 13px;
+  }
+}
+
+/* Small phones (iPhone SE and similar, ≤ 600px viewport height) */
+@media (max-height: 600px) {
+  #voice-center {
+    gap: 8px;
+    padding: 6px 0 env(safe-area-inset-bottom, 0);
+  }
+
+  #voice-status-btn,
+  #voice-interrupt-btn {
+    width: 74px;
+    height: 74px;
+    border-width: 2px;
+  }
+
+  #voice-replay-btn,
+  #voice-history-modal-btn {
+    width: 74px;
+    height: 74px;
+    border-width: 2px;
+  }
+
+  #voice-mic-btn {
+    width: 82px;
+    height: 82px;
+    border-width: 2px;
+  }
+
+  .voice-status-mark {
+    font-size: 36px;
+  }
+
+  #voice-interrupt-btn svg,
+  #voice-replay-btn svg,
+  #voice-history-modal-btn svg {
+    width: 34px;
+    height: 34px;
+  }
+
+  #voice-mic-btn svg {
+    width: 40px;
+    height: 40px;
+  }
+
+  #voice-top-row {
+    gap: 12px;
+  }
+
+  #voice-replay-row {
+    gap: 8px;
+  }
+
+  #voice-mic-row {
+    gap: 8px;
+  }
+
+  #voice-hint {
+    font-size: 10px;
+    letter-spacing: 0.8px;
+  }
+
+  #voice-toggles {
+    gap: 10px;
+    margin-top: 0;
+  }
+
+  #voice-summary-panel {
+    padding: 6px 10px;
+    border-radius: 10px;
+  }
+
+  #voice-summary-label {
+    font-size: 10px;
+    margin-bottom: 4px;
+  }
+
+  #voice-summary {
+    font-size: 13px;
+    max-height: min(12vh, 80px);
+  }
+
+  #voice-captain-switch {
+    margin-top: 2px;
+  }
+
+  #voice-restart-captain-btn,
+  #voice-login-btn {
+    padding: 5px 12px;
+    font-size: 12px;
+    border-width: 1.5px;
+    border-radius: 18px;
+  }
+
+  #voice-captain-tool-select {
+    padding: 4px 6px;
+    font-size: 11px;
+  }
+
+  #voice-history-select {
+    width: 82px;
+    height: 34px;
+    font-size: 12px;
+    padding: 0 6px;
+  }
+
+  .voice-transcription {
+    font-size: 12px;
+    padding: 0 12px;
+    min-height: 16px;
+  }
+}
+
+/* Very small phones (iPhone SE 1st gen landscape or tiny viewports, ≤ 480px height) */
+@media (max-height: 480px) {
+  #voice-center {
+    gap: 6px;
+    padding: 4px 0 env(safe-area-inset-bottom, 0);
+  }
+
+  #voice-status-btn,
+  #voice-interrupt-btn,
+  #voice-replay-btn,
+  #voice-history-modal-btn {
+    width: 60px;
+    height: 60px;
+  }
+
+  #voice-mic-btn {
+    width: 68px;
+    height: 68px;
+  }
+
+  .voice-status-mark {
+    font-size: 28px;
+  }
+
+  #voice-interrupt-btn svg,
+  #voice-replay-btn svg,
+  #voice-history-modal-btn svg {
+    width: 28px;
+    height: 28px;
+  }
+
+  #voice-mic-btn svg {
+    width: 32px;
+    height: 32px;
+  }
+
+  #voice-top-row,
+  #voice-replay-row,
+  #voice-mic-row {
+    gap: 8px;
+  }
+
+  #voice-hint {
+    font-size: 9px;
+  }
+
+  #voice-toggles {
+    gap: 8px;
+  }
+
+  #voice-summary-panel {
+    padding: 4px 8px;
+    width: min(90vw, 400px);
+  }
+
+  #voice-captain-switch {
+    margin-top: 0;
+    gap: 6px;
+  }
 }
