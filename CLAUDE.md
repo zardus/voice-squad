@@ -86,3 +86,16 @@ TEST_CAPTAIN=1 ./test.sh captain.spec.js
 - All services run their **real entrypoints** with real API keys
 - `./home` is swapped for an ephemeral `test-home` volume
 - **test-runner** — lightweight container (Ubuntu + Node + Playwright + Chromium) that connects to services via Docker networking (`voice-server:3000`) and tmux via shared socket volumes
+
+## Development Workflow
+
+Follow this process for every change:
+
+1. **Do the work.** Implement the feature, fix the bug, write tests, etc.
+2. **Commit and push to a feature branch.** Never commit directly to `main`. Use a descriptive branch name (e.g. `feat/thing`, `fix/bug-name`).
+3. **Open a PR against `main`** using `gh pr create`. Write a clear title and description.
+4. **Wait for CI and reviews.** Poll with `gh pr checks` (for CI status) and `gh pr view --comments` (for review feedback).
+5. **Address review comments.** Make the requested code changes, commit, and push to the same branch.
+6. **Fix CI failures.** Read the failure logs, fix the code, commit, and push.
+7. **Iterate steps 4–6** until CI is fully green and all review comments are resolved.
+8. **Report that the PR is ready.** Do **not** merge — the human decides when to merge.
