@@ -42,8 +42,9 @@ mkdir -p /home/ubuntu/captain/archive
 
 # Write config.yml so the voice server (and next restart) know the captain type
 echo "type: $CAPTAIN" > "$CONFIG_FILE"
-cp /opt/squad/captain/instructions.md /home/ubuntu/captain/CLAUDE.md
-cp /opt/squad/captain/instructions.md /home/ubuntu/captain/AGENTS.md
+cp /opt/squad/captain/CLAUDE.md /home/ubuntu/captain/CLAUDE.md
+cp /opt/squad/captain/CLAUDE.md /home/ubuntu/captain/AGENTS.md
+cp -r /opt/squad/captain/skills/ /home/ubuntu/captain/skills/
 
 # Generate VOICE_TOKEN if not provided via environment
 if [ -z "${VOICE_TOKEN:-}" ]; then
