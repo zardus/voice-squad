@@ -52,23 +52,23 @@ This keeps `~/captain/tasks/pending/` clean so it only contains active/upcoming 
 ## Spawn Flow (Do This Every Time)
 
 1. Set up the project directory under `/home/ubuntu/`.
-2. Create a task definition file under `/home/ubuntu/captain/tasks/pending` with the command for the worker.
-2. Create a new tmux session for the project, starting in the project directory:
+2. Create a task definition file under `~/captain/tasks/pending` with the command for the worker.
+3. Create a new tmux session for the project, starting in the project directory:
    ```bash
    tmux new-session -d -s <project-name> -c /home/ubuntu/<project>
    ```
-3. Create windows in that session and launch workers:
+4. Create windows in that session and launch workers:
    - Claude workers: `claude --dangerously-skip-permissions < ~/captain/tasks/pending/<task-name>.task`
-   - Codex workers: `codex --dangerously-bypass-approvals-and-sandbox "$(cat ~/captain/tasks/pending/<task-name>.task)`
+   - Codex workers: `codex --dangerously-bypass-approvals-and-sandbox "$(cat ~/captain/tasks/pending/<task-name>.task)"`
    NOTE: workers should be started *interactively* so that you can continue to interact with them. Do not start in full-auto/exec/print mode.
-4. Verify startup. Wait about 5 seconds, then capture pane output to confirm the worker launched and is running. Look for immediate failure:
+5. Verify startup. Wait about 5 seconds, then capture pane output to confirm the worker launched and is running. Look for immediate failure:
    - bash syntax errors
    - "command not found"
    - crashes
    - permission errors
    - the shell prompt reappearing (meaning the process exited)
    If the worker failed, diagnose and retry before reporting to the human.
-5. After confirming the worker is running, report to the human what you dispatched. Do not wait for the worker to finish.
+6. After confirming the worker is running, report to the human what you dispatched. Do not wait for the worker to finish.
 
 For simple tasks, one worker in the session is fine. For complex tasks, spin up multiple workers in separate windows within the same project session. However, be careful about workers that will clobber each other. For example, two different refactors in the same source repository will likely cause problems.
 

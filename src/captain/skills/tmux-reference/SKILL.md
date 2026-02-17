@@ -23,7 +23,7 @@ tmux new-window -t <session> -n <task-name> -c /home/ubuntu/<project>
 Launch a worker in that window (send the command via send-keys):
 
 ```bash
-tmux send-keys -t <session>:<window> 'claude --dangerously-skip-permissions "$(cat ~/captain/tasks/pending/<task-name>.task"' Enter
+tmux send-keys -t <session>:<window> 'claude --dangerously-skip-permissions "$(cat ~/captain/tasks/pending/<task-name>.task)"' Enter
 ```
 
 List all sessions:

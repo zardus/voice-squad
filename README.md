@@ -190,8 +190,9 @@ voice-squad/
 │   ├── Dockerfile               # Ubuntu 24.04 + Docker-in-Docker + Node.js + Python + tools
 │   ├── entrypoint.sh            # Container init — starts dockerd, sources env, launches squad
 │   ├── launch-squad.sh          # Creates tmux session, starts captain + voice server + tunnel
-│   ├── CLAUDE.md                # Captain instructions (injected as CLAUDE.md/AGENTS.md)
-│   ├── skills/                  # Skill files for captain operational procedures
+│   ├── captain/
+│   │   ├── captain-CLAUDE.md    # Captain instructions (injected as CLAUDE.md/AGENTS.md)
+│   │   └── skills/              # Skill files for captain operational procedures
 │   ├── speak                    # CLI script for captain to send voice updates
 │   └── voice/                   # Voice interface
 │       ├── server.js            # Express HTTP + WebSocket server
