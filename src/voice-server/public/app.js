@@ -2354,6 +2354,21 @@ function renderPendingTasks(tasks) {
     content.className = "pending-task-content";
     content.innerHTML = mdToHtml(String(task.content || ""));
     body.appendChild(content);
+
+    if (task.worker_status) {
+      const statusSection = document.createElement("div");
+      statusSection.className = "worker-status-section";
+      const statusHeading = document.createElement("div");
+      statusHeading.className = "worker-status-heading";
+      statusHeading.textContent = "Worker Status";
+      const statusContent = document.createElement("div");
+      statusContent.className = "worker-status-content";
+      statusContent.innerHTML = mdToHtml(task.worker_status);
+      statusSection.appendChild(statusHeading);
+      statusSection.appendChild(statusContent);
+      body.appendChild(statusSection);
+    }
+
     item.appendChild(body);
     list.appendChild(item);
   }
@@ -2514,12 +2529,6 @@ async function refreshTasks() {
 
 refreshSummaryBtn.addEventListener("click", refreshSummary);
 refreshTasksBtn.addEventListener("click", refreshTasks);
-
-setInterval(() => {
-  if (document.getElementById("tasks-view").classList.contains("active")) {
-    refreshTasks();
-  }
-}, 30000);
 
 renderMessageHistorySelect();
 connect();
