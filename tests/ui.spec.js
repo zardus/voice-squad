@@ -105,6 +105,14 @@ test.describe("UI", () => {
       await expect(page.locator("#status")).toBeVisible();
     });
 
+    test("terminal header shows build version indicator", async ({ page }) => {
+      await page.goto(pageUrl());
+      const versionEl = page.locator("#build-version");
+      await expect(versionEl).toBeAttached();
+      // The version text is fetched asynchronously — wait for it to be non-empty
+      await expect(versionEl).not.toHaveText("", { timeout: 5000 });
+    });
+
     test("connection status shows captain name when connected", async ({ page }) => {
       await page.goto(pageUrl());
       // Wait for WebSocket to connect

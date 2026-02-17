@@ -39,6 +39,18 @@ test.describe("API endpoints", () => {
     await cleanupTestSummaries();
   });
 
+  // --- GET /api/version ---
+
+  test("GET /api/version returns build_time and git_commit", async () => {
+    const resp = await fetch(`${BASE_URL}/api/version`);
+    expect(resp.status).toBe(200);
+    const json = await resp.json();
+    expect(json).toHaveProperty("build_time");
+    expect(json).toHaveProperty("git_commit");
+    expect(typeof json.build_time).toBe("string");
+    expect(typeof json.git_commit).toBe("string");
+  });
+
   // --- GET / (static files) ---
 
   test("GET / serves HTML page", async () => {

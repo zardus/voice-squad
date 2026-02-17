@@ -32,10 +32,16 @@ RUN echo "ubuntu ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 RUN mkdir -p /run/captain-tmux /run/workspace-tmux \
     && chown ubuntu:ubuntu /run/captain-tmux /run/workspace-tmux
 
+# Build metadata
+ARG GIT_COMMIT=unknown
+RUN date -u +"%Y-%m-%dT%H:%M:%SZ" > /tmp/build-time.txt
+
 # Voice server
 COPY package.json server.js tmux-bridge.js stt.js tts.js status-daemon.js test-stt.js /opt/squad/voice/
 COPY public/ /opt/squad/voice/public/
 RUN cd /opt/squad/voice && npm install --production
+RUN mv /tmp/build-time.txt /opt/squad/voice/build-time.txt \
+    && echo "$GIT_COMMIT" > /opt/squad/voice/git-commit.txt
 
 # Entrypoint
 COPY entrypoint.sh /entrypoint-voice.sh
