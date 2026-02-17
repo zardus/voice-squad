@@ -2524,3 +2524,29 @@ setInterval(() => {
 renderMessageHistorySelect();
 connect();
 loadVoiceSummaryHistory();
+
+// Fetch build version and display in terminal header
+(function fetchBuildVersion() {
+  var versionEl = document.getElementById("build-version");
+  if (!versionEl) return;
+  fetch("/api/version")
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      var parts = [];
+      if (data.build_time && data.build_time !== "unknown") {
+        var d = new Date(data.build_time);
+        if (!isNaN(d.getTime())) {
+          var diff = Date.now() - d.getTime();
+          if (diff < 60000) parts.push("built <1m ago");
+          else if (diff < 3600000) parts.push("built " + Math.floor(diff / 60000) + "m ago");
+          else if (diff < 86400000) parts.push("built " + Math.floor(diff / 3600000) + "h ago");
+          else parts.push("built " + d.toLocaleDateString(undefined, { month: "short", day: "numeric" }));
+        }
+      }
+      if (data.git_commit && data.git_commit !== "unknown") {
+        parts.push(data.git_commit.slice(0, 7));
+      }
+      if (parts.length) versionEl.textContent = parts.join(" \u00b7 ");
+    })
+    .catch(function () { /* ignore */ });
+})();

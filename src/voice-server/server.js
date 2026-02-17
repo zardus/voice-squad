@@ -138,6 +138,18 @@ const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
+// Build metadata (read once at startup)
+const BUILD_TIME = (() => {
+  try { return fsSync.readFileSync(path.join(__dirname, "build-time.txt"), "utf8").trim(); } catch { return "unknown"; }
+})();
+const GIT_COMMIT = (() => {
+  try { return fsSync.readFileSync(path.join(__dirname, "git-commit.txt"), "utf8").trim(); } catch { return "unknown"; }
+})();
+
+app.get("/api/version", (req, res) => {
+  res.json({ build_time: BUILD_TIME, git_commit: GIT_COMMIT });
+});
+
 app.get("/api/status", (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   if (url.searchParams.get("token") !== TOKEN) {

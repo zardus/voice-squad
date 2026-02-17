@@ -146,6 +146,13 @@ body.voice-history-open {
   color: #e94560;
 }
 
+.version-tag {
+  font-size: 9px;
+  color: #5a6a7a;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+}
+
 #terminal {
   flex: 1;
   overflow-y: auto;

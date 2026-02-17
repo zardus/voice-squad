@@ -57,6 +57,8 @@ services:
   voice-server:
     build:
       context: src/voice-server
+      args:
+        GIT_COMMIT: ${GIT_COMMIT:-unknown}
     depends_on:
       captain:
         condition: service_healthy
