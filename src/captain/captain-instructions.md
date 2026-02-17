@@ -291,9 +291,11 @@ A worker dying or exiting early is normal. Workers hit errors, get rate-limited,
 
 There is no third option. Tasks do not disappear because a worker did.
 
-### Mandatory Auditor Verification
+### Auditor Verification (Opt-In)
 
-When a worker reports a task as complete (or the captain observes that a worker has finished), the captain must NOT mark the task as done or archive it yet. Instead, the captain spins up a separate **auditor worker** to independently verify the work.
+By default, the captain verifies task completion itself using the "Verify Before Closing" checklist above (capture pane output, check deliverables, confirm tests passed, confirm git push). A separate auditor worker is only spun up when the user or the task definition explicitly requests auditing (e.g., "audit this", "use an auditor", "verify with an independent worker").
+
+When auditing IS requested, the captain spins up a separate **auditor worker** to independently verify the work before marking the task as done or archiving it.
 
 **Auditor setup:**
 
