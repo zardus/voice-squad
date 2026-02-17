@@ -9,6 +9,7 @@ const { TOKEN } = require("./helpers/config");
 const { captainExec, workspaceExec, captainTmuxCmd, workspaceTmuxCmd } = require("./helpers/tmux");
 
 const WORKER_SESSION = "idle-test-worker";
+const ACTIVE_SESSION = "active-test-worker";
 
 test.describe("Idle monitor", () => {
   test.beforeAll(() => {
@@ -20,9 +21,12 @@ test.describe("Idle monitor", () => {
   });
 
   test.afterAll(() => {
-    // Cleanup: kill worker session and stop our pane-monitor process
+    // Cleanup: kill worker sessions and stop our pane-monitor process
     try {
       workspaceExec(`kill-session -t ${WORKER_SESSION}`);
+    } catch {}
+    try {
+      workspaceExec(`kill-session -t ${ACTIVE_SESSION}`);
     } catch {}
     try {
       execSync("pkill -f 'pane-monitor-test'", { encoding: "utf8", timeout: 5000 });
@@ -80,5 +84,47 @@ test.describe("Idle monitor", () => {
 
     expect(captainOutput).toContain("IDLE ALERT");
     expect(captainOutput).toContain(WORKER_SESSION);
+  });
+
+  test("does NOT alert for a pane with continuously changing content", async () => {
+    test.setTimeout(90000);
+
+    // Create a worker session with a continuously ticking command.
+    // This simulates a pane actively producing output (like Claude Code
+    // with a ticking spinner) — the monitor should NOT fire an idle alert.
+    workspaceExec(`new-session -d -s ${ACTIVE_SESSION} -c /home/ubuntu`);
+
+    // Wait for the monitor (still running from the previous test) to
+    // discover and begin tracking this pane.
+    await new Promise((r) => setTimeout(r, 3000));
+
+    // Generate initial activity so has_had_activity=1.
+    workspaceExec(`send-keys -t ${ACTIVE_SESSION} 'echo active worker' Enter`);
+    await new Promise((r) => setTimeout(r, 2000));
+
+    // Start a continuously ticking command — pane content changes every second.
+    workspaceExec(
+      `send-keys -t ${ACTIVE_SESSION} 'while true; do date; sleep 1; done' Enter`
+    );
+
+    // Clear the captain pane so we only see alerts generated from here on.
+    captainExec("send-keys -t captain:0 'clear' Enter");
+    await new Promise((r) => setTimeout(r, 1000));
+
+    // Wait well beyond the 30-second idle threshold. Each monitor loop
+    // iteration takes >1s (tmux overhead), so 30 iterations ≈ 35-45s.
+    // Wait 50s to be sure any false positive would have fired.
+    await new Promise((r) => setTimeout(r, 50000));
+
+    // Capture captain output and verify NO idle alert for the active session.
+    let captainOutput = "";
+    try {
+      captainOutput = captainExec("capture-pane -t captain:0 -p -S -200");
+    } catch {}
+
+    const activeAlerts = captainOutput
+      .split("\n")
+      .filter((l) => l.includes("IDLE ALERT") && l.includes(ACTIVE_SESSION));
+    expect(activeAlerts).toHaveLength(0);
   });
 });
