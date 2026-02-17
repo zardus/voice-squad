@@ -42,8 +42,10 @@ test.describe("Heartbeat", () => {
       await new Promise((r) => setTimeout(r, 2000));
     }
 
-    expect(captainOutput).toContain("HEARTBEAT MESSAGE");
-    expect(captainOutput).toContain("please do a check of the current tasks");
-    expect(captainOutput).toContain("use the speak command");
+    // Join lines to handle tmux line-wrapping that splits words across lines
+    const joined = captainOutput.replace(/\n/g, "");
+    expect(joined).toContain("HEARTBEAT MESSAGE");
+    expect(joined).toContain("please do a check of the current tasks");
+    expect(joined).toContain("use the speak command");
   });
 });
