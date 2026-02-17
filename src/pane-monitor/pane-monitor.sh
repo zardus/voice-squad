@@ -52,26 +52,50 @@ log "Pane monitor started (pid=$$, worker_threshold=${WORKER_THRESHOLD}s, heartb
 
 while true; do
     # ── Captain heartbeat check ──────────────────────────────────
-    captain_hash=$(captain_tmux capture-pane -t captain:0 -p 2>/dev/null | md5sum | cut -d' ' -f1)
-    if [[ -n "$captain_hash" ]]; then
-        if [[ -z "$captain_last_hash" ]]; then
-            captain_last_hash="$captain_hash"
-        elif [[ "$captain_hash" == "$captain_last_hash" ]]; then
-            captain_seconds_unchanged=$(( captain_seconds_unchanged + 1 ))
-            if (( captain_seconds_unchanged >= HEARTBEAT_THRESHOLD )); then
-                log "HEARTBEAT: Captain pane idle for ${HEARTBEAT_THRESHOLD}s — injecting nudge"
-                captain_tmux send-keys -t captain:0 \
-                    'HEARTBEAT MESSAGE: please do a check of the current tasks and nudge them along or clean them up if reasonable. If there are any concrete developments worth reporting, use the speak command to give the human a voice update via text-to-speech.' 2>/dev/null || true
-                sleep 0.5
-                captain_tmux send-keys -t captain:0 Enter 2>/dev/null || true
-                log "Heartbeat injected. Resetting counter."
-                captain_seconds_unchanged=0
-                captain_last_hash=""
-            fi
+    # Gate on captain tmux availability — when captain is down (e.g. during
+    # container restart), capture-pane fails silently but md5sum hashes the
+    # empty output, producing a fake "content" hash that confuses tracking.
+    # Skip tracking entirely when captain is unavailable and reset state so
+    # the heartbeat counter starts fresh when it comes back.
+    if captain_tmux has-session -t captain 2>/dev/null; then
+        # Check capture-pane success explicitly — even with has-session, the
+        # target pane/window may not be ready, and without pipefail the pipe
+        # to md5sum would silently hash empty output into a fake content hash.
+        if captain_output=$(captain_tmux capture-pane -t captain:0 -p 2>/dev/null); then
+            captain_hash=$(printf '%s' "$captain_output" | md5sum | cut -d' ' -f1)
         else
-            captain_last_hash="$captain_hash"
-            captain_seconds_unchanged=0
+            captain_hash=""
         fi
+        if [[ -n "$captain_hash" ]]; then
+            if [[ -z "$captain_last_hash" ]]; then
+                captain_last_hash="$captain_hash"
+            elif [[ "$captain_hash" == "$captain_last_hash" ]]; then
+                captain_seconds_unchanged=$(( captain_seconds_unchanged + 1 ))
+                if (( captain_seconds_unchanged >= HEARTBEAT_THRESHOLD )); then
+                    log "HEARTBEAT: Captain pane idle for ${HEARTBEAT_THRESHOLD}s — injecting nudge"
+                    if captain_tmux send-keys -t captain:0 \
+                        'HEARTBEAT MESSAGE: please do a check of the current tasks and nudge them along or clean them up if reasonable. If there are any concrete developments worth reporting, use the speak command to give the human a voice update via text-to-speech.' 2>/dev/null; then
+                        sleep 0.5
+                        captain_tmux send-keys -t captain:0 Enter 2>/dev/null || true
+                        log "Heartbeat injected. Resetting counter."
+                        captain_seconds_unchanged=0
+                        captain_last_hash=""
+                    else
+                        log "HEARTBEAT: send-keys failed — will retry next threshold"
+                    fi
+                fi
+            else
+                captain_last_hash="$captain_hash"
+                captain_seconds_unchanged=0
+            fi
+        fi
+    else
+        # Captain tmux unavailable — reset so counter starts fresh on reconnect
+        if (( captain_seconds_unchanged > 0 )); then
+            log "Captain tmux unavailable — resetting heartbeat tracking"
+        fi
+        captain_last_hash=""
+        captain_seconds_unchanged=0
     fi
 
     # ── Worker idle detection ────────────────────────────────────
@@ -130,19 +154,31 @@ while true; do
                (( already_notified[$pane] == 0 )) && \
                (( has_had_activity[$pane] == 1 )); then
 
-                # Worker idle — alert the captain
+                # Worker idle — alert the captain (only if captain tmux is reachable)
                 sw="${pane%.*}"   # drop .pane_index → session:window
-                log "IDLE ALERT: Worker $sw idle for ${threshold}s — notifying captain"
-                captain_tmux send-keys -t captain:0 \
-                    "IDLE ALERT: Worker $sw has been idle for ${threshold} seconds" 2>/dev/null || true
-                sleep 0.5
-                captain_tmux send-keys -t captain:0 Enter 2>/dev/null || true
+                if captain_tmux has-session -t captain 2>/dev/null; then
+                    if captain_tmux send-keys -t captain:0 \
+                        "IDLE ALERT: Worker $sw has been idle for ${threshold} seconds" 2>/dev/null; then
+                        sleep 0.5
+                        captain_tmux send-keys -t captain:0 Enter 2>/dev/null || true
+                        log "IDLE ALERT: Worker $sw idle for ${threshold}s — notified captain"
 
-                already_notified["$pane"]=1
-                # Reset hash so we re-trigger if still idle after another full threshold
-                seconds_unchanged["$pane"]=0
-                prev_hash=""
-                last_hash["$pane"]=""
+                        already_notified["$pane"]=1
+                        # Reset tracking: pane will be treated as new; no further idle alerts
+                        # fire until new activity (one alert per idle period)
+                        seconds_unchanged["$pane"]=0
+                        prev_hash=""
+                        last_hash["$pane"]=""
+                    else
+                        log "IDLE ALERT: send-keys failed for worker $sw — will retry"
+                        # Reset counter so we only retry after another full threshold interval
+                        seconds_unchanged["$pane"]=0
+                    fi
+                else
+                    log "IDLE ALERT: Captain tmux unavailable — deferring alert for worker $sw"
+                    # Reset counter so we only retry after another full threshold interval
+                    seconds_unchanged["$pane"]=0
+                fi
             fi
         else
             # Content changed — activity detected
