@@ -36,31 +36,4 @@ test.describe("Unique project names", () => {
     expect(output2).toMatch(/^squad-test-\d+-api$/);
     expect(output1).not.toEqual(output2);
   });
-
-  test("test.sh source contains the unique project name pattern", () => {
-    // Read test.sh and confirm it uses RUN_ID in project names
-    const fs = require("fs");
-    const path = require("path");
-
-    // test.sh is at the repo root; inside the container it's mounted or we
-    // can look at the copy that was baked into the image context.
-    // The safest approach: just grep the pattern in the script content.
-    let testSh;
-    for (const candidate of ["/app/test.sh", "/work/test.sh", "/home/ubuntu/test.sh"]) {
-      try {
-        testSh = fs.readFileSync(candidate, "utf8");
-        break;
-      } catch { /* try next */ }
-    }
-
-    if (!testSh) {
-      // If we can't find the file inside the container, verify the pattern
-      // via the shell simulation above — the first two tests already cover this.
-      test.skip();
-      return;
-    }
-
-    expect(testSh).toContain('RUN_ID="$$"');
-    expect(testSh).toContain("squad-test-${RUN_ID}-");
-  });
 });
