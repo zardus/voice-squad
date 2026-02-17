@@ -2495,7 +2495,7 @@ async function refreshTasks() {
 
   try {
     const [pendingResp, completedResp] = await Promise.all([
-      fetch(`/api/pending-tasks?token=${encodeURIComponent(token)}`),
+      fetch(`/api/pending-tasks?token=${encodeURIComponent(token)}&worker_status=1`),
       fetch(`/api/completed-tasks?token=${encodeURIComponent(token)}`),
     ]);
 
