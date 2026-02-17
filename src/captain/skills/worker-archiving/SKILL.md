@@ -1,3 +1,9 @@
+---
+name: worker-archiving
+description: Cleaning up finished workers, mandatory output archiving before kill, task completion accountability, verify before closing, complete means complete, never accept deferred, continue incomplete work, do not let tasks silently drop.
+user-invocable: false
+---
+
 # Archiving and Completing Tasks
 
 ## Task Completion Accountability

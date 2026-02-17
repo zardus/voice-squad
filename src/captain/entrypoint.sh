@@ -36,15 +36,17 @@ if [ -f /home/ubuntu/env ]; then
     set +a
 fi
 
-# Captain instructions in ~/captain/ — workers in ~/project/ never walk into here
+# Captain working directory is /opt/squad/captain (baked into image with CLAUDE.md + .claude/skills/)
+# Task files live under ~/captain/tasks/ on the shared volume
 mkdir -p /home/ubuntu/captain
-mkdir -p /home/ubuntu/captain/archive
+mkdir -p /home/ubuntu/captain/tasks/pending
+mkdir -p /home/ubuntu/captain/tasks/archived
 
 # Write config.yml so the voice server (and next restart) know the captain type
 echo "type: $CAPTAIN" > "$CONFIG_FILE"
-cp /opt/squad/captain/CLAUDE.md /home/ubuntu/captain/CLAUDE.md
-cp /opt/squad/captain/CLAUDE.md /home/ubuntu/captain/AGENTS.md
-cp -r /opt/squad/captain/skills/ /home/ubuntu/captain/skills/
+
+# For codex captains, also provide AGENTS.md
+cp /opt/squad/captain/CLAUDE.md /opt/squad/captain/AGENTS.md 2>/dev/null || true
 
 # Generate VOICE_TOKEN if not provided via environment
 if [ -z "${VOICE_TOKEN:-}" ]; then
@@ -77,7 +79,7 @@ mkdir -p /run/workspace-tmux/tmux-$(id -u)
 ln -sf /run/workspace-tmux/default /run/workspace-tmux/tmux-$(id -u)/default
 
 # Create captain tmux session on the captain's own tmux server
-tmux -S /run/captain-tmux/default new-session -d -s captain -c /home/ubuntu/captain
+tmux -S /run/captain-tmux/default new-session -d -s captain -c /opt/squad/captain
 
 # Launch captain inside the tmux session using the restart script.
 # --fresh skips --continue/resume since this is the initial boot.

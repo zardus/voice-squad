@@ -1,3 +1,9 @@
+---
+name: worker-monitoring
+description: Status checks, reading worker output, checking if workers are running, intervention/patience, proactively unsticking workers, idle alerts, autosuggest caveat.
+user-invocable: false
+---
+
 # Monitoring Workers
 
 ## Status Checks (Only When Asked)

@@ -1,3 +1,9 @@
+---
+name: worker-starting
+description: Spawn flow, project directories, task definition files, choosing Claude vs Codex, worker prompt checklist.
+user-invocable: false
+---
+
 # Starting Workers
 
 ## Project Directories

@@ -1,3 +1,9 @@
+---
+name: worker-termination
+description: Stubborn worker stop playbook, killing stuck workers, sending ctrl-c, the escalation steps.
+user-invocable: false
+---
+
 # Terminating Stubborn Workers
 
 ## Stubborn Worker Stop Playbook (Claude/Codex)

@@ -107,132 +107,33 @@ Example updates:
 
 ## Startup Recovery (Always Do This First After a Restart)
 
-On every fresh start (including restarts after a crash), your first action, before responding to any human message, is to check for surviving workers from a previous session:
-
-1. List all tmux sessions and panes using `tmux list-sessions` and `tmux list-windows -t <session>` for each session. Look for any project sessions beyond the `captain` session.
-2. For each surviving worker pane, capture its output with `tmux capture-pane -t <target> -p -S -50` to understand:
-   - What project/task it was working on (session name = project, window name = task).
-   - Whether the agent is still running or has exited to a shell.
-   - What it accomplished so far (look for commits, test results, errors).
-3. Report to the human what you found: which workers survived, what they're doing, and their current status. Be concise: one sentence per worker.
-4. Only then proceed with whatever the human asked for.
-
-This handles the common case where the captain crashes or restarts but workers keep running. Without this recovery step, you would be blind to existing work and might duplicate effort or spawn conflicting workers.
-
-If no surviving workers are found, skip the report and proceed normally.
+On every fresh start (including restarts after a crash), check for surviving workers before doing anything else. See `.claude/skills/startup-recovery/SKILL.md` for the full procedure.
 
 ## Project and Worker Lifecycle
 
 - The human talks to you directly. You are always available to them.
-- You manage workers via raw tmux commands (see the tmux reference below).
+- You manage workers via raw tmux commands (see `.claude/skills/tmux-reference/SKILL.md`).
 - You set up project directories/repositories, then create a dedicated tmux session per project for workers.
 - You spawn workers by running `claude` or `codex` in tmux windows within a project's session.
 - After dispatching, you return control to the human immediately.
 
 ## Heartbeat Reviews
 
-During idle periods (heartbeat nudges), review whether any previously dispatched tasks were left incomplete. See `skills/worker-monitoring.md` for the detailed heartbeat checklist. If you find abandoned work, follow up immediately and speak an update to the human.
+During idle periods (heartbeat nudges), review whether any previously dispatched tasks were left incomplete. See `.claude/skills/worker-monitoring/SKILL.md` for the detailed heartbeat checklist. If you find abandoned work, follow up immediately and speak an update to the human.
 
 If there is no substantive update in a heartbeat, do not speak a report using the speak command, just print out a quick message to that effect.
 
 ## Skills
 
-Detailed operational procedures are in skill files. Read them as needed:
+Detailed operational procedures are in skill files under `.claude/skills/`. Read them as needed:
 
-- `skills/worker-starting.md` — Spawn flow, project directories, task definition files, choosing Claude vs Codex, worker prompt checklist.
-- `skills/worker-monitoring.md` — Status checks, reading worker output, checking if workers are running, intervention/patience, proactively unsticking workers, idle alerts, autosuggest caveat.
-- `skills/worker-auditing.md` — Auditor verification (opt-in), auditor setup, what the auditor checks, auditor rules, auditor verdict, task-type-specific audits.
-- `skills/worker-archiving.md` — Cleaning up finished workers, mandatory output archiving before kill, task completion accountability, verify before closing, complete means complete, never accept deferred, continue incomplete work, do not let tasks silently drop.
-- `skills/worker-termination.md` — Stubborn worker stop playbook, killing stuck workers, sending ctrl-c, the escalation steps.
-
-## tmux Command Reference (Raw tmux Only)
-
-You manage all workers via raw tmux commands through Bash.
-
-Create a new tmux session for a project with its working directory:
-
-```bash
-tmux new-session -d -s <project> -c /home/ubuntu/<project>
-```
-
-Create a new window for a worker task:
-
-```bash
-tmux new-window -t <session> -n <task-name> -c /home/ubuntu/<project>
-```
-
-Launch a worker in that window (send the command via send-keys):
-
-```bash
-tmux send-keys -t <session>:<window> 'claude --dangerously-skip-permissions "$(cat ~/captain/tasks/pending/<task-name>.task"' Enter
-```
-
-List all sessions:
-
-```bash
-tmux list-sessions
-```
-
-List windows in a session:
-
-```bash
-tmux list-windows -t <session>
-```
-
-List all panes across all sessions:
-
-```bash
-tmux list-panes -a
-```
-
-Kill a window:
-
-```bash
-tmux kill-window -t <session>:<window>
-```
-
-### Sending Input to Workers
-
-Send text to a worker:
-
-```bash
-tmux send-keys -t <target> 'the text' Enter
-```
-
-Send control keys:
-
-```bash
-tmux send-keys -t <target> C-c
-```
-
-IMPORTANT: Always sleep 0.5 seconds between text input and control input (Enter, Escape, C-c). If you send text and Enter too fast in the same send-keys call, tmux may interpret it as a bracketed paste and the Enter will not register as a keypress. Either use two separate send-keys calls with a sleep between them, or use:
-
-```bash
-tmux send-keys -t <target> 'text'; sleep 0.5; tmux send-keys -t <target> Enter
-```
-
-Sometimes C-c is the same, needing to be sent twice after a short pause (0.5 seconds).
-
-### Reading Worker Output
-
-Capture pane output:
-
-```bash
-tmux capture-pane -t <target> -p -S -<lines>
-```
-
-IMPORTANT: use tail judiciously to avoid blowing out your context window. Do not dump 500 lines of worker output into your context. Use `tmux capture-pane -t <target> -p -S -50` to get the last 50 lines, or pipe through `tail -n 30`. Start small (20 to 30 lines) and only grab more if you need it.
-
-### Checking If a Worker Is Still Running
-
-Check the foreground process:
-
-```bash
-tmux list-panes -t <target> -F '#{pane_current_command}'
-```
-
-- If it shows "claude" or "node" or "codex", the agent is running.
-- If it shows "bash" or "zsh", the agent has exited to shell.
+- `startup-recovery` — Full startup recovery procedure for detecting surviving workers after a restart.
+- `worker-starting` — Spawn flow, project directories, task definition files, choosing Claude vs Codex, worker prompt checklist.
+- `worker-monitoring` — Status checks, reading worker output, checking if workers are running, intervention/patience, proactively unsticking workers, idle alerts, autosuggest caveat.
+- `worker-auditing` — Auditor verification (opt-in), auditor setup, what the auditor checks, auditor rules, auditor verdict, task-type-specific audits.
+- `worker-archiving` — Cleaning up finished workers, mandatory output archiving before kill, task completion accountability, verify before closing, complete means complete, never accept deferred, continue incomplete work, do not let tasks silently drop.
+- `worker-termination` — Stubborn worker stop playbook, killing stuck workers, sending ctrl-c, the escalation steps.
+- `tmux-reference` — Full tmux command reference: sessions, windows, send-keys, capture-pane, checking worker status.
 
 ## Interaction Examples
 

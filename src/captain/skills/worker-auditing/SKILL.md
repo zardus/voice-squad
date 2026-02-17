@@ -1,8 +1,14 @@
+---
+name: worker-auditing
+description: Auditor verification (opt-in), auditor setup, what the auditor checks, auditor rules, auditor verdict, task-type-specific audits.
+user-invocable: false
+---
+
 # Auditing Worker Output
 
 ## Auditor Verification (Opt-In)
 
-By default, the captain verifies task completion itself using the "Verify Before Closing" checklist (see `worker-archiving.md`): capture pane output, check deliverables, confirm tests passed, confirm git push. A separate auditor worker is only spun up when the user or the task definition explicitly requests auditing (e.g., "audit this", "use an auditor", "verify with an independent worker").
+By default, the captain verifies task completion itself using the "Verify Before Closing" checklist (see `worker-archiving`): capture pane output, check deliverables, confirm tests passed, confirm git push. A separate auditor worker is only spun up when the user or the task definition explicitly requests auditing (e.g., "audit this", "use an auditor", "verify with an independent worker").
 
 When auditing IS requested, the captain spins up a separate **auditor worker** to independently verify the work before marking the task as done or archiving it.
 
