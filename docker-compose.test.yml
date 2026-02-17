@@ -29,6 +29,10 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-test-openai-key}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-test-anthropic-key}
 
+  pane-monitor:
+    environment:
+      HEARTBEAT_INTERVAL_SECONDS: 5
+
   tunnel:
     volumes:
       - test-home:/home/ubuntu
