@@ -43,6 +43,8 @@ echo ""
 PIDS=()
 PROJECTS=()
 RESULTS_DIR=$(mktemp -d)
+# Unique run ID to prevent project name collisions between simultaneous test.sh runs
+RUN_ID="$$"
 
 cleanup() {
     # Kill any still-running test subshells
@@ -62,7 +64,7 @@ trap cleanup EXIT
 
 for spec in "${TEST_FILES[@]}"; do
     name="${spec%.spec.js}"
-    project="squad-test-${name}"
+    project="squad-test-${RUN_ID}-${name}"
     PROJECTS+=("$project")
     log="$RESULTS_DIR/${name}.log"
 
