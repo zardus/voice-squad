@@ -35,6 +35,41 @@ if [ -f /home/ubuntu/env ]; then
     set +a
 fi
 
+# Start FUSE auth proxy if enabled (default: off — set FUSE_AUTH_ENABLED=1 to enable)
+if [ "${FUSE_AUTH_ENABLED:-}" = "1" ]; then
+    echo "[workspace] Starting FUSE auth proxy..."
+    sudo mkdir -p /run/fuse-auth-proxy
+    sudo chown ubuntu:ubuntu /run/fuse-auth-proxy
+
+    PROFILES_DIR="${FUSE_AUTH_PROFILES_DIR:-$HOME/captain/auth/profiles}"
+    mkdir -p "$PROFILES_DIR"
+
+    # Create default profile
+    DEFAULT_ACCOUNT="${FUSE_AUTH_DEFAULT_ACCOUNT:-default}"
+    mkdir -p "$PROFILES_DIR/$DEFAULT_ACCOUNT/claude" "$PROFILES_DIR/$DEFAULT_ACCOUNT/codex"
+    [ -f "$PROFILES_DIR/$DEFAULT_ACCOUNT/claude/.credentials.json" ] || echo '{}' > "$PROFILES_DIR/$DEFAULT_ACCOUNT/claude/.credentials.json"
+    [ -f "$PROFILES_DIR/$DEFAULT_ACCOUNT/codex/auth.json" ] || echo '{}' > "$PROFILES_DIR/$DEFAULT_ACCOUNT/codex/auth.json"
+
+    # Ensure credential directories exist before mounting
+    mkdir -p "$HOME/.claude" "$HOME/.codex"
+
+    python3 /opt/squad/fuse-auth-proxy/fuse_auth_proxy.py --foreground &
+    FUSE_PID=$!
+    echo "[workspace] FUSE auth proxy started (PID $FUSE_PID)"
+
+    # Wait for ready marker
+    fuse_timeout=10
+    while [ ! -f /run/fuse-auth-proxy/ready ] && [ $fuse_timeout -gt 0 ]; do
+        sleep 0.5
+        fuse_timeout=$((fuse_timeout - 1))
+    done
+    if [ -f /run/fuse-auth-proxy/ready ]; then
+        echo "[workspace] FUSE auth proxy ready"
+    else
+        echo "[workspace] WARNING: FUSE auth proxy may not be ready"
+    fi
+fi
+
 # Create workspace tmux session at a fixed socket path (workers run here)
 tmux -S /run/workspace-tmux/default new-session -d -s workspace -c /home/ubuntu
 

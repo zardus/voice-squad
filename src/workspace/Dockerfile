@@ -83,7 +83,8 @@ RUN pip3 install --break-system-packages --no-cache-dir \
     black \
     ruff \
     mypy \
-    ipython
+    ipython \
+    fusepy
 
 # cloudflared (may be useful for worker tasks)
 RUN curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-$(dpkg --print-architecture) \
@@ -100,10 +101,18 @@ RUN npm install -g qrcode-terminal
 RUN usermod -aG docker ubuntu \
     && echo "ubuntu ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
+# FUSE auth proxy — per-account credential routing for concurrent workers
+RUN apt-get update && apt-get install -y fuse3 libfuse2 socat && rm -rf /var/lib/apt/lists/* \
+    && echo "user_allow_other" >> /etc/fuse.conf
+RUN mkdir -p /run/fuse-auth-proxy && chown ubuntu:ubuntu /run/fuse-auth-proxy
+COPY fuse-auth-proxy/fuse_auth_proxy.py fuse-auth-proxy/fuse-auth-register.sh /opt/squad/fuse-auth-proxy/
+RUN chmod +x /opt/squad/fuse-auth-proxy/fuse_auth_proxy.py \
+    /opt/squad/fuse-auth-proxy/fuse-auth-register.sh
+
 # Workspace tmux socket directory for cross-container sharing
 RUN mkdir -p /run/workspace-tmux && chown ubuntu:ubuntu /run/workspace-tmux
 
-COPY entrypoint.sh /entrypoint.sh
+COPY workspace/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 USER ubuntu

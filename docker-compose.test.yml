@@ -11,9 +11,11 @@ services:
   workspace:
     volumes:
       - test-home:/home/ubuntu
+      - fuse-auth-run:/run/fuse-auth-proxy
     environment:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-test-openai-key}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-test-anthropic-key}
+      FUSE_AUTH_ENABLED: "1"
 
   captain:
     volumes:
@@ -50,6 +52,7 @@ services:
       - test-home:/home/ubuntu
       - captain-tmux:/run/captain-tmux
       - workspace-tmux:/run/workspace-tmux
+      - fuse-auth-run:/run/fuse-auth-proxy
     environment:
       - VOICE_TOKEN
       - TEST_INTEGRATION=1
@@ -58,6 +61,8 @@ services:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-test-anthropic-key}
       - CAPTAIN_TMUX_SOCKET=/run/captain-tmux/default
       - WORKSPACE_TMUX_SOCKET=/run/workspace-tmux/default
+      - FUSE_AUTH_CONTROL_SOCKET=/run/fuse-auth-proxy/control.sock
 
 volumes:
   test-home:
+  fuse-auth-run:
