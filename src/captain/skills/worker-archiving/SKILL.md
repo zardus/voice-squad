@@ -81,7 +81,7 @@ Before killing any worker tmux window (cleanup, pruning finished workers, etc.),
 - Capture a generous amount of scrollback: `tmux capture-pane -t <target> -p -S -10000 > ~/captain/tasks/archived/<task-name>.log`
 
 ```bash
-mkdir -p ~/captain/archived
+mkdir -p ~/captain/tasks/archived
 tmux capture-pane -t <session>:<window> -p -S -10000 > ~/captain/tasks/archived/<task-name>.log
 tmux kill-window -t <session>:<window>
 ```

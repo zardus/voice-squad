@@ -128,9 +128,13 @@ while true; do
         # All panes on the workspace server are workers
         threshold=$WORKER_THRESHOLD
 
-        # Capture pane content and hash it
-        content_hash=$(workspace_tmux capture-pane -t "$pane" -p 2>/dev/null | md5sum | cut -d' ' -f1)
-        if [[ -z "$content_hash" ]]; then
+        # Capture pane content and hash it.
+        # Check capture-pane exit code explicitly — without this, a failed
+        # capture pipes empty output to md5sum, producing a constant "empty"
+        # hash that looks like unchanged content and triggers false idle alerts.
+        if pane_output=$(workspace_tmux capture-pane -t "$pane" -p 2>/dev/null); then
+            content_hash=$(printf '%s' "$pane_output" | md5sum | cut -d' ' -f1)
+        else
             continue
         fi
 
