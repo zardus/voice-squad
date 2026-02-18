@@ -81,6 +81,8 @@ let disconnectedFlashTimer = null;
 let lastCaptainUpdateAt = 0;
 let captainName = "";
 let statusUpdateTimer = null;
+let reconnectTimer = null;
+let wsConnectionSeq = 0;
 let maxRecordingTimer = null;
 let activePaneSpeech = null; // Web Speech API recognition (uses mic)
 
@@ -902,6 +904,10 @@ function stopStatusTimer() {
 }
 
 function connect() {
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
   const desiredTts = ttsFormatOverride || selectBestTtsFormat();
   // Best-effort: set defaults before the server sends tts_config.
@@ -909,21 +915,25 @@ function connect() {
   ttsMime = mimeForTtsFormat(desiredTts);
   // Explicitly use window.WebSocket so Playwright tests can stub it reliably.
   const WebSocketCtor = window.WebSocket || WebSocket;
-  ws = new WebSocketCtor(
+  const socket = new WebSocketCtor(
     `${proto}//${location.host}?token=${encodeURIComponent(token)}&tts=${encodeURIComponent(desiredTts)}`
   );
-  ws.binaryType = "arraybuffer";
+  const connSeq = ++wsConnectionSeq;
+  ws = socket;
+  socket.binaryType = "arraybuffer";
 
-  ws.onopen = () => {
+  socket.onopen = () => {
+    if (connSeq !== wsConnectionSeq || ws !== socket) return;
     statusEl.textContent = "connecting...";
     statusEl.className = "disconnected";
     // Re-send screens tab state on reconnect
     if (screensTabActive) {
-      ws.send(JSON.stringify({ type: "status_tab_active" }));
+      socket.send(JSON.stringify({ type: "status_tab_active" }));
     }
   };
 
-  ws.onmessage = async (evt) => {
+  socket.onmessage = async (evt) => {
+    if (connSeq !== wsConnectionSeq || ws !== socket) return;
     // Any binary frame from server = TTS audio, store for replay and maybe autoplay.
     if (evt.data instanceof ArrayBuffer) {
       const text = pendingTtsTexts.length ? pendingTtsTexts.shift() : "";
@@ -1017,7 +1027,8 @@ function connect() {
     }
   };
 
-  ws.onclose = () => {
+  socket.onclose = () => {
+    if (connSeq !== wsConnectionSeq || ws !== socket) return;
     stopStatusTimer();
     lastCaptainUpdateAt = 0;
     captainName = "";
@@ -1025,10 +1036,13 @@ function connect() {
     statusEl.className = "disconnected";
     // Reset audio unlock so next user gesture re-primes the Audio element
     audioUnlocked = false;
-    setTimeout(connect, 2000);
+    reconnectTimer = setTimeout(connect, 2000);
   };
 
-  ws.onerror = () => ws.close();
+  socket.onerror = () => {
+    if (connSeq !== wsConnectionSeq || ws !== socket) return;
+    socket.close();
+  };
 }
 
 // Pre-acquire mic stream so recording starts instantly on press
