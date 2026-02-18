@@ -84,12 +84,12 @@ Do NOT kill workers just because you see unsubmitted text in their input prompt.
 
 ## Heartbeat Reviews
 
-During idle periods (heartbeat nudges with no active workers), review whether any previously dispatched tasks were left incomplete. Check:
+During a heartbeat nudge, check the status of all workers. If a worker is sitting on a prompt, nudge it to continue it work. If a worker is finished, verify that it has completed its work according to the proper procedure, then clean it up and tear it down if so.
+Also check:
 
-- Are there pending task definitions in `~/captain/tasks/pending/` with no corresponding active worker?
-- Did any workers exit since your last check without you verifying their output?
-- Are there tmux windows with dead shells (worker exited) that you have not reviewed?
+- Are there pending task definitions in `~/captain/tasks/pending/` with no corresponding active worker? Spin one up if so.
+- Are there tmux windows with dead or idle shells (worker exited) that you have not reviewed?
 
-If you find abandoned work, follow up immediately: capture what was done, assess what remains, and dispatch a continuation worker if needed. Then speak an update to the human.
+If you find abandoned work, follow up immediately: capture what was done, assess what remains, and dispatch a continuation worker if needed. Then speak an update to the human, including the pertinent details.
 
 If there is no substantive update in a heartbeat, do not speak a report using the speak command, just print out a quick message to that effect.
