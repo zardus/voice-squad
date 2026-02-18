@@ -4,7 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Project Is
 
-Squad is a multi-agent AI orchestration system. It runs inside a privileged Docker container and uses a **captain/workers** pattern: a captain agent (Claude or Codex) manages worker agents that run in tmux panes via raw tmux commands. It includes a voice interface (PWA) for controlling the captain from a phone.
+Voice Squad is a multi-agent orchestration system with a **captain/workers** model:
+
+- The **captain** agent (Claude or Codex) runs in a dedicated tmux session and dispatches work.
+- **Workers** run in tmux panes on a separate tmux server.
+- A phone-friendly **voice/web UI** controls the captain over WebSocket + HTTP.
+
+`AGENTS.md` is a symlink to this file, so these instructions apply for both Claude and Codex agent tooling in this repo.
 
 ## Build & Run
 
@@ -16,58 +22,100 @@ docker compose up --build
 SQUAD_CAPTAIN=codex docker compose up --build
 ```
 
-Requires `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` environment variables on the host. Optional: `GH_TOKEN`. A `VOICE_TOKEN` is auto-generated if not provided.
+Required host env vars: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`  
+Optional: `GH_TOKEN`, `SQUAD_CAPTAIN`, `VOICE_TOKEN`
 
-The system runs as 4 containers (see `docker-compose.yml`): workspace (dockerd + tmux), captain (captain CLI agent), voice-server (voice pipeline), tunnel (cloudflared quick tunnel), and pane-monitor (idle worker detection). The tunnel runs in its own container so the voice server can be restarted without losing the tunnel URL.
+## Current Runtime Topology (`docker-compose.yml`)
+
+The compose stack has **5 services**:
+
+- `workspace` — privileged Docker-in-Docker + tmux server for worker panes (`/run/workspace-tmux/default`)
+- `captain` — runs Claude/Codex captain in its own tmux server (`/run/captain-tmux/default`)
+- `voice-server` — Express/WebSocket server, STT/TTS, status + task APIs, captain control endpoints
+- `tunnel` — cloudflared quick tunnel and QR output
+- `pane-monitor` — idle worker alerts + captain heartbeat nudges
+
+Shared volumes:
+
+- `./home -> /home/ubuntu` (persistent state, gitignored)
+- `captain-tmux` and `workspace-tmux` Docker volumes (shared tmux sockets across containers)
+
+By default, compose does **not** publish port `3000` to the host; external access is through the tunnel URL shown in tunnel logs.
 
 ## Project Structure
 
-Each component lives in its own self-contained directory under `src/`, with its own `Dockerfile` and `entrypoint.sh`:
+Each runtime component is isolated under `src/` with its own Dockerfile/build context:
 
 - `src/workspace/` — Docker-in-Docker workspace with dev tools (dockerd, tmux, Claude Code, Codex, nix, python, node)
-- `src/captain/` — Captain agent (Claude or Codex CLI), instructions, restart/speak/switch-account scripts
-- `src/voice-server/` — Voice interface server and PWA (Express + WebSocket, STT, TTS, tmux bridge, status daemon)
-  - `public/` — PWA frontend (HTML, JS, CSS, manifest, icons)
+- `src/captain/` — Captain container entrypoint + captain instructions/skills + helper scripts (`restart-captain.sh`, `switch-account.sh`, `speak`)
+- `src/voice-server/` — Voice server (Express + ws), STT/TTS integrations, tmux bridge, status daemon, PWA in `public/`
 - `src/tunnel/` — Cloudflared quick tunnel for external access
 - `src/pane-monitor/` — Idle worker detection daemon
-- `src/ios/` — iOS app (unchanged)
+- `src/ios/` — iOS client app (not part of compose runtime)
 
-Each component is fully self-contained with no shared build contexts.
+## Key Runtime Paths and State
 
-`docker-compose.yml` at the root orchestrates the 5 containers. Port 3000 is exposed for LAN access.
-
-`home/` is the shared persistent volume mounted into the container at `/home/ubuntu`. It is gitignored.
-
-## Deploying Changes
-
-After editing source files, you **must** run the deploy script to apply changes to the live server:
-
-```bash
-./utils/update.sh                   # hot-update code + restart voice server
-./utils/update.sh --restart-captain # also restart the captain agent
-```
-
-This pulls latest git, copies `src/` files to `/opt/squad/` (the installed location), and restarts the voice server. The cloudflared tunnel runs in a separate container and is unaffected by voice server restarts. The captain agent is kept alive (unless `--restart-captain` is passed).
-
-**Key paths:**
-- Source: `src/voice-server/` — server code; `src/voice-server/public/` — frontend (index.html, app.js, style.css)
-- Installed (live): `/opt/squad/voice/` — the voice server runs from here, not from `src/`
-- Pane monitor: `src/pane-monitor/pane-monitor.sh` → installed to `/opt/squad/pane-monitor.sh`
-
-**Logs:**
-- Deploy output: `/tmp/update.log`
-- Voice server: `/tmp/voice-server.log`
+- Captain type is persisted at `/home/ubuntu/captain/config.yml` (`type: claude|codex`)
+- Voice token is shared via `/home/ubuntu/.voice-token`
+- Tunnel URL is shared via `/home/ubuntu/.voice-url.txt`
+- Captain task files live at:
+  - `/home/ubuntu/captain/tasks/pending/*.task`
+  - `/home/ubuntu/captain/tasks/archived/*.{task,summary,results,title,log}`
+- Image-installed code paths:
+  - Captain working tree: `/opt/squad/captain`
+  - Voice server code: `/opt/squad/voice`
+  - Pane monitor script: `/opt/squad/pane-monitor.sh`
 
 ## Key Architecture Details
 
-- **Inside the container**, files are installed to `/opt/squad/`. The captain entrypoint copies instruction files to `/home/ubuntu/` with the correct filename (CLAUDE.md for claude captains, AGENTS.md for codex captains).
-- **Captain runs in tmux**: The captain CLI runs in window 0 of a tmux session called `captain`.
-- **Voice interface**: A phone PWA connects via WebSocket through a cloudflared quick tunnel (`*.trycloudflare.com`) running in a separate `tunnel` container. Auth is via a random token embedded in the URL (shown as a QR code at startup in the tunnel container logs). The pipeline: STT (Whisper) -> send to captain via tmux -> poll output -> summarize (Claude Sonnet) -> TTS (OpenAI) -> play on phone.
-- **Environment variables**: `SQUAD_CAPTAIN` (claude|codex), `VOICE_TOKEN` (auto-generated).
-- The container runs `--privileged` for Docker-in-Docker support. The Docker container itself is the sandbox boundary.
+- **Dual tmux servers**:
+  - Captain server socket: `/run/captain-tmux/default`
+  - Worker/server socket: `/run/workspace-tmux/default`
+  - Voice server and pane monitor read from both via `CAPTAIN_TMUX_SOCKET` and `WORKSPACE_TMUX_SOCKET`.
+- **Captain lifecycle**:
+  - Captain entrypoint creates the `captain` tmux session and starts tool via `/opt/squad/restart-captain.sh`.
+  - Voice UI restart endpoint (`/api/restart-captain`) updates `config.yml`, then kills entrypoint `sleep` to let compose restart captain with the new tool.
+- **Voice pipeline**:
+  - Browser audio -> WebSocket -> OpenAI Whisper (`stt.js`) -> tmux send-keys to `captain:0`
+  - Captain uses `speak` script -> `/api/speak` -> OpenAI TTS (`tts.js`) -> audio streamed back to connected clients
+- **Status and summaries**:
+  - `status-daemon.js` polls tmux panes every second only while status clients are active.
+  - `/api/summary` and pending-task worker status enrichment call Anthropic Haiku (with secret scrubbing).
+- **PWA tabs** currently: `Terminal`, `Screens`, `Summary`, `Tasks`, `Voice`
+- **Accounts/login**:
+  - Voice UI supports `claude login` / `codex auth login` via `/api/login` + `/api/login-status`
+  - Captain-side account switching helper: `src/captain/switch-account.sh`
+- Only the `workspace` service is privileged (for Docker-in-Docker).
+
+## Updating a Running Stack
+
+`utils/update.sh` no longer exists in this repo.
+
+After editing source files, rebuild/restart via compose:
+
+```bash
+# Rebuild and restart everything
+docker compose up -d --build
+
+# Or rebuild only one service you changed
+docker compose up -d --build voice-server
+docker compose up -d --build captain
+docker compose up -d --build pane-monitor
+docker compose up -d --build tunnel
+docker compose up -d --build workspace
+```
+
+Useful logs:
+
+- `docker compose logs -f voice-server`
+- `docker compose logs -f tunnel`
+- `docker compose logs -f captain`
+
 ## Running Tests
 
-**Tests run as overrides on the real compose stack** via `docker-compose.test.yml`, fully isolated from any live deployment. The test file layers on top of `docker-compose.yml` — services inherit their real images and entrypoints, with only test-specific overrides (ephemeral volumes, dummy API keys, shared PID/network namespaces).
+Primary test entrypoint is root `./test.sh`.
+
+It layers `docker-compose.test.yml` on top of `docker-compose.yml`, builds images once, and runs each `tests/*.spec.js` file in parallel in isolated compose projects.
 
 ```bash
 # Run all tests (from the repo root)
@@ -80,12 +128,13 @@ This pulls latest git, copies `src/` files to `/opt/squad/` (the installed locat
 TEST_CAPTAIN=1 ./test.sh captain.spec.js
 ```
 
-`test.sh` builds images once, then launches each test file in its own fully isolated Docker Compose stack (separate `-p` project), so all tests run in parallel. On exit it tears down all stacks (`down -v --remove-orphans`).
+Notes:
 
-**Test overrides** (see `docker-compose.test.yml`):
-- All services run their **real entrypoints** with real API keys
-- `./home` is swapped for an ephemeral `test-home` volume
-- **test-runner** — lightweight container (Ubuntu + Node + Playwright + Chromium) that connects to services via Docker networking (`voice-server:3000`) and tmux via shared socket volumes
+- Test stack swaps `./home` for an ephemeral `test-home` volume.
+- Real service entrypoints are used; API keys default to test placeholders unless overridden.
+- `test-runner` container runs Playwright and connects to `voice-server:3000` over Docker networking.
+
+There is also `utils/test.sh`, which runs Playwright against an already-running local server on `localhost:3000` (a different workflow from isolated compose tests).
 
 ## Development Workflow
 
