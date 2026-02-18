@@ -20,11 +20,12 @@ services:
       - OPENAI_API_KEY
       - GH_TOKEN
       - TMUX_TMPDIR=/run/workspace-tmux
+    restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "cat /proc/1/comm | grep -q sleep"]
+      test: ["CMD-SHELL", "ps aux | grep -q [t]mux"]
       interval: 5s
       timeout: 3s
-      retries: 120
+      retries: 5
       start_period: 10s
 
   captain:
@@ -51,7 +52,7 @@ services:
       test: ["CMD-SHELL", "tmux -S /run/captain-tmux/default has-session -t captain 2>/dev/null"]
       interval: 5s
       timeout: 3s
-      retries: 120
+      retries: 5
       start_period: 10s
 
   voice-server:
