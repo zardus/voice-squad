@@ -14,10 +14,13 @@ import errno
 import json
 import logging
 import os
+import shlex
+import shutil
 import signal
 import socket
 import stat
 import struct
+import subprocess
 import sys
 import threading
 import time
@@ -133,7 +136,9 @@ def _get_ppid(pid: int) -> int:
         with open(f"/proc/{pid}/stat") as f:
             parts = f.read().split(")")
             fields = parts[-1].split()
-            return int(fields[1])  # ppid is field index 3, after comm in parens
+            # After splitting on ")", fields[0] is state, fields[1] is ppid
+            # (field index 3 of the full stat line: pid, comm, state, ppid)
+            return int(fields[1])
     except (FileNotFoundError, IndexError, ValueError):
         return 0
 
@@ -167,6 +172,7 @@ class CredentialFS(Operations):
         self.profiles_dir = profiles_dir
         self.pid_map = pid_map
         self.cred_files = cred_files
+        self._init_lock = threading.Lock()
 
     def _real_path(self, path: str, pid: int | None = None) -> str:
         """Resolve a FUSE path to its real backing file.
@@ -189,21 +195,27 @@ class CredentialFS(Operations):
             profile_path = os.path.join(
                 self.profiles_dir, account, self.tool, rel
             )
-            # Ensure the profile directory exists
-            os.makedirs(os.path.dirname(profile_path), exist_ok=True)
-            # If the profile-specific file doesn't exist yet, copy from backing
-            if not os.path.exists(profile_path):
-                backing = os.path.join(self.backing_dir, rel)
-                if os.path.exists(backing):
-                    import shutil
-                    shutil.copy2(backing, profile_path)
-                else:
-                    # Create empty JSON file
-                    with open(profile_path, "w") as f:
-                        f.write("{}")
+            # Ensure the profile directory exists and initialize the file if needed
+            self._ensure_profile_file(profile_path, rel)
             return profile_path
         else:
             return os.path.join(self.backing_dir, rel)
+
+    def _ensure_profile_file(self, profile_path: str, rel: str):
+        """Ensure profile credential file exists, with locking to prevent races."""
+        if os.path.exists(profile_path):
+            return
+        with self._init_lock:
+            # Double-check after acquiring lock
+            if os.path.exists(profile_path):
+                return
+            os.makedirs(os.path.dirname(profile_path), exist_ok=True)
+            backing = os.path.join(self.backing_dir, rel)
+            if os.path.exists(backing):
+                shutil.copy2(backing, profile_path)
+            else:
+                with open(profile_path, "w") as f:
+                    f.write("{}")
 
     def _get_caller_pid(self) -> int:
         """Get the PID of the process making the FUSE request.
@@ -225,6 +237,8 @@ class CredentialFS(Operations):
             st = os.lstat(real)
         except FileNotFoundError:
             raise FuseOSError(errno.ENOENT)
+        except PermissionError:
+            raise FuseOSError(errno.EACCES)
         return {
             key: getattr(st, key)
             for key in (
@@ -240,6 +254,8 @@ class CredentialFS(Operations):
         }
 
     def readdir(self, path, fh):
+        # Use backing_dir directly for directory listings: all PIDs see the same
+        # directory entries — only individual file *contents* differ per-account.
         real = os.path.join(self.backing_dir, path.lstrip("/"))
         entries = [".", ".."]
         if os.path.isdir(real):
@@ -248,12 +264,22 @@ class CredentialFS(Operations):
 
     def open(self, path, flags):
         real = self._real_path(path)
-        return os.open(real, flags)
+        try:
+            return os.open(real, flags)
+        except FileNotFoundError:
+            raise FuseOSError(errno.ENOENT)
+        except PermissionError:
+            raise FuseOSError(errno.EACCES)
 
     def create(self, path, mode, fi=None):
         real = self._real_path(path)
         os.makedirs(os.path.dirname(real), exist_ok=True)
-        return os.open(real, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
+        try:
+            return os.open(real, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
+        except PermissionError:
+            raise FuseOSError(errno.EACCES)
+        except FileExistsError:
+            raise FuseOSError(errno.EEXIST)
 
     def read(self, path, length, offset, fh):
         os.lseek(fh, offset, os.SEEK_SET)
@@ -264,9 +290,11 @@ class CredentialFS(Operations):
         return os.write(fh, buf)
 
     def truncate(self, path, length, fh=None):
-        real = self._real_path(path)
-        with open(real, "r+") as f:
-            f.truncate(length)
+        if fh is not None:
+            os.ftruncate(fh, length)
+        else:
+            real = self._real_path(path)
+            os.truncate(real, length)
 
     def flush(self, path, fh):
         os.fsync(fh)
@@ -279,28 +307,60 @@ class CredentialFS(Operations):
 
     def chmod(self, path, mode):
         real = self._real_path(path)
-        os.chmod(real, mode)
+        try:
+            os.chmod(real, mode)
+        except PermissionError:
+            raise FuseOSError(errno.EACCES)
+        except FileNotFoundError:
+            raise FuseOSError(errno.ENOENT)
 
     def chown(self, path, uid, gid):
         real = self._real_path(path)
-        os.chown(real, uid, gid)
+        try:
+            os.chown(real, uid, gid)
+        except PermissionError:
+            raise FuseOSError(errno.EACCES)
+        except FileNotFoundError:
+            raise FuseOSError(errno.ENOENT)
 
     def mkdir(self, path, mode):
         real = os.path.join(self.backing_dir, path.lstrip("/"))
-        os.makedirs(real, mode=mode, exist_ok=True)
+        try:
+            os.makedirs(real, mode=mode, exist_ok=True)
+        except PermissionError:
+            raise FuseOSError(errno.EACCES)
 
     def rmdir(self, path):
         real = os.path.join(self.backing_dir, path.lstrip("/"))
-        os.rmdir(real)
+        try:
+            os.rmdir(real)
+        except FileNotFoundError:
+            raise FuseOSError(errno.ENOENT)
+        except PermissionError:
+            raise FuseOSError(errno.EACCES)
+        except OSError as e:
+            raise FuseOSError(e.errno or errno.EIO)
 
     def unlink(self, path):
         real = self._real_path(path)
-        os.unlink(real)
+        try:
+            os.unlink(real)
+        except FileNotFoundError:
+            raise FuseOSError(errno.ENOENT)
+        except PermissionError:
+            raise FuseOSError(errno.EACCES)
 
     def rename(self, old, new):
         real_old = os.path.join(self.backing_dir, old.lstrip("/"))
         real_new = os.path.join(self.backing_dir, new.lstrip("/"))
-        os.rename(real_old, real_new)
+        try:
+            os.rename(real_old, real_new)
+        except FileNotFoundError:
+            raise FuseOSError(errno.ENOENT)
+        except PermissionError:
+            raise FuseOSError(errno.EACCES)
+        except FileExistsError:
+            raise FuseOSError(errno.EEXIST)
 
     def utimens(self, path, times=None):
         real = self._real_path(path)
@@ -362,11 +422,12 @@ class ControlServer:
         {"cmd": "query", "pid": 1234}
     """
 
-    def __init__(self, socket_path: str, pid_map: PidMapManager):
+    def __init__(self, socket_path: str, pid_map: PidMapManager, allowed_uid: int | None = None):
         self.socket_path = socket_path
         self.pid_map = pid_map
         self._server = None
         self._thread = None
+        self._allowed_uid = allowed_uid
 
     def start(self):
         os.makedirs(os.path.dirname(self.socket_path), exist_ok=True)
@@ -376,7 +437,11 @@ class ControlServer:
         self._server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self._server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self._server.bind(self.socket_path)
-        os.chmod(self.socket_path, 0o666)
+        # Restrict socket to owner only (captain process runs as same user)
+        try:
+            os.chmod(self.socket_path, 0o600)
+        except OSError as e:
+            log.warning("Could not set control socket permissions: %s", e)
         self._server.listen(5)
         self._server.settimeout(1.0)
 
@@ -394,8 +459,27 @@ class ControlServer:
                 break
             threading.Thread(target=self._handle, args=(conn,), daemon=True).start()
 
+    def _verify_peer(self, conn: socket.socket) -> bool:
+        """Verify connecting peer via SO_PEERCRED (Linux only)."""
+        if self._allowed_uid is None:
+            return True
+        try:
+            cred = conn.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize("iII"))
+            peer_pid, peer_uid, peer_gid = struct.unpack("iII", cred)
+            if peer_uid != self._allowed_uid:
+                log.warning("Rejected connection from UID %d (expected %d)", peer_uid, self._allowed_uid)
+                return False
+            return True
+        except (OSError, struct.error) as e:
+            log.warning("SO_PEERCRED check failed: %s — allowing connection", e)
+            return True
+
     def _handle(self, conn: socket.socket):
         try:
+            if not self._verify_peer(conn):
+                conn.sendall(b'{"ok":false,"error":"permission denied"}\n')
+                return
+
             data = b""
             while True:
                 chunk = conn.recv(4096)
@@ -487,10 +571,8 @@ def prepare_backing_dir(mount_point: str, tool: str) -> str:
             src = os.path.join(mount_point, item)
             dst = os.path.join(backing, item)
             if os.path.isfile(src) or os.path.islink(src):
-                import shutil
                 shutil.copy2(src, dst, follow_symlinks=False)
             elif os.path.isdir(src):
-                import shutil
                 shutil.copytree(src, dst, symlinks=True, dirs_exist_ok=True)
     return backing
 
@@ -554,8 +636,8 @@ def main():
     # Initialize PID map
     pid_map = PidMapManager(PID_MAP_FILE)
 
-    # Start control socket
-    control = ControlServer(CONTROL_SOCKET, pid_map)
+    # Start control socket — restrict to current user via SO_PEERCRED
+    control = ControlServer(CONTROL_SOCKET, pid_map, allowed_uid=os.getuid())
     control.start()
 
     # Start stale cleanup
@@ -624,7 +706,11 @@ def main():
         for tool in tools:
             if tool in mount_configs:
                 mp = mount_configs[tool]["mount_point"]
-                os.system(f"fusermount -u {mp} 2>/dev/null || umount {mp} 2>/dev/null")
+                subprocess.run(
+                    ["fusermount", "-u", mp],
+                    stderr=subprocess.DEVNULL,
+                    check=False,
+                )
         sys.exit(0)
 
     signal.signal(signal.SIGTERM, handle_signal)

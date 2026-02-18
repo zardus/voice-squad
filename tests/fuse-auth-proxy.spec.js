@@ -21,6 +21,9 @@ const fs = require("fs");
 const CONTROL_SOCKET =
   process.env.FUSE_AUTH_CONTROL_SOCKET || "/run/fuse-auth-proxy/control.sock";
 
+// Unique suffix per test run to avoid collisions with parallel runs
+const RUN_ID = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
 /**
  * Send a JSON command to the FUSE auth proxy control socket and return the response.
  * Uses a temp file for the python script to avoid shell quoting issues.
@@ -58,6 +61,9 @@ print(data.decode().strip())
 /**
  * Run a command inside the workspace container via tmux and capture output.
  * Uses a file written to the shared /home/ubuntu volume for reliable I/O.
+ *
+ * @param {string} cmd - Command to run
+ * @param {number} timeoutMs - Timeout in ms (default 15s, increase for slow ops)
  */
 function workspaceRun(cmd, timeoutMs = 15000) {
   const id = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -108,18 +114,18 @@ test.describe("FUSE auth proxy", () => {
         "Cannot discover VOICE_TOKEN — set it or ensure /tmp/voice-url.txt exists"
       );
 
-    // Wait for FUSE auth proxy to be ready
+    // Wait for FUSE auth proxy to be ready (30s timeout, polling every 500ms)
     const deadline = Date.now() + 30000;
+    let ready = false;
     while (Date.now() < deadline) {
       try {
         fs.accessSync("/run/fuse-auth-proxy/ready");
+        ready = true;
         break;
       } catch {}
       await new Promise((r) => setTimeout(r, 500));
     }
-    try {
-      fs.accessSync("/run/fuse-auth-proxy/ready");
-    } catch {
+    if (!ready) {
       throw new Error("FUSE auth proxy not ready after 30s");
     }
   });
@@ -133,154 +139,218 @@ test.describe("FUSE auth proxy", () => {
   test("register and query a PID", () => {
     const fakePid = 999999;
 
-    // Register
-    const regResp = sendControlCmd({
-      cmd: "register",
-      pid: fakePid,
-      account: "test-account-alice",
-    });
-    expect(regResp.ok).toBe(true);
+    try {
+      // Register
+      const regResp = sendControlCmd({
+        cmd: "register",
+        pid: fakePid,
+        account: `test-account-alice-${RUN_ID}`,
+      });
+      expect(regResp.ok).toBe(true);
 
-    // Query
-    const queryResp = sendControlCmd({ cmd: "query", pid: fakePid });
-    expect(queryResp.ok).toBe(true);
-    expect(queryResp.account).toBe("test-account-alice");
+      // Query
+      const queryResp = sendControlCmd({ cmd: "query", pid: fakePid });
+      expect(queryResp.ok).toBe(true);
+      expect(queryResp.account).toBe(`test-account-alice-${RUN_ID}`);
 
-    // List — should include our PID
-    const listResp = sendControlCmd({ cmd: "list" });
-    expect(listResp.ok).toBe(true);
-    expect(listResp.mappings[String(fakePid)]).toBe("test-account-alice");
+      // List — should include our PID
+      const listResp = sendControlCmd({ cmd: "list" });
+      expect(listResp.ok).toBe(true);
+      expect(listResp.mappings[String(fakePid)]).toBe(
+        `test-account-alice-${RUN_ID}`
+      );
 
-    // Unregister
-    const unregResp = sendControlCmd({ cmd: "unregister", pid: fakePid });
-    expect(unregResp.ok).toBe(true);
+      // Unregister
+      const unregResp = sendControlCmd({ cmd: "unregister", pid: fakePid });
+      expect(unregResp.ok).toBe(true);
 
-    // Query after unregister — should return default account
-    const queryAfter = sendControlCmd({ cmd: "query", pid: fakePid });
-    expect(queryAfter.ok).toBe(true);
-    expect(queryAfter.account).toBe("default");
+      // Query after unregister — should return default account
+      const queryAfter = sendControlCmd({ cmd: "query", pid: fakePid });
+      expect(queryAfter.ok).toBe(true);
+      expect(queryAfter.account).toBe("default");
+    } finally {
+      // Ensure PID is always unregistered even if assertions fail
+      try { sendControlCmd({ cmd: "unregister", pid: fakePid }); } catch {}
+    }
   });
 
   test("cleanup removes stale PIDs", () => {
     // Register a PID that definitely doesn't exist
     const deadPid = 2147483;
-    sendControlCmd({
-      cmd: "register",
-      pid: deadPid,
-      account: "dead-account",
-    });
 
-    // Verify it's registered
-    const before = sendControlCmd({ cmd: "list" });
-    expect(before.mappings[String(deadPid)]).toBe("dead-account");
+    try {
+      sendControlCmd({
+        cmd: "register",
+        pid: deadPid,
+        account: `dead-account-${RUN_ID}`,
+      });
 
-    // Cleanup
-    const cleanResp = sendControlCmd({ cmd: "cleanup" });
-    expect(cleanResp.ok).toBe(true);
+      // Verify it's registered
+      const before = sendControlCmd({ cmd: "list" });
+      expect(before.mappings[String(deadPid)]).toBe(
+        `dead-account-${RUN_ID}`
+      );
 
-    // Verify it's gone
-    const after = sendControlCmd({ cmd: "list" });
-    expect(after.mappings[String(deadPid)]).toBeUndefined();
+      // Cleanup
+      const cleanResp = sendControlCmd({ cmd: "cleanup" });
+      expect(cleanResp.ok).toBe(true);
+
+      // Verify it's gone
+      const after = sendControlCmd({ cmd: "list" });
+      expect(after.mappings[String(deadPid)]).toBeUndefined();
+    } finally {
+      // Ensure cleanup in case test fails before cleanup command
+      try { sendControlCmd({ cmd: "unregister", pid: deadPid }); } catch {}
+    }
   });
 
   test("FUSE mount serves different credentials per PID", () => {
     test.setTimeout(60000);
 
     const profilesDir = "/home/ubuntu/captain/auth/profiles";
+    const acctA = `acct-a-${RUN_ID}`;
+    const acctB = `acct-b-${RUN_ID}`;
+    let shellPid;
 
-    // Set up two test accounts with different credentials via workspace tmux
-    workspaceRun(
-      `mkdir -p ${profilesDir}/acct-a/claude ${profilesDir}/acct-b/claude`
-    );
-    workspaceRun(
-      `printf '{"account":"alice","token":"alice-token-123"}' > ${profilesDir}/acct-a/claude/.credentials.json`
-    );
-    workspaceRun(
-      `printf '{"account":"bob","token":"bob-token-456"}' > ${profilesDir}/acct-b/claude/.credentials.json`
-    );
+    try {
+      // Set up two test accounts with different credentials via workspace tmux
+      workspaceRun(
+        `mkdir -p ${profilesDir}/${acctA}/claude ${profilesDir}/${acctB}/claude`
+      );
+      workspaceRun(
+        `printf '{"account":"alice","token":"alice-token-123"}' > ${profilesDir}/${acctA}/claude/.credentials.json`
+      );
+      workspaceRun(
+        `printf '{"account":"bob","token":"bob-token-456"}' > ${profilesDir}/${acctB}/claude/.credentials.json`
+      );
 
-    // Get the shell PID of workspace:0
-    const shellPid = workspaceExec(
-      "list-panes -t workspace:0 -F '#{pane_pid}'"
-    ).trim();
-    expect(Number(shellPid)).toBeGreaterThan(0);
+      // Get the shell PID of workspace:0
+      shellPid = workspaceExec(
+        "list-panes -t workspace:0 -F '#{pane_pid}'"
+      ).trim();
+      expect(Number(shellPid)).toBeGreaterThan(0);
 
-    // Register the workspace shell PID with account acct-a
-    sendControlCmd({
-      cmd: "register",
-      pid: Number(shellPid),
-      account: "acct-a",
-    });
+      // Register the workspace shell PID with account acct-a
+      sendControlCmd({
+        cmd: "register",
+        pid: Number(shellPid),
+        account: acctA,
+      });
 
-    // Read the credential file from inside workspace — should get alice's creds
-    const aliceCreds = workspaceRun("cat ~/.claude/.credentials.json");
-    expect(aliceCreds).toContain("alice");
+      // Read the credential file from inside workspace — should get alice's creds
+      const aliceCreds = workspaceRun("cat ~/.claude/.credentials.json");
+      expect(aliceCreds).toContain("alice");
 
-    // Switch to account acct-b
-    sendControlCmd({
-      cmd: "register",
-      pid: Number(shellPid),
-      account: "acct-b",
-    });
+      // Switch to account acct-b
+      sendControlCmd({
+        cmd: "register",
+        pid: Number(shellPid),
+        account: acctB,
+      });
 
-    // Read again — should get bob's creds
-    const bobCreds = workspaceRun("cat ~/.claude/.credentials.json");
-    expect(bobCreds).toContain("bob");
-
-    // Cleanup
-    sendControlCmd({ cmd: "unregister", pid: Number(shellPid) });
+      // Read again — should get bob's creds
+      const bobCreds = workspaceRun("cat ~/.claude/.credentials.json");
+      expect(bobCreds).toContain("bob");
+    } finally {
+      // Always unregister PID and clean up profile dirs
+      if (shellPid) {
+        try { sendControlCmd({ cmd: "unregister", pid: Number(shellPid) }); } catch {}
+      }
+      try {
+        workspaceRun(`rm -rf ${profilesDir}/${acctA} ${profilesDir}/${acctB}`);
+      } catch {}
+    }
   });
 
   test("write-back persists to correct backing file", () => {
     test.setTimeout(60000);
 
     const profilesDir = "/home/ubuntu/captain/auth/profiles";
+    const acct = `write-test-${RUN_ID}`;
+    let shellPid;
 
-    // Create a test account
-    workspaceRun(`mkdir -p ${profilesDir}/write-test/claude`);
-    workspaceRun(
-      `printf '{"original":true}' > ${profilesDir}/write-test/claude/.credentials.json`
-    );
+    try {
+      // Create a test account
+      workspaceRun(`mkdir -p ${profilesDir}/${acct}/claude`);
+      workspaceRun(
+        `printf '{"original":true}' > ${profilesDir}/${acct}/claude/.credentials.json`
+      );
 
-    // Get workspace shell PID and register
-    const shellPid = workspaceExec(
-      "list-panes -t workspace:0 -F '#{pane_pid}'"
-    ).trim();
-    sendControlCmd({
-      cmd: "register",
-      pid: Number(shellPid),
-      account: "write-test",
-    });
+      // Get workspace shell PID and register
+      shellPid = workspaceExec(
+        "list-panes -t workspace:0 -F '#{pane_pid}'"
+      ).trim();
+      sendControlCmd({
+        cmd: "register",
+        pid: Number(shellPid),
+        account: acct,
+      });
 
-    // Write through the FUSE mount
-    workspaceRun(
-      `printf '{"refreshed":true,"token":"new-token"}' > ~/.claude/.credentials.json`
-    );
+      // Write through the FUSE mount
+      workspaceRun(
+        `printf '{"refreshed":true,"token":"new-token"}' > ~/.claude/.credentials.json`
+      );
 
-    // Read back through FUSE — should see the new content
-    const fuseContent = workspaceRun("cat ~/.claude/.credentials.json");
-    expect(fuseContent).toContain("refreshed");
-    expect(fuseContent).toContain("new-token");
+      // Read back through FUSE — should see the new content
+      const fuseContent = workspaceRun("cat ~/.claude/.credentials.json");
+      expect(fuseContent).toContain("refreshed");
+      expect(fuseContent).toContain("new-token");
 
-    // Read directly from the backing file — should also have the new content
-    const backingContent = workspaceRun(
-      `cat ${profilesDir}/write-test/claude/.credentials.json`
-    );
-    expect(backingContent).toContain("refreshed");
-    expect(backingContent).toContain("new-token");
-
-    // Cleanup
-    sendControlCmd({ cmd: "unregister", pid: Number(shellPid) });
+      // Read directly from the backing file — should also have the new content
+      const backingContent = workspaceRun(
+        `cat ${profilesDir}/${acct}/claude/.credentials.json`
+      );
+      expect(backingContent).toContain("refreshed");
+      expect(backingContent).toContain("new-token");
+    } finally {
+      // Always unregister and clean up
+      if (shellPid) {
+        try { sendControlCmd({ cmd: "unregister", pid: Number(shellPid) }); } catch {}
+      }
+      try { workspaceRun(`rm -rf ${profilesDir}/${acct}`); } catch {}
+    }
   });
 
-  test("stat returns regular-file attributes", () => {
+  test("stat returns regular-file attributes for registered PID", () => {
     test.setTimeout(30000);
 
-    // stat the credential file through the FUSE mount
-    const statOutput = workspaceRun(
-      "stat -c '%F %a' ~/.claude/.credentials.json"
-    );
-    // Should be a regular file (not FUSE/special), with normal permissions
-    expect(statOutput).toMatch(/regular (empty )?file/);
+    const profilesDir = "/home/ubuntu/captain/auth/profiles";
+    const acct = `stat-test-${RUN_ID}`;
+    let shellPid;
+
+    try {
+      // Create a test account with a credential file
+      workspaceRun(`mkdir -p ${profilesDir}/${acct}/claude`);
+      workspaceRun(
+        `printf '{"stat":"test"}' > ${profilesDir}/${acct}/claude/.credentials.json`
+      );
+
+      // Register the workspace shell PID with the test account
+      shellPid = workspaceExec(
+        "list-panes -t workspace:0 -F '#{pane_pid}'"
+      ).trim();
+      sendControlCmd({
+        cmd: "register",
+        pid: Number(shellPid),
+        account: acct,
+      });
+
+      // stat the credential file through the FUSE mount — should resolve to
+      // the per-account file, not the default
+      const statOutput = workspaceRun(
+        "stat -c '%F %a' ~/.claude/.credentials.json"
+      );
+      // Should be a regular file (not FUSE/special), with normal permissions
+      expect(statOutput).toMatch(/regular (empty )?file/);
+
+      // Verify the content comes from our registered account's file
+      const content = workspaceRun("cat ~/.claude/.credentials.json");
+      expect(content).toContain("stat");
+    } finally {
+      if (shellPid) {
+        try { sendControlCmd({ cmd: "unregister", pid: Number(shellPid) }); } catch {}
+      }
+      try { workspaceRun(`rm -rf ${profilesDir}/${acct}`); } catch {}
+    }
   });
 });

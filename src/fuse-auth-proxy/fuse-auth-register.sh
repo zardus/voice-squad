@@ -40,13 +40,14 @@ send_cmd() {
     if command -v socat &>/dev/null; then
         echo "$json" | socat - UNIX-CONNECT:"$CONTROL_SOCKET"
     elif command -v python3 &>/dev/null; then
-        python3 -c "
-import socket, sys
+        # Pass socket path and JSON via env vars to avoid shell injection
+        FUSE_CTL_SOCK="$CONTROL_SOCKET" FUSE_CTL_JSON="$json" python3 -c '
+import socket, os, sys
 s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-s.connect('$CONTROL_SOCKET')
-s.sendall(b'$json\n')
+s.connect(os.environ["FUSE_CTL_SOCK"])
+s.sendall(os.environ["FUSE_CTL_JSON"].encode() + b"\n")
 s.shutdown(socket.SHUT_WR)
-data = b''
+data = b""
 while True:
     chunk = s.recv(4096)
     if not chunk:
@@ -54,7 +55,7 @@ while True:
     data += chunk
 s.close()
 print(data.decode().strip())
-"
+'
     else
         echo "ERROR: Need socat or python3 to communicate with control socket" >&2
         exit 1
@@ -65,18 +66,45 @@ case "$CMD" in
     register)
         PID="${1:-}"
         ACCOUNT="${2:-}"
-        [ -z "$PID" ] || [ -z "$ACCOUNT" ] && { echo "Usage: register <pid> <account>"; exit 1; }
-        send_cmd "{\"cmd\":\"register\",\"pid\":$PID,\"account\":\"$ACCOUNT\"}"
+        if [ -z "$PID" ] || [ -z "$ACCOUNT" ]; then
+            echo "Usage: register <pid> <account>"
+            exit 1
+        fi
+        # Validate PID is a positive integer
+        if ! [[ "$PID" =~ ^[1-9][0-9]*$ ]]; then
+            echo "ERROR: PID must be a positive integer, got: $PID" >&2
+            exit 1
+        fi
+        # Build JSON safely using jq
+        json=$(jq -n --argjson pid "$PID" --arg account "$ACCOUNT" \
+            '{"cmd":"register","pid":$pid,"account":$account}')
+        send_cmd "$json"
         ;;
     unregister)
         PID="${1:-}"
-        [ -z "$PID" ] && { echo "Usage: unregister <pid>"; exit 1; }
-        send_cmd "{\"cmd\":\"unregister\",\"pid\":$PID}"
+        if [ -z "$PID" ]; then
+            echo "Usage: unregister <pid>"
+            exit 1
+        fi
+        if ! [[ "$PID" =~ ^[1-9][0-9]*$ ]]; then
+            echo "ERROR: PID must be a positive integer, got: $PID" >&2
+            exit 1
+        fi
+        json=$(jq -n --argjson pid "$PID" '{"cmd":"unregister","pid":$pid}')
+        send_cmd "$json"
         ;;
     query)
         PID="${1:-}"
-        [ -z "$PID" ] && { echo "Usage: query <pid>"; exit 1; }
-        send_cmd "{\"cmd\":\"query\",\"pid\":$PID}"
+        if [ -z "$PID" ]; then
+            echo "Usage: query <pid>"
+            exit 1
+        fi
+        if ! [[ "$PID" =~ ^[1-9][0-9]*$ ]]; then
+            echo "ERROR: PID must be a positive integer, got: $PID" >&2
+            exit 1
+        fi
+        json=$(jq -n --argjson pid "$PID" '{"cmd":"query","pid":$pid}')
+        send_cmd "$json"
         ;;
     list)
         send_cmd '{"cmd":"list"}'
