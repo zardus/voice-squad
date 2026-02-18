@@ -11,7 +11,7 @@ RUN apt-get update && apt-get install -y \
 # Set up ubuntu user
 RUN echo "ubuntu ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
-# Tmux socket directories for cross-container sharing
+# Shared sockets directory for cross-container sharing
 RUN mkdir -p /run/squad-sockets/captain-tmux /run/squad-sockets/workspace-tmux \
     && chown -R ubuntu:ubuntu /run/squad-sockets
 
