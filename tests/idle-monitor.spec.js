@@ -49,9 +49,6 @@ test.describe("Idle monitor", () => {
     } catch {}
 
     // Start a dedicated monitor process for this spec with long heartbeat interval.
-    try {
-      execSync("pkill -f 'pane-monitor-test'", { encoding: "utf8", timeout: 5000 });
-    } catch {}
     execSync(`rm -f ${MONITOR_LOG}`, { encoding: "utf8", timeout: 5000 });
     const monitor = spawn("/opt/squad/pane-monitor.sh", {
       detached: true,
@@ -99,16 +96,32 @@ test.describe("Idle monitor", () => {
     }
   });
 
-  test("starts pane monitor process and writes startup log", async () => {
-    test.setTimeout(30000);
+  test("detects idle worker pane and logs IDLE ALERT", async () => {
+    test.setTimeout(120000);
 
-    await new Promise((r) => setTimeout(r, 2000));
+    workspaceExec(`new-session -d -s ${WORKER_SESSION} -c /home/ubuntu`);
+    await new Promise((r) => setTimeout(r, 3000));
+
+    workspaceExec(`send-keys -t ${WORKER_SESSION} 'echo worker starting' Enter`);
+
+    const deadline = Date.now() + 100000;
     let logText = "";
-    try {
-      logText = fs.readFileSync(MONITOR_LOG, "utf8");
-    } catch {}
+    while (Date.now() < deadline) {
+      try {
+        logText = fs.readFileSync(MONITOR_LOG, "utf8");
+      } catch {
+        logText = "";
+      }
 
-    expect(logText).toContain("Pane monitor started");
+      if (logText.includes("IDLE ALERT") && logText.includes(`${WORKER_SESSION}:0`)) {
+        break;
+      }
+
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+
+    expect(logText).toContain("IDLE ALERT");
+    expect(logText).toContain(`${WORKER_SESSION}:0`);
   });
 
   test("does NOT alert for a pane with continuously changing content", async () => {
