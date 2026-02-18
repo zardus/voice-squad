@@ -22,7 +22,7 @@ function discoverToken() {
     if (match) return match[1];
   } catch {}
 
-  // Try reading from shared volume (captain writes .voice-token on boot)
+  // Try reading from shared volume (voice-server writes .voice-token on boot)
   try {
     const token = fs.readFileSync("/home/ubuntu/.voice-token", "utf8").trim();
     if (token) return token;

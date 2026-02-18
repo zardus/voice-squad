@@ -11,9 +11,9 @@ RUN apt-get update && apt-get install -y \
 # Set up ubuntu user
 RUN echo "ubuntu ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
-# Tmux socket directories for cross-container sharing
-RUN mkdir -p /run/captain-tmux /run/workspace-tmux \
-    && chown ubuntu:ubuntu /run/captain-tmux /run/workspace-tmux
+# Shared sockets directory for cross-container sharing
+RUN mkdir -p /run/squad-sockets/captain-tmux /run/squad-sockets/workspace-tmux \
+    && chown -R ubuntu:ubuntu /run/squad-sockets
 
 COPY pane-monitor.sh /opt/squad/pane-monitor.sh
 RUN chmod +x /opt/squad/pane-monitor.sh

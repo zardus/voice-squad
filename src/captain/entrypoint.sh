@@ -20,10 +20,17 @@ if [ "$CAPTAIN" != "claude" ] && [ "$CAPTAIN" != "codex" ]; then
     exit 1
 fi
 
+CAPTAIN_TMUX_SOCKET="${CAPTAIN_TMUX_SOCKET:-/run/squad-sockets/captain-tmux/default}"
+WORKSPACE_TMUX_SOCKET="${WORKSPACE_TMUX_SOCKET:-/run/squad-sockets/workspace-tmux/default}"
+CAPTAIN_TMUX_DIR="$(dirname "$CAPTAIN_TMUX_SOCKET")"
+WORKSPACE_TMUX_DIR="$(dirname "$WORKSPACE_TMUX_SOCKET")"
+TMUX_TMPDIR="${TMUX_TMPDIR:-$WORKSPACE_TMUX_DIR}"
+export CAPTAIN_TMUX_SOCKET WORKSPACE_TMUX_SOCKET TMUX_TMPDIR
+
 # Ensure tmux socket directories are accessible
-sudo mkdir -p /run/captain-tmux /run/workspace-tmux
-sudo chown ubuntu:ubuntu /run/captain-tmux /run/workspace-tmux
-sudo chmod 755 /run/captain-tmux /run/workspace-tmux
+sudo mkdir -p "$CAPTAIN_TMUX_DIR" "$WORKSPACE_TMUX_DIR" "$TMUX_TMPDIR"
+sudo chown ubuntu:ubuntu "$CAPTAIN_TMUX_DIR" "$WORKSPACE_TMUX_DIR" "$TMUX_TMPDIR"
+sudo chmod 755 "$CAPTAIN_TMUX_DIR" "$WORKSPACE_TMUX_DIR" "$TMUX_TMPDIR"
 
 # Ensure home directory is writable (volume mounts may be owned by root)
 sudo chown ubuntu:ubuntu /home/ubuntu
@@ -48,26 +55,17 @@ echo "type: $CAPTAIN" > "$CONFIG_FILE"
 # For codex captains, also provide AGENTS.md
 cp /opt/squad/captain/CLAUDE.md /opt/squad/captain/AGENTS.md 2>/dev/null || true
 
-# Generate VOICE_TOKEN if not provided via environment
-if [ -z "${VOICE_TOKEN:-}" ]; then
-    VOICE_TOKEN=$(head -c 32 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9' | head -c 32)
-    export VOICE_TOKEN
-fi
-
-# Write token to shared volume so other containers (voice-server) can read it
-echo "$VOICE_TOKEN" > /home/ubuntu/.voice-token
-
 echo "Starting $CAPTAIN as captain..."
 
 # Wait for workspace tmux server to be ready
 echo "[captain-entrypoint] Waiting for workspace tmux server..."
 timeout=120
-while ! tmux -S /run/workspace-tmux/default has-session 2>/dev/null && [ $timeout -gt 0 ]; do
+while ! tmux -S "$WORKSPACE_TMUX_SOCKET" has-session 2>/dev/null && [ $timeout -gt 0 ]; do
     sleep 1
     timeout=$((timeout - 1))
 done
 
-if ! tmux -S /run/workspace-tmux/default has-session 2>/dev/null; then
+if ! tmux -S "$WORKSPACE_TMUX_SOCKET" has-session 2>/dev/null; then
     echo "[captain-entrypoint] ERROR: workspace tmux server not available after 120s"
     exit 1
 fi
@@ -75,15 +73,15 @@ echo "[captain-entrypoint] workspace tmux server found"
 
 # Ensure TMUX_TMPDIR symlink exists so captain's raw tmux commands
 # (which resolve $TMUX_TMPDIR/tmux-{UID}/default) find the workspace socket
-mkdir -p /run/workspace-tmux/tmux-$(id -u)
-ln -sf /run/workspace-tmux/default /run/workspace-tmux/tmux-$(id -u)/default
+mkdir -p "$TMUX_TMPDIR/tmux-$(id -u)"
+ln -sf "$WORKSPACE_TMUX_SOCKET" "$TMUX_TMPDIR/tmux-$(id -u)/default"
 
 # Create captain tmux session on the captain's own tmux server
-tmux -S /run/captain-tmux/default new-session -d -s captain -c /opt/squad/captain
+tmux -S "$CAPTAIN_TMUX_SOCKET" new-session -d -s captain -c /opt/squad/captain
 
 # Launch captain inside the tmux session using the restart script.
 # --fresh skips --continue/resume since this is the initial boot.
-CAPTAIN_TMUX_SOCKET=/run/captain-tmux/default /opt/squad/restart-captain.sh "$CAPTAIN" --fresh
+CAPTAIN_TMUX_SOCKET="$CAPTAIN_TMUX_SOCKET" /opt/squad/restart-captain.sh "$CAPTAIN" --fresh
 
 # Wait for voice URL from voice-server container (written to shared volume)
 echo "[captain-entrypoint] Waiting for voice URL from voice-server container..."
@@ -103,7 +101,7 @@ if [ -z "${VOICE_URL:-}" ]; then
 fi
 
 # Select the captain window
-tmux -S /run/captain-tmux/default select-window -t captain:0
+tmux -S "$CAPTAIN_TMUX_SOCKET" select-window -t captain:0
 
 # Keep the container alive.
 # NOTE: no `exec` — bash stays PID 1, sleep is a killable child.

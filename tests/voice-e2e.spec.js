@@ -151,7 +151,7 @@ async function ensureCaptainRunning() {
     })
   );
 
-  // Export API key + VOICE_TOKEN to bashrc and tmux env
+  // Export API key to bashrc and tmux env
   try {
     const bashrc = fs.readFileSync("/home/ubuntu/.bashrc", "utf8");
     if (!bashrc.includes("ANTHROPIC_API_KEY")) {
@@ -168,10 +168,6 @@ async function ensureCaptainRunning() {
   }
   try {
     captainExec(`set-environment -t captain ANTHROPIC_API_KEY '${apiKey}'`);
-  } catch {}
-  const voiceToken = process.env.VOICE_TOKEN || "test-token-for-ci";
-  try {
-    captainExec(`set-environment -t captain VOICE_TOKEN '${voiceToken}'`);
   } catch {}
 
   // Kill anything currently running in captain:0
@@ -441,7 +437,7 @@ test.describe("Voice E2E", () => {
 
     // ── Phase 2: Send command through the actual voice pipeline via Playwright ──
     // The audio goes: browser WS → voice server STT → tmux send-keys → captain
-    // Captain responds via `speak "..."` → /api/speak → TTS → WS broadcast
+    // Captain responds via `speak "..."` -> internal speak socket -> TTS -> WS broadcast
     await page.goto(pageUrl());
     await expect(page.locator("#status")).toHaveClass(/connected/, { timeout: 10000 });
 

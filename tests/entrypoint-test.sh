@@ -2,10 +2,16 @@
 # Test-runner entrypoint: waits for infrastructure, then runs Playwright.
 set -euo pipefail
 
+CAPTAIN_TMUX_SOCKET="${CAPTAIN_TMUX_SOCKET:-/run/squad-sockets/captain-tmux/default}"
+WORKSPACE_TMUX_SOCKET="${WORKSPACE_TMUX_SOCKET:-/run/squad-sockets/workspace-tmux/default}"
+CAPTAIN_TMUX_DIR="$(dirname "$CAPTAIN_TMUX_SOCKET")"
+WORKSPACE_TMUX_DIR="$(dirname "$WORKSPACE_TMUX_SOCKET")"
+export CAPTAIN_TMUX_SOCKET WORKSPACE_TMUX_SOCKET
+
 # Ensure tmux socket dirs are accessible
-sudo mkdir -p /run/captain-tmux /run/workspace-tmux 2>/dev/null || true
-sudo chown ubuntu:ubuntu /run/captain-tmux /run/workspace-tmux 2>/dev/null || true
-sudo chmod 755 /run/captain-tmux /run/workspace-tmux 2>/dev/null || true
+sudo mkdir -p "$CAPTAIN_TMUX_DIR" "$WORKSPACE_TMUX_DIR" 2>/dev/null || true
+sudo chown ubuntu:ubuntu "$CAPTAIN_TMUX_DIR" "$WORKSPACE_TMUX_DIR" 2>/dev/null || true
+sudo chmod 755 "$CAPTAIN_TMUX_DIR" "$WORKSPACE_TMUX_DIR" 2>/dev/null || true
 
 # Wait for captain tmux session (started by captain container)
 echo "Waiting for captain tmux session..."

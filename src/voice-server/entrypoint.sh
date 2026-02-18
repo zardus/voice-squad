@@ -1,10 +1,18 @@
 #!/bin/bash
 set -e
 
+CAPTAIN_TMUX_SOCKET="${CAPTAIN_TMUX_SOCKET:-/run/squad-sockets/captain-tmux/default}"
+WORKSPACE_TMUX_SOCKET="${WORKSPACE_TMUX_SOCKET:-/run/squad-sockets/workspace-tmux/default}"
+SPEAK_SOCKET_PATH="${SPEAK_SOCKET_PATH:-/run/squad-sockets/speak.sock}"
+CAPTAIN_TMUX_DIR="$(dirname "$CAPTAIN_TMUX_SOCKET")"
+WORKSPACE_TMUX_DIR="$(dirname "$WORKSPACE_TMUX_SOCKET")"
+SPEAK_SOCKET_DIR="$(dirname "$SPEAK_SOCKET_PATH")"
+export CAPTAIN_TMUX_SOCKET WORKSPACE_TMUX_SOCKET SPEAK_SOCKET_PATH
+
 # Ensure tmux socket directories are accessible
-sudo mkdir -p /run/captain-tmux /run/workspace-tmux
-sudo chown ubuntu:ubuntu /run/captain-tmux /run/workspace-tmux
-sudo chmod 755 /run/captain-tmux /run/workspace-tmux
+sudo mkdir -p "$CAPTAIN_TMUX_DIR" "$WORKSPACE_TMUX_DIR" "$SPEAK_SOCKET_DIR"
+sudo chown ubuntu:ubuntu "$CAPTAIN_TMUX_DIR" "$WORKSPACE_TMUX_DIR" "$SPEAK_SOCKET_DIR"
+sudo chmod 755 "$CAPTAIN_TMUX_DIR" "$WORKSPACE_TMUX_DIR" "$SPEAK_SOCKET_DIR"
 
 # Source user environment if present
 if [ -f /home/ubuntu/env ]; then
@@ -17,23 +25,22 @@ fi
 export OPENAI_API_KEY="${OPENAI_API_KEY:-${_OPENAI_API_KEY:-}}"
 export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-${_ANTHROPIC_API_KEY:-}}"
 
-# Read VOICE_TOKEN from shared volume if not set via environment
-if [ -z "${VOICE_TOKEN:-}" ]; then
-    echo "[voice-entrypoint] Waiting for voice token from captain..."
-    for i in $(seq 1 120); do
-        if [ -f /home/ubuntu/.voice-token ]; then
-            VOICE_TOKEN=$(cat /home/ubuntu/.voice-token)
-            export VOICE_TOKEN
-            break
-        fi
-        sleep 1
-    done
-    if [ -z "${VOICE_TOKEN:-}" ]; then
-        echo "[voice-entrypoint] ERROR: VOICE_TOKEN not available after 120s"
-        exit 1
-    fi
+# Resolve VOICE_TOKEN from env -> persisted file -> generated fallback.
+if [ -z "${VOICE_TOKEN:-}" ] && [ -f /home/ubuntu/.voice-token ]; then
+    VOICE_TOKEN=$(head -1 /home/ubuntu/.voice-token | tr -d '\r\n')
+    export VOICE_TOKEN
+    echo "[voice-entrypoint] Loaded VOICE_TOKEN from /home/ubuntu/.voice-token"
 fi
-echo "[voice-entrypoint] VOICE_TOKEN set"
+
+if [ -z "${VOICE_TOKEN:-}" ]; then
+    VOICE_TOKEN=$(head -c 32 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9' | head -c 32)
+    export VOICE_TOKEN
+    echo "[voice-entrypoint] Generated VOICE_TOKEN"
+fi
+
+echo "$VOICE_TOKEN" > /home/ubuntu/.voice-token
+chmod 600 /home/ubuntu/.voice-token 2>/dev/null || true
+echo "[voice-entrypoint] VOICE_TOKEN ready"
 
 # Wait for captain tmux session to be available (captain container must start first)
 echo "[voice-entrypoint] Waiting for captain tmux session..."
@@ -62,11 +69,11 @@ for i in $(seq 1 20); do
         cat /tmp/voice-server.log 2>/dev/null || true
         exit 1
     fi
-    if grep -q 'listening on' /tmp/voice-server.log 2>/dev/null; then break; fi
+    if grep -q 'server listening on :' /tmp/voice-server.log 2>/dev/null; then break; fi
     sleep 0.5
 done
 
-if ! grep -q 'listening on' /tmp/voice-server.log 2>/dev/null; then
+if ! grep -q 'server listening on :' /tmp/voice-server.log 2>/dev/null; then
     echo "[voice-entrypoint] WARNING: Voice server not listening after 10s"
 fi
 

@@ -1,10 +1,15 @@
 #!/bin/bash
 set -e
 
+WORKSPACE_TMUX_SOCKET="${WORKSPACE_TMUX_SOCKET:-/run/squad-sockets/workspace-tmux/default}"
+WORKSPACE_TMUX_DIR="$(dirname "$WORKSPACE_TMUX_SOCKET")"
+TMUX_TMPDIR="${TMUX_TMPDIR:-$WORKSPACE_TMUX_DIR}"
+export TMUX_TMPDIR
+
 # Ensure workspace tmux socket directory is accessible
-sudo mkdir -p /run/workspace-tmux
-sudo chown ubuntu:ubuntu /run/workspace-tmux
-sudo chmod 755 /run/workspace-tmux
+sudo mkdir -p "$WORKSPACE_TMUX_DIR" "$TMUX_TMPDIR"
+sudo chown ubuntu:ubuntu "$WORKSPACE_TMUX_DIR" "$TMUX_TMPDIR"
+sudo chmod 755 "$WORKSPACE_TMUX_DIR" "$TMUX_TMPDIR"
 
 # Start dockerd in the background (docker-in-docker)
 # Use vfs storage driver to avoid overlay-on-overlay issues when the
@@ -36,12 +41,12 @@ if [ -f /home/ubuntu/env ]; then
 fi
 
 # Create workspace tmux session at a fixed socket path (workers run here)
-tmux -S /run/workspace-tmux/default new-session -d -s workspace -c /home/ubuntu
+tmux -S "$WORKSPACE_TMUX_SOCKET" new-session -d -s workspace -c /home/ubuntu
 
 # Create TMUX_TMPDIR compatibility symlink so captain's raw tmux commands
 # (which resolve $TMUX_TMPDIR/tmux-{UID}/default) find this socket
-mkdir -p /run/workspace-tmux/tmux-$(id -u)
-ln -sf /run/workspace-tmux/default /run/workspace-tmux/tmux-$(id -u)/default
+mkdir -p "$TMUX_TMPDIR/tmux-$(id -u)"
+ln -sf "$WORKSPACE_TMUX_SOCKET" "$TMUX_TMPDIR/tmux-$(id -u)/default"
 
 # Keep the container alive
 exec sleep infinity
