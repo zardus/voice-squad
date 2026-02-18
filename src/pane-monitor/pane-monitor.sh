@@ -168,11 +168,6 @@ while true; do
                         log "IDLE ALERT: Worker $sw idle for ${threshold}s — notified captain"
 
                         already_notified["$pane"]=1
-                        # Reset tracking: pane will be treated as new; no further idle alerts
-                        # fire until new activity (one alert per idle period)
-                        seconds_unchanged["$pane"]=0
-                        prev_hash=""
-                        last_hash["$pane"]=""
                     else
                         log "IDLE ALERT: send-keys failed for worker $sw — will retry"
                         # Reset counter so we only retry after another full threshold interval

@@ -4,12 +4,40 @@
  * and sends IDLE ALERT messages to the captain pane.
  */
 const { test, expect } = require("@playwright/test");
-const { execSync } = require("child_process");
 const { TOKEN } = require("./helpers/config");
-const { captainExec, workspaceExec, captainTmuxCmd, workspaceTmuxCmd } = require("./helpers/tmux");
+const { captainExec, workspaceExec } = require("./helpers/tmux");
 
 const WORKER_SESSION = "idle-test-worker";
 const ACTIVE_SESSION = "active-test-worker";
+const RESUME_SESSION = "idle-resume-worker";
+
+function countIdleAlerts(output, sessionName) {
+  return output
+    .split("\n")
+    .filter((line) => line.includes("IDLE ALERT") && line.includes(sessionName));
+}
+
+async function waitForIdleAlert(sessionName, timeoutMs = 90000) {
+  const deadline = Date.now() + timeoutMs;
+  let captainOutput = "";
+
+  while (Date.now() < deadline) {
+    try {
+      captainOutput = captainExec("capture-pane -t captain:0 -p -S -300");
+    } catch {
+      await new Promise((r) => setTimeout(r, 2000));
+      continue;
+    }
+
+    if (countIdleAlerts(captainOutput, sessionName).length > 0) {
+      return captainOutput;
+    }
+
+    await new Promise((r) => setTimeout(r, 2000));
+  }
+
+  return captainOutput;
+}
 
 test.describe("Idle monitor", () => {
   test.beforeAll(() => {
@@ -21,110 +49,105 @@ test.describe("Idle monitor", () => {
   });
 
   test.afterAll(() => {
-    // Cleanup: kill worker sessions and stop our pane-monitor process
-    try {
-      workspaceExec(`kill-session -t ${WORKER_SESSION}`);
-    } catch {}
-    try {
-      workspaceExec(`kill-session -t ${ACTIVE_SESSION}`);
-    } catch {}
-    try {
-      execSync("pkill -f 'pane-monitor-test'", { encoding: "utf8", timeout: 5000 });
-    } catch {}
+    for (const s of [WORKER_SESSION, ACTIVE_SESSION, RESUME_SESSION]) {
+      try { workspaceExec(`kill-session -t ${s}`); } catch {}
+    }
   });
 
-  test("detects idle worker pane and sends IDLE ALERT to captain", async () => {
-    test.setTimeout(120000);
+  test("detects idle worker pane and does NOT repeat alerts", async () => {
+    test.setTimeout(150000);
 
-    // Create the worker tmux session on the WORKSPACE server FIRST (before starting the monitor)
+    // Create the worker tmux session on the WORKSPACE server FIRST
     // so the monitor can discover the pane in its initial state.
     workspaceExec(`new-session -d -s ${WORKER_SESSION} -c /home/ubuntu`);
 
-    // Start the real pane-monitor.sh in the background.
-    // Use a wrapper script name so we can target it in cleanup.
-    execSync(
-      "bash -c 'exec -a pane-monitor-test /opt/squad/pane-monitor.sh > /tmp/pane-monitor-test.log 2>&1 &'",
-      { encoding: "utf8", timeout: 5000 }
-    );
-
-    // Wait for the monitor to discover the worker pane and record its
-    // initial content hash (needs at least 2 poll cycles).
+    // Wait for monitor discovery + initial hash tracking.
     await new Promise((r) => setTimeout(r, 3000));
 
-    // Now generate activity — the monitor will see the content change and
-    // set has_had_activity=1 for this pane.
+    // Generate activity so has_had_activity=1 for this pane.
     workspaceExec(`send-keys -t ${WORKER_SESSION} 'echo worker starting' Enter`);
-
-    // Let the activity register (monitor needs at least one cycle to see
-    // the changed hash).
     await new Promise((r) => setTimeout(r, 3000));
 
-    // Clear the captain pane so we can detect the IDLE ALERT cleanly.
+    // Clear captain pane so we can count fresh alerts.
     captainExec("send-keys -t captain:0 'clear' Enter");
 
-    // Poll for the IDLE ALERT instead of waiting a fixed time.
-    // The monitor's 30-second idle counter increments once per loop iteration,
-    // and each iteration takes >1s in CI due to tmux + md5sum overhead,
-    // so the actual wall-clock time can be well over 35s.
-    const deadline = Date.now() + 90000; // 90s generous timeout
+    const firstOutput = await waitForIdleAlert(WORKER_SESSION);
+    const firstCount = countIdleAlerts(firstOutput, WORKER_SESSION).length;
+    expect(firstCount).toBeGreaterThan(0);
+
+    // With unchanged pane content, no additional alerts should appear.
+    await new Promise((r) => setTimeout(r, 50000));
+    const followupOutput = captainExec("capture-pane -t captain:0 -p -S -500");
+    const followupCount = countIdleAlerts(followupOutput, WORKER_SESSION).length;
+    expect(followupCount).toBe(firstCount);
+  });
+
+  test("alerts again after activity resumes and a new idle period starts", async () => {
+    test.setTimeout(180000);
+
+    workspaceExec(`new-session -d -s ${RESUME_SESSION} -c /home/ubuntu`);
+    await new Promise((r) => setTimeout(r, 3000));
+
+    workspaceExec(`send-keys -t ${RESUME_SESSION} 'echo first activity' Enter`);
+    await new Promise((r) => setTimeout(r, 3000));
+
+    captainExec("send-keys -t captain:0 'clear' Enter");
+
+    const firstOutput = await waitForIdleAlert(RESUME_SESSION);
+    const firstCount = countIdleAlerts(firstOutput, RESUME_SESSION).length;
+    expect(firstCount).toBeGreaterThan(0);
+
+    // Activity resumes, then pane idles again.
+    workspaceExec(`send-keys -t ${RESUME_SESSION} 'echo resumed activity' Enter`);
+    await new Promise((r) => setTimeout(r, 3000));
+
+    const deadline = Date.now() + 90000;
     let captainOutput = "";
     while (Date.now() < deadline) {
       try {
-        captainOutput = captainExec("capture-pane -t captain:0 -p -S -100");
+        captainOutput = captainExec("capture-pane -t captain:0 -p -S -500");
       } catch {
-        // Captain pane may be temporarily unavailable; retry
         await new Promise((r) => setTimeout(r, 2000));
         continue;
       }
-      if (captainOutput.includes("IDLE ALERT") && captainOutput.includes(WORKER_SESSION)) {
+
+      if (countIdleAlerts(captainOutput, RESUME_SESSION).length > firstCount) {
         break;
       }
       await new Promise((r) => setTimeout(r, 2000));
     }
 
-    expect(captainOutput).toContain("IDLE ALERT");
-    expect(captainOutput).toContain(WORKER_SESSION);
+    expect(countIdleAlerts(captainOutput, RESUME_SESSION).length).toBeGreaterThan(firstCount);
   });
 
   test("does NOT alert for a pane with continuously changing content", async () => {
     test.setTimeout(90000);
 
-    // Create a worker session with a continuously ticking command.
-    // This simulates a pane actively producing output (like Claude Code
-    // with a ticking spinner) — the monitor should NOT fire an idle alert.
+    // This simulates a pane actively producing output.
     workspaceExec(`new-session -d -s ${ACTIVE_SESSION} -c /home/ubuntu`);
 
-    // Wait for the monitor (still running from the previous test) to
-    // discover and begin tracking this pane.
+    // Wait for the monitor to discover and begin tracking this pane.
     await new Promise((r) => setTimeout(r, 3000));
 
     // Generate initial activity so has_had_activity=1.
     workspaceExec(`send-keys -t ${ACTIVE_SESSION} 'echo active worker' Enter`);
     await new Promise((r) => setTimeout(r, 2000));
 
-    // Start a continuously ticking command — pane content changes every second.
+    // Start continuously changing output.
     workspaceExec(
       `send-keys -t ${ACTIVE_SESSION} 'while true; do date; sleep 1; done' Enter`
     );
 
-    // Clear the captain pane so we only see alerts generated from here on.
     captainExec("send-keys -t captain:0 'clear' Enter");
     await new Promise((r) => setTimeout(r, 1000));
 
-    // Wait well beyond the 30-second idle threshold. Each monitor loop
-    // iteration takes >1s (tmux overhead), so 30 iterations ≈ 35-45s.
-    // Wait 50s to be sure any false positive would have fired.
     await new Promise((r) => setTimeout(r, 50000));
 
-    // Capture captain output and verify NO idle alert for the active session.
     let captainOutput = "";
     try {
       captainOutput = captainExec("capture-pane -t captain:0 -p -S -200");
     } catch {}
 
-    const activeAlerts = captainOutput
-      .split("\n")
-      .filter((l) => l.includes("IDLE ALERT") && l.includes(ACTIVE_SESSION));
-    expect(activeAlerts).toHaveLength(0);
+    expect(countIdleAlerts(captainOutput, ACTIVE_SESSION)).toHaveLength(0);
   });
 });
