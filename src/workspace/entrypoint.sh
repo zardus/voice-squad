@@ -44,4 +44,4 @@ mkdir -p /run/workspace-tmux/tmux-$(id -u)
 ln -sf /run/workspace-tmux/default /run/workspace-tmux/tmux-$(id -u)/default
 
 # Keep the container alive
-exec sleep infinity
+exec while ps aux | grep -q "[t]mux"; do sleep 1; done
