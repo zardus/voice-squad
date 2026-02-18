@@ -125,7 +125,7 @@ If there is no substantive update in a heartbeat, do not speak a report using th
 
 ## Skills
 
-Detailed operational procedures are in skill files under `.claude/skills/`. Read them as needed:
+Detailed operational procedures are in skill files under `.claude/skills/`. Managing workers is hard and complicated: you NEED to draw on these skills. Do that. Read them:
 
 - `startup-recovery` — Full startup recovery procedure for detecting surviving workers after a restart.
 - `worker-starting` — Spawn flow, project directories, task definition files, choosing Claude vs Codex, worker prompt checklist.
