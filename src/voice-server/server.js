@@ -42,6 +42,7 @@ const WS_MAX_PAYLOAD_BYTES = Number(process.env.WS_MAX_PAYLOAD_BYTES || 64 * 102
 const MAX_AUDIO_UPLOAD_BYTES = Number(process.env.MAX_AUDIO_UPLOAD_BYTES || 64 * 1024 * 1024);
 const VOICE_HISTORY_FILE = process.env.VOICE_HISTORY_FILE || "/tmp/voice-summary-history.json";
 const VOICE_HISTORY_LIMIT = Number(process.env.VOICE_HISTORY_LIMIT || 1000);
+const SPEAK_SOCKET_PATH = process.env.SPEAK_SOCKET_PATH || "/run/squad-sockets/speak.sock";
 
 const REQUIRED_ENV = { VOICE_TOKEN: TOKEN, OPENAI_API_KEY: process.env.OPENAI_API_KEY };
 const missing = Object.entries(REQUIRED_ENV).filter(([, v]) => !v).map(([k]) => k);
@@ -474,11 +475,8 @@ app.get("/api/task-log", async (req, res) => {
   }
 });
 
-app.post("/api/speak", async (req, res) => {
-  const { text, token, playbackOnly, format } = req.body || {};
-  if (token !== TOKEN) {
-    return res.status(401).json({ error: "Unauthorized" });
-  }
+async function handleSpeakRequest(body, res) {
+  const { text, playbackOnly, format } = body || {};
   if (!text || typeof text !== "string" || !text.trim()) {
     return res.status(400).json({ error: "Missing or empty 'text' field" });
   }
@@ -538,6 +536,14 @@ app.post("/api/speak", async (req, res) => {
     console.error("[speak] error:", err.message);
     res.status(500).json({ error: err.message });
   }
+}
+
+app.post("/api/speak", async (req, res) => {
+  const { token, ...payload } = req.body || {};
+  if (token !== TOKEN) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  return handleSpeakRequest(payload, res);
 });
 
 app.post("/api/interrupt", (req, res) => {
@@ -842,7 +848,54 @@ app.post("/api/summary", async (req, res) => {
 });
 
 const server = http.createServer(app);
+const internalSpeakApp = express();
+internalSpeakApp.use(express.json());
+internalSpeakApp.post("/speak", async (req, res) => handleSpeakRequest(req.body || {}, res));
+internalSpeakApp.use((req, res) => res.status(404).json({ error: "Not found" }));
+const internalSpeakServer = http.createServer(internalSpeakApp);
 const wss = new WebSocketServer({ noServer: true, maxPayload: WS_MAX_PAYLOAD_BYTES });
+
+async function startInternalSpeakSocket() {
+  await fs.mkdir(path.dirname(SPEAK_SOCKET_PATH), { recursive: true });
+  try {
+    await fs.unlink(SPEAK_SOCKET_PATH);
+  } catch (err) {
+    if (err && err.code !== "ENOENT") throw err;
+  }
+
+  await new Promise((resolve, reject) => {
+    internalSpeakServer.once("error", reject);
+    internalSpeakServer.listen(SPEAK_SOCKET_PATH, () => {
+      internalSpeakServer.removeListener("error", reject);
+      resolve();
+    });
+  });
+
+  try {
+    fsSync.chmodSync(SPEAK_SOCKET_PATH, 0o660);
+  } catch (err) {
+    console.warn(`[voice] failed to chmod speak socket: ${err.message}`);
+  }
+  console.log(`[voice] internal speak socket listening on ${SPEAK_SOCKET_PATH}`);
+}
+
+function cleanupSpeakSocket() {
+  try {
+    if (fsSync.existsSync(SPEAK_SOCKET_PATH)) {
+      fsSync.unlinkSync(SPEAK_SOCKET_PATH);
+    }
+  } catch {}
+}
+
+process.on("exit", cleanupSpeakSocket);
+process.on("SIGINT", () => {
+  cleanupSpeakSocket();
+  process.exit(0);
+});
+process.on("SIGTERM", () => {
+  cleanupSpeakSocket();
+  process.exit(0);
+});
 
 // Track clients with the status tab active
 const statusClients = new Set();
@@ -1082,8 +1135,15 @@ wss.on("connection", (ws, req) => {
   }
 });
 
-loadVoiceSummaryHistory().finally(() => {
-  server.listen(PORT, () => {
-    console.log(`[voice] server listening on :${PORT}`);
-  });
-});
+(async () => {
+  try {
+    await loadVoiceSummaryHistory();
+    await startInternalSpeakSocket();
+    server.listen(PORT, () => {
+      console.log(`[voice] server listening on :${PORT}`);
+    });
+  } catch (err) {
+    console.error(`[voice] startup failed: ${err.message}`);
+    process.exit(1);
+  }
+})();

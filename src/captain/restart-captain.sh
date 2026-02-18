@@ -11,7 +11,7 @@
 #             Used by entrypoint-captain.sh on first boot.
 #
 # Environment:
-#   CAPTAIN_TMUX_SOCKET  Path to the captain's tmux socket (e.g. /run/captain-tmux/default).
+#   CAPTAIN_TMUX_SOCKET  Path to the captain's tmux socket (e.g. /run/squad-sockets/captain-tmux/default).
 #                        When set, all tmux commands targeting captain use -S <socket>.
 
 set -euo pipefail

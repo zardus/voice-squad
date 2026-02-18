@@ -100,8 +100,9 @@ RUN npm install -g qrcode-terminal
 RUN usermod -aG docker ubuntu \
     && echo "ubuntu ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
-# Workspace tmux socket directory for cross-container sharing
-RUN mkdir -p /run/workspace-tmux && chown ubuntu:ubuntu /run/workspace-tmux
+# Shared sockets directory for cross-container sharing
+RUN mkdir -p /run/squad-sockets/workspace-tmux \
+    && chown -R ubuntu:ubuntu /run/squad-sockets
 
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh

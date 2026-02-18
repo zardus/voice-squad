@@ -29,8 +29,8 @@ Optional: `GH_TOKEN`, `SQUAD_CAPTAIN`, `VOICE_TOKEN`
 
 The compose stack has **5 services**:
 
-- `workspace` — privileged Docker-in-Docker + tmux server for worker panes (`/run/workspace-tmux/default`)
-- `captain` — runs Claude/Codex captain in its own tmux server (`/run/captain-tmux/default`)
+- `workspace` — privileged Docker-in-Docker + tmux server for worker panes (`/run/squad-sockets/workspace-tmux/default`)
+- `captain` — runs Claude/Codex captain in its own tmux server (`/run/squad-sockets/captain-tmux/default`)
 - `voice-server` — Express/WebSocket server, STT/TTS, status + task APIs, captain control endpoints
 - `tunnel` — cloudflared quick tunnel and QR output
 - `pane-monitor` — idle worker alerts + captain heartbeat nudges
@@ -38,7 +38,7 @@ The compose stack has **5 services**:
 Shared volumes:
 
 - `./home -> /home/ubuntu` (persistent state, gitignored)
-- `captain-tmux` and `workspace-tmux` Docker volumes (shared tmux sockets across containers)
+- `sockets` Docker volume mounted at `/run/squad-sockets` (tmux sockets + speak socket across containers)
 
 By default, compose does **not** publish port `3000` to the host; external access is through the tunnel URL shown in tunnel logs.
 
@@ -69,15 +69,15 @@ Each runtime component is isolated under `src/` with its own Dockerfile/build co
 ## Key Architecture Details
 
 - **Dual tmux servers**:
-  - Captain server socket: `/run/captain-tmux/default`
-  - Worker/server socket: `/run/workspace-tmux/default`
+  - Captain server socket: `/run/squad-sockets/captain-tmux/default`
+  - Worker/server socket: `/run/squad-sockets/workspace-tmux/default`
   - Voice server and pane monitor read from both via `CAPTAIN_TMUX_SOCKET` and `WORKSPACE_TMUX_SOCKET`.
 - **Captain lifecycle**:
   - Captain entrypoint creates the `captain` tmux session and starts tool via `/opt/squad/restart-captain.sh`.
   - Voice UI restart endpoint (`/api/restart-captain`) updates `config.yml`, then kills entrypoint `sleep` to let compose restart captain with the new tool.
 - **Voice pipeline**:
   - Browser audio -> WebSocket -> OpenAI Whisper (`stt.js`) -> tmux send-keys to `captain:0`
-  - Captain uses `speak` script -> `/api/speak` -> OpenAI TTS (`tts.js`) -> audio streamed back to connected clients
+  - Captain uses `speak` script -> Unix socket (`/run/squad-sockets/speak.sock`) -> OpenAI TTS (`tts.js`) -> audio streamed back to connected clients
 - **Status and summaries**:
   - `status-daemon.js` polls tmux panes every second only while status clients are active.
   - `/api/summary` and pending-task worker status enrichment call Anthropic Haiku (with secret scrubbing).

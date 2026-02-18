@@ -1,10 +1,16 @@
 #!/bin/bash
 set -e
 
+CAPTAIN_TMUX_SOCKET="${CAPTAIN_TMUX_SOCKET:-/run/squad-sockets/captain-tmux/default}"
+WORKSPACE_TMUX_SOCKET="${WORKSPACE_TMUX_SOCKET:-/run/squad-sockets/workspace-tmux/default}"
+CAPTAIN_TMUX_DIR="$(dirname "$CAPTAIN_TMUX_SOCKET")"
+WORKSPACE_TMUX_DIR="$(dirname "$WORKSPACE_TMUX_SOCKET")"
+export CAPTAIN_TMUX_SOCKET WORKSPACE_TMUX_SOCKET
+
 # Ensure tmux socket directories are accessible
-sudo mkdir -p /run/captain-tmux /run/workspace-tmux
-sudo chown ubuntu:ubuntu /run/captain-tmux /run/workspace-tmux
-sudo chmod 755 /run/captain-tmux /run/workspace-tmux
+sudo mkdir -p "$CAPTAIN_TMUX_DIR" "$WORKSPACE_TMUX_DIR"
+sudo chown ubuntu:ubuntu "$CAPTAIN_TMUX_DIR" "$WORKSPACE_TMUX_DIR"
+sudo chmod 755 "$CAPTAIN_TMUX_DIR" "$WORKSPACE_TMUX_DIR"
 
 # Wait for captain tmux session to be available
 echo "[pane-monitor-entrypoint] Waiting for captain tmux session..."

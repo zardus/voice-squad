@@ -28,9 +28,9 @@ RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
 # Set up ubuntu user
 RUN echo "ubuntu ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
-# Tmux socket directories for cross-container sharing
-RUN mkdir -p /run/captain-tmux /run/workspace-tmux \
-    && chown ubuntu:ubuntu /run/captain-tmux /run/workspace-tmux
+# Shared sockets directory for cross-container sharing
+RUN mkdir -p /run/squad-sockets/captain-tmux /run/squad-sockets/workspace-tmux \
+    && chown -R ubuntu:ubuntu /run/squad-sockets
 
 # Build metadata
 ARG GIT_COMMIT=unknown

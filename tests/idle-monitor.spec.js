@@ -10,8 +10,8 @@ const { TOKEN } = require("./helpers/config");
 const WORKER_SESSION = "idle-test-worker";
 const ACTIVE_SESSION = "active-test-worker";
 const MONITOR_LOG = "/tmp/pane-monitor.log";
-const CAPTAIN_SOCKET = "/run/captain-tmux/default";
-const WORKSPACE_SOCKET = "/run/workspace-tmux/default";
+const CAPTAIN_SOCKET = "/run/squad-sockets/captain-tmux/default";
+const WORKSPACE_SOCKET = "/run/squad-sockets/workspace-tmux/default";
 let monitorPid = null;
 
 function captainExec(args, opts = {}) {

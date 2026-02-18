@@ -48,16 +48,15 @@ services:
         condition: service_started
     volumes:
       - test-home:/home/ubuntu
-      - captain-tmux:/run/captain-tmux
-      - workspace-tmux:/run/workspace-tmux
+      - sockets:/run/squad-sockets
     environment:
       - VOICE_TOKEN
       - TEST_INTEGRATION=1
       - TEST_CAPTAIN=${TEST_CAPTAIN:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-test-openai-key}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-test-anthropic-key}
-      - CAPTAIN_TMUX_SOCKET=/run/captain-tmux/default
-      - WORKSPACE_TMUX_SOCKET=/run/workspace-tmux/default
+      - CAPTAIN_TMUX_SOCKET=/run/squad-sockets/captain-tmux/default
+      - WORKSPACE_TMUX_SOCKET=/run/squad-sockets/workspace-tmux/default
 
 volumes:
   test-home:

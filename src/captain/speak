@@ -7,13 +7,14 @@ if [ -z "$1" ]; then
   exit 1
 fi
 
-if [ -z "$VOICE_TOKEN" ]; then
-  echo "Error: VOICE_TOKEN not set" >&2
+SPEAK_SOCKET="${SPEAK_SOCKET_PATH:-/run/squad-sockets/speak.sock}"
+if [ ! -S "$SPEAK_SOCKET" ]; then
+  echo "Error: speak socket not available at $SPEAK_SOCKET" >&2
   exit 1
 fi
 
-VOICE_URL="${VOICE_SERVER_URL:-http://localhost:3000}"
-curl -s -X POST "${VOICE_URL}/api/speak" \
+curl --silent --show-error --fail --unix-socket "$SPEAK_SOCKET" \
+  -X POST "http://localhost/speak" \
   -H "Content-Type: application/json" \
-  -d "{\"text\": $(printf '%s' "$1" | jq -Rs .), \"token\": \"$VOICE_TOKEN\"}" \
+  -d "{\"text\": $(printf '%s' "$1" | jq -Rs .)}" \
   > /dev/null

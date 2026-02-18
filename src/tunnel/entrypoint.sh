@@ -3,9 +3,9 @@ set -e
 
 VOICE_SERVER_ORIGIN="${VOICE_SERVER_ORIGIN:-http://voice-server:3000}"
 
-# Read VOICE_TOKEN from shared volume if not set via environment
+# Read VOICE_TOKEN from shared volume (written by voice-server) if not set via environment
 if [ -z "${VOICE_TOKEN:-}" ]; then
-    echo "[tunnel] Waiting for voice token..."
+    echo "[tunnel] Waiting for voice token from voice-server..."
     for i in $(seq 1 120); do
         if [ -f /home/ubuntu/.voice-token ]; then
             VOICE_TOKEN=$(cat /home/ubuntu/.voice-token)
