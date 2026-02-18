@@ -11,7 +11,7 @@ const WORKER_SESSION = "idle-test-worker";
 const ACTIVE_SESSION = "active-test-worker";
 const RESUME_SESSION = "idle-resume-worker";
 
-function countIdleAlerts(output, sessionName) {
+function getIdleAlerts(output, sessionName) {
   return output
     .split("\n")
     .filter((line) => line.includes("IDLE ALERT") && line.includes(sessionName));
@@ -29,7 +29,7 @@ async function waitForIdleAlert(sessionName, timeoutMs = 90000) {
       continue;
     }
 
-    if (countIdleAlerts(captainOutput, sessionName).length > 0) {
+    if (getIdleAlerts(captainOutput, sessionName).length > 0) {
       return captainOutput;
     }
 
@@ -72,13 +72,13 @@ test.describe("Idle monitor", () => {
     captainExec("send-keys -t captain:0 'clear' Enter");
 
     const firstOutput = await waitForIdleAlert(WORKER_SESSION);
-    const firstCount = countIdleAlerts(firstOutput, WORKER_SESSION).length;
+    const firstCount = getIdleAlerts(firstOutput, WORKER_SESSION).length;
     expect(firstCount).toBeGreaterThan(0);
 
     // With unchanged pane content, no additional alerts should appear.
     await new Promise((r) => setTimeout(r, 50000));
     const followupOutput = captainExec("capture-pane -t captain:0 -p -S -500");
-    const followupCount = countIdleAlerts(followupOutput, WORKER_SESSION).length;
+    const followupCount = getIdleAlerts(followupOutput, WORKER_SESSION).length;
     expect(followupCount).toBe(firstCount);
   });
 
@@ -94,7 +94,7 @@ test.describe("Idle monitor", () => {
     captainExec("send-keys -t captain:0 'clear' Enter");
 
     const firstOutput = await waitForIdleAlert(RESUME_SESSION);
-    const firstCount = countIdleAlerts(firstOutput, RESUME_SESSION).length;
+    const firstCount = getIdleAlerts(firstOutput, RESUME_SESSION).length;
     expect(firstCount).toBeGreaterThan(0);
 
     // Activity resumes, then pane idles again.
@@ -111,13 +111,13 @@ test.describe("Idle monitor", () => {
         continue;
       }
 
-      if (countIdleAlerts(captainOutput, RESUME_SESSION).length > firstCount) {
+      if (getIdleAlerts(captainOutput, RESUME_SESSION).length > firstCount) {
         break;
       }
       await new Promise((r) => setTimeout(r, 2000));
     }
 
-    expect(countIdleAlerts(captainOutput, RESUME_SESSION).length).toBeGreaterThan(firstCount);
+    expect(getIdleAlerts(captainOutput, RESUME_SESSION).length).toBeGreaterThan(firstCount);
   });
 
   test("does NOT alert for a pane with continuously changing content", async () => {
@@ -148,6 +148,6 @@ test.describe("Idle monitor", () => {
       captainOutput = captainExec("capture-pane -t captain:0 -p -S -200");
     } catch {}
 
-    expect(countIdleAlerts(captainOutput, ACTIVE_SESSION)).toHaveLength(0);
+    expect(getIdleAlerts(captainOutput, ACTIVE_SESSION)).toHaveLength(0);
   });
 });
