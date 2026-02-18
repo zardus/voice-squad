@@ -66,11 +66,11 @@ do
         then
             log "HEARTBEAT: Captain pane idle for ${HEARTBEAT_THRESHOLD}s — injecting nudge"
             tmux -S "$CAPTAIN_TMUX_SOCKET" send-keys -t captain:0 \
-                'HEARTBEAT MESSAGE: please do a check of the current tasks and nudge them along or clean them up if reasonable. If there are any concrete developments worth reporting, use the speak command to give the human a voice update via text-to-speech.' 2>/dev/null
+                'HEARTBEAT MESSAGE: please do a check of the current tasks and nudge them along or clean them up if reasonable. Refer to your skills for the specifics. If there are any concrete developments worth reporting, use the speak command to give the human a voice update via text-to-speech.' 2>/dev/null
         else
             log "IDLE ALERT: Worker $pane idle for ${WORKER_THRESHOLD}s — notifying captain"
             tmux -S "$CAPTAIN_TMUX_SOCKET" send-keys -t captain:0 \
-                "IDLE ALERT: Worker $pane has been idle for ${WORKER_THRESHOLD} seconds" 2>/dev/null
+                "IDLE ALERT: Worker $pane has been idle for ${WORKER_THRESHOLD} seconds. Please check on this worker. Look at relevant skills for specific things to check, ways to verify, re-task, clean up, and archive completed workers, and so on. Don't forget to report any concrete developments via text-to-speech." 2>/dev/null
         fi
 
         sleep 0.5
