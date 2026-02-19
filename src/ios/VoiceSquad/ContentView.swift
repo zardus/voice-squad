@@ -3,48 +3,33 @@ import SwiftUI
 struct ContentView: View {
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var webSocket: WebSocketClient
-    @EnvironmentObject private var audio: AudioManager
 
     @State private var showSettings = false
     @State private var webViewID = UUID()
 
     var body: some View {
-        ZStack(alignment: .bottom) {
+        ZStack {
             VoiceSquadWebView(url: settings.makeWebURL(), webViewID: webViewID)
-                .ignoresSafeArea(.all, edges: .top)
+                .ignoresSafeArea()
 
-            NativeControlBar(
-                autoRead: $settings.autoRead,
-                isConnected: webSocket.isConnected,
-                isRecording: audio.isRecording,
-                onToggleRecording: {
-                    if audio.isRecording {
-                        Task { await audio.stopAndSend(webSocket: webSocket) }
-                    } else {
-                        audio.startRecording()
+            VStack {
+                HStack {
+                    Spacer()
+                    Button {
+                        showSettings = true
+                    } label: {
+                        Image(systemName: "gearshape.fill")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: 36, height: 36)
+                            .background(.black.opacity(0.5), in: Circle())
                     }
-                },
-                onSendText: { text in
-                    webSocket.sendTextCommand(text)
+                    .padding(.top, 54)
+                    .padding(.trailing, 12)
+                    .accessibilityLabel("Settings")
                 }
-            )
-        }
-        .safeAreaInset(edge: .top) {
-            HStack {
-                Text("VoiceSquad")
-                    .font(.headline)
                 Spacer()
-                Button {
-                    showSettings = true
-                } label: {
-                    Image(systemName: "gearshape")
-                        .font(.headline)
-                }
-                .accessibilityLabel("Settings")
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .background(.ultraThinMaterial)
         }
         .sheet(isPresented: $showSettings) {
             SettingsView(
@@ -53,33 +38,20 @@ struct ContentView: View {
             )
         }
         .onAppear {
-            audio.autoReadEnabled = { settings.autoRead }
             connectWebSocket()
         }
-        .onChange(of: settings.autoRead) { _, newValue in
-            settings.persist()
-            settings.webBridge?.setAutoread(newValue)
-        }
         .onChange(of: settings.serverBaseURL) { _, _ in
             settings.persist()
-        }
-        .onChange(of: settings.token) { _, _ in
-            settings.persist()
-        }
-        .onChange(of: settings.serverBaseURL) { _, _ in
             reconnectAll()
         }
         .onChange(of: settings.token) { _, _ in
+            settings.persist()
             reconnectAll()
-        }
-        .onReceive(webSocket.$lastTtsAudioData) { data in
-            guard let data else { return }
-            audio.handleIncomingTtsAudio(data)
         }
     }
 
     private func connectWebSocket() {
-        guard let url = settings.makeWebSocketURL(tts: "mp3") else { return }
+        guard let url = settings.makeWebSocketURL() else { return }
         webSocket.connect(url: url)
     }
 
@@ -95,6 +67,7 @@ private struct SettingsView: View {
     @Binding var token: String
 
     @Environment(\.dismiss) private var dismiss
+    @State private var showScanner = false
 
     var body: some View {
         NavigationStack {
@@ -110,6 +83,13 @@ private struct SettingsView: View {
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                 }
+                Section {
+                    Button {
+                        showScanner = true
+                    } label: {
+                        Label("Scan QR Code", systemImage: "qrcode.viewfinder")
+                    }
+                }
             }
             .navigationTitle("Settings")
             .toolbar {
@@ -117,7 +97,14 @@ private struct SettingsView: View {
                     Button("Done") { dismiss() }
                 }
             }
+            .fullScreenCover(isPresented: $showScanner) {
+                QRScannerView { baseURL, scannedToken in
+                    serverBaseURL = baseURL
+                    token = scannedToken
+                    showScanner = false
+                }
+                .ignoresSafeArea()
+            }
         }
     }
 }
-

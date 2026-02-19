@@ -4,29 +4,47 @@ import SwiftUI
 struct VoiceSquadApp: App {
     @StateObject private var settings = AppSettings()
     @StateObject private var webSocket = WebSocketClient()
-    @StateObject private var audio = AudioManager()
-    @StateObject private var remote = RemoteControls()
+    @StateObject private var liveActivity = LiveActivityManager()
+    @StateObject private var notifications = NotificationManager()
+
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
-                .environmentObject(settings)
-                .environmentObject(webSocket)
-                .environmentObject(audio)
-                .onAppear {
-                    // Wire RemoteCommandCenter actions to the same recording toggle as the UI.
-                    remote.onToggleRecording = { [weak audio, weak webSocket, weak settings] in
-                        guard let audio, let webSocket, let settings else { return }
-                        if audio.isRecording {
-                            Task { await audio.stopAndSend(webSocket: webSocket) }
-                        } else {
-                            audio.startRecording()
-                        }
-                        // Keep the web UI preference in sync (even though the web controls are hidden).
-                        settings.webBridge?.setAutoread(settings.autoRead)
+            Group {
+                if settings.serverBaseURL.isEmpty {
+                    QRScannerView { baseURL, token in
+                        settings.serverBaseURL = baseURL
+                        settings.token = token
+                        settings.persist()
                     }
+                } else {
+                    ContentView()
                 }
+            }
+            .environmentObject(settings)
+            .environmentObject(webSocket)
+            .onAppear {
+                notifications.requestPermission()
+                liveActivity.startActivity()
+            }
+            .onReceive(webSocket.$lastSpeakText) { text in
+                guard let text else { return }
+                liveActivity.updateActivity(text: text, isConnected: webSocket.isConnected)
+                if scenePhase != .active {
+                    notifications.postSpeakNotification(text: text)
+                }
+            }
+            .onReceive(webSocket.$isConnected) { connected in
+                if !connected {
+                    liveActivity.updateActivity(text: "Disconnected", isConnected: false)
+                }
+            }
+            .onChange(of: scenePhase) { _, newPhase in
+                if newPhase == .active {
+                    liveActivity.startActivity()
+                }
+            }
         }
     }
 }
-
