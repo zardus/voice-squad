@@ -2,7 +2,7 @@
 # archive-worker — Archive a completed worker
 # Usage: archive-worker TASK_NAME
 # Reads summary from stdin → .summary, captures full pane → .log,
-# moves .task to archived, kills the tmux window.
+# moves .task to archived, kills the worker tmux session.
 
 set -euo pipefail
 
@@ -17,20 +17,24 @@ mkdir -p "$ARCHIVE_DIR"
 # Read summary from stdin
 cat > "$ARCHIVE_DIR/${TASK_NAME}.summary"
 
-# Find pane by window name
-PANE_ID=$(tmux -S "$SOCKET" list-panes -a -F '#{window_name} #{pane_id}' 2>/dev/null | grep "^${TASK_NAME} " | head -1 | awk '{print $2}')
+if tmux -S "$SOCKET" has-session -t "$TASK_NAME" 2>/dev/null; then
+    PANE_INFO=$(tmux -S "$SOCKET" list-panes -t "${TASK_NAME}:0" -F '#{pane_id} #{pane_current_command}' 2>/dev/null | head -1 || true)
+    PANE_ID=$(printf '%s\n' "$PANE_INFO" | awk '{print $1}')
+    CURRENT_CMD=$(printf '%s\n' "$PANE_INFO" | awk '{print $2}')
 
-if [ -n "$PANE_ID" ]; then
-    # Capture full pane output
-    tmux -S "$SOCKET" capture-pane -t "$PANE_ID" -p -S -10000 > "$ARCHIVE_DIR/${TASK_NAME}.log" 2>/dev/null || true
-
-    # Find the window target (session:window_id) to kill it
-    WINDOW_TARGET=$(tmux -S "$SOCKET" list-panes -a -F '#{window_name} #{session_name}:#{window_id}' 2>/dev/null | grep "^${TASK_NAME} " | head -1 | awk '{print $2}')
-    if [ -n "$WINDOW_TARGET" ]; then
-        tmux -S "$SOCKET" kill-window -t "$WINDOW_TARGET" 2>/dev/null || true
+    if [ -z "$PANE_ID" ]; then
+        echo "WARNING: Worker session '$TASK_NAME' has no pane at window 0" >&2
+    elif [ "$CURRENT_CMD" = "claude" ] || [ "$CURRENT_CMD" = "codex" ] || [ "$CURRENT_CMD" = "node" ] || [ "$CURRENT_CMD" = "npm" ]; then
+        # Capture full pane output
+        tmux -S "$SOCKET" capture-pane -t "$PANE_ID" -p -S -10000 > "$ARCHIVE_DIR/${TASK_NAME}.log" 2>/dev/null || true
+    else
+        echo "WARNING: Worker '$TASK_NAME' pane is running '$CURRENT_CMD'; capturing output anyway." >&2
+        tmux -S "$SOCKET" capture-pane -t "$PANE_ID" -p -S -10000 > "$ARCHIVE_DIR/${TASK_NAME}.log" 2>/dev/null || true
     fi
+
+    tmux -S "$SOCKET" kill-session -t "$TASK_NAME" 2>/dev/null || true
 else
-    echo "WARNING: No active worker pane found for '$TASK_NAME' (may have already exited)" >&2
+    echo "WARNING: No active worker session found for '$TASK_NAME' (may have already exited)" >&2
 fi
 
 # Move task file to archived

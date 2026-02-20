@@ -15,17 +15,21 @@ fi
 
 SOCKET="${WORKSPACE_TMUX_SOCKET:?WORKSPACE_TMUX_SOCKET not set}"
 
-# Find pane by window name
-PANE_ID=$(tmux -S "$SOCKET" list-panes -a -F '#{window_name} #{pane_id}' 2>/dev/null | grep "^${TASK_NAME} " | head -1 | awk '{print $2}')
+if ! tmux -S "$SOCKET" has-session -t "$TASK_NAME" 2>/dev/null; then
+    echo "ERROR: No worker session found with name '$TASK_NAME'" >&2
+    exit 1
+fi
+
+PANE_INFO=$(tmux -S "$SOCKET" list-panes -t "${TASK_NAME}:0" -F '#{pane_id} #{pane_current_command}' 2>/dev/null | head -1 || true)
+PANE_ID=$(printf '%s\n' "$PANE_INFO" | awk '{print $1}')
+CURRENT_CMD=$(printf '%s\n' "$PANE_INFO" | awk '{print $2}')
 
 if [ -z "$PANE_ID" ]; then
-    echo "ERROR: No worker found with name '$TASK_NAME'" >&2
+    echo "ERROR: Worker '$TASK_NAME' has no pane at window 0" >&2
     exit 1
 fi
 
 # Safety check: verify the pane is running a known agent process
-CURRENT_CMD=$(tmux -S "$SOCKET" list-panes -t "$PANE_ID" -F '#{pane_current_command}' 2>/dev/null || echo "")
-
 case "$CURRENT_CMD" in
     claude|codex|node|npm) ;;
     *)

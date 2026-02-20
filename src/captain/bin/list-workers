@@ -1,7 +1,18 @@
 #!/bin/bash
-# list-workers — List all active worker windows on the workspace tmux server
+# list-workers — List active worker sessions on the workspace tmux server
 # Usage: list-workers
+
+set -euo pipefail
 
 SOCKET="${WORKSPACE_TMUX_SOCKET:?WORKSPACE_TMUX_SOCKET not set}"
 
-tmux -S "$SOCKET" list-panes -a -F '#{window_name}' 2>/dev/null || echo "(no workers)"
+WORKERS=$(
+    tmux -S "$SOCKET" list-panes -a -F '#{session_name} #{window_index} #{pane_current_command}' 2>/dev/null \
+    | awk '$2 == "0" && ($3 == "claude" || $3 == "codex" || $3 == "node" || $3 == "npm") { print $1 }'
+)
+
+if [ -n "$WORKERS" ]; then
+    echo "$WORKERS"
+else
+    echo "(no workers)"
+fi

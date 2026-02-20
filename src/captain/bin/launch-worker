@@ -1,5 +1,5 @@
 #!/bin/bash
-# launch-worker — Launch a worker in a new tmux window on the workspace server
+# launch-worker — Launch a worker in its own tmux session on the workspace server
 # Usage: launch-worker <claude|codex> [-e ENV=VAL ...] PROJECT_DIR TASK_NAME
 
 set -euo pipefail
@@ -30,16 +30,12 @@ if [ ! -f "$TASK_FILE" ]; then
 fi
 
 SOCKET="${WORKSPACE_TMUX_SOCKET:?WORKSPACE_TMUX_SOCKET not set}"
-SESSION_NAME=$(basename "$PROJECT_DIR")
+SESSION_NAME="$TASK_NAME"
 
-# Create session if it doesn't exist
-if ! tmux -S "$SOCKET" has-session -t "$SESSION_NAME" 2>/dev/null; then
-    tmux -S "$SOCKET" new-session -d -s "$SESSION_NAME" -c "$PROJECT_DIR"
+if tmux -S "$SOCKET" has-session -t "$SESSION_NAME" 2>/dev/null; then
+    echo "ERROR: Worker session '$SESSION_NAME' already exists" >&2
+    exit 1
 fi
-
-# Create window (with optional env flags)
-tmux -S "$SOCKET" new-window ${TMUX_ENV_FLAGS[@]+"${TMUX_ENV_FLAGS[@]}"} -t "$SESSION_NAME" -n "$TASK_NAME" -c "$PROJECT_DIR"
-sleep 0.5
 
 # Build the worker command
 if [ "$TOOL" = "claude" ]; then
@@ -51,6 +47,9 @@ fi
 # Source env then run worker
 FULL_CMD="{ [ -f /home/ubuntu/env ] && set -a && . /home/ubuntu/env && set +a || true; } && $WORKER_CMD"
 
-tmux -S "$SOCKET" send-keys -t "${SESSION_NAME}:${TASK_NAME}" "$FULL_CMD" Enter
+# Create a dedicated session for this worker; worker process is always in window 0.
+tmux -S "$SOCKET" new-session -d ${TMUX_ENV_FLAGS[@]+"${TMUX_ENV_FLAGS[@]}"} -s "$SESSION_NAME" -c "$PROJECT_DIR"
+sleep 0.5
+tmux -S "$SOCKET" send-keys -t "${SESSION_NAME}:0" "$FULL_CMD" Enter
 
-echo "Worker '$TASK_NAME' launched ($TOOL) in $PROJECT_DIR"
+echo "Worker '$TASK_NAME' launched ($TOOL) in session '$SESSION_NAME' ($PROJECT_DIR)"
