@@ -69,27 +69,26 @@ final class SpeechAudioPlayer: NSObject, AVAudioPlayerDelegate {
     }
 
     private func playNext() {
-        guard !queue.isEmpty else { return }
-        let next = queue.removeFirst()
-        do {
-            let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playback, options: [.mixWithOthers, .allowBluetoothHFP, .allowAirPlay])
-            try session.setActive(true)
+        while !queue.isEmpty {
+            let next = queue.removeFirst()
+            do {
+                let session = AVAudioSession.sharedInstance()
+                try session.setCategory(.playback, options: [.mixWithOthers, .allowBluetoothHFP, .allowAirPlay])
+                try session.setActive(true)
 
-            let player = try AVAudioPlayer(data: next)
-            player.delegate = self
-            player.prepareToPlay()
-            if player.play() {
-                self.player = player
-            } else {
+                let player = try AVAudioPlayer(data: next)
+                player.delegate = self
+                player.prepareToPlay()
+                if player.play() {
+                    self.player = player
+                    return
+                }
                 logger.error("Failed to start speech playback")
                 self.player = nil
-                playNext()
+            } catch {
+                logger.error("Failed to play speech audio: \(String(describing: error), privacy: .public)")
+                self.player = nil
             }
-        } catch {
-            logger.error("Failed to play speech audio: \(String(describing: error), privacy: .public)")
-            self.player = nil
-            playNext()
         }
     }
 

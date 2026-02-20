@@ -71,7 +71,12 @@ enum LiveActivityUpdateEventDecoder {
             throw LiveActivityUpdateDecodeError.invalidSpeechText
         }
 
-        if contentState == nil && voiceSquad == nil && userInfo["text"] == nil && aps["alert"] == nil {
+        if contentState == nil
+            && voiceSquad == nil
+            && userInfo["text"] == nil
+            && userInfo["latestSpeechText"] == nil
+            && userInfo["latest_speech_text"] == nil
+            && aps["alert"] == nil {
             throw LiveActivityUpdateDecodeError.missingContentState
         }
 

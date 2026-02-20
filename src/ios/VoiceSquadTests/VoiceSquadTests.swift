@@ -82,6 +82,20 @@ final class VoiceSquadTests: XCTestCase {
         XCTAssertEqual(event?.isConnected, true)
     }
 
+    func testDecodeRemoteNotificationSupportsRootSpeechTextFallback() throws {
+        let payload: [AnyHashable: Any] = [
+            "aps": [
+                "event": "update"
+            ],
+            "latestSpeechText": "Root fallback text",
+            "isConnected": false
+        ]
+
+        let event = try LiveActivityUpdateEventDecoder.decodeRemoteNotification(payload)
+        XCTAssertEqual(event?.latestSpeechText, "Root fallback text")
+        XCTAssertEqual(event?.isConnected, false)
+    }
+
     func testDecodeRemoteNotificationEndEventMarksDisconnected() throws {
         let payload: [AnyHashable: Any] = [
             "aps": [
