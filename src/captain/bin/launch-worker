@@ -1,0 +1,56 @@
+#!/bin/bash
+# launch-worker — Launch a worker in a new tmux window on the workspace server
+# Usage: launch-worker <claude|codex> [-e ENV=VAL ...] PROJECT_DIR TASK_NAME
+
+set -euo pipefail
+
+TOOL="${1:?Usage: launch-worker <claude|codex> [-e ENV=VAL ...] PROJECT_DIR TASK_NAME}"
+shift
+
+if [ "$TOOL" != "claude" ] && [ "$TOOL" != "codex" ]; then
+    echo "ERROR: Tool must be 'claude' or 'codex' (got '$TOOL')" >&2
+    exit 1
+fi
+
+# Collect -e flags
+TMUX_ENV_FLAGS=()
+while [[ "${1:-}" == "-e" ]]; do
+    shift
+    TMUX_ENV_FLAGS+=("-e" "$1")
+    shift
+done
+
+PROJECT_DIR="${1:?Missing PROJECT_DIR}"
+TASK_NAME="${2:?Missing TASK_NAME}"
+
+TASK_FILE="$HOME/captain/tasks/pending/${TASK_NAME}.task"
+if [ ! -f "$TASK_FILE" ]; then
+    echo "ERROR: Task file not found: $TASK_FILE" >&2
+    exit 1
+fi
+
+SOCKET="${WORKSPACE_TMUX_SOCKET:?WORKSPACE_TMUX_SOCKET not set}"
+SESSION_NAME=$(basename "$PROJECT_DIR")
+
+# Create session if it doesn't exist
+if ! tmux -S "$SOCKET" has-session -t "$SESSION_NAME" 2>/dev/null; then
+    tmux -S "$SOCKET" new-session -d -s "$SESSION_NAME" -c "$PROJECT_DIR"
+fi
+
+# Create window (with optional env flags)
+tmux -S "$SOCKET" new-window ${TMUX_ENV_FLAGS[@]+"${TMUX_ENV_FLAGS[@]}"} -t "$SESSION_NAME" -n "$TASK_NAME" -c "$PROJECT_DIR"
+sleep 0.5
+
+# Build the worker command
+if [ "$TOOL" = "claude" ]; then
+    WORKER_CMD="claude --dangerously-skip-permissions \"\$(cat ~/captain/tasks/pending/${TASK_NAME}.task)\""
+else
+    WORKER_CMD="codex --dangerously-bypass-approvals-and-sandbox \"\$(cat ~/captain/tasks/pending/${TASK_NAME}.task)\""
+fi
+
+# Source env then run worker
+FULL_CMD="{ [ -f /home/ubuntu/env ] && set -a && . /home/ubuntu/env && set +a || true; } && $WORKER_CMD"
+
+tmux -S "$SOCKET" send-keys -t "${SESSION_NAME}:${TASK_NAME}" "$FULL_CMD" Enter
+
+echo "Worker '$TASK_NAME' launched ($TOOL) in $PROJECT_DIR"

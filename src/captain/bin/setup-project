@@ -1,0 +1,18 @@
+#!/bin/bash
+# setup-project — Set up a project directory
+# Usage: setup-project PROJECT_DIR [GIT_REPO_URL]
+# Clones the repo if a URL is given, otherwise creates the directory and initializes git.
+
+set -euo pipefail
+
+PROJECT_DIR="${1:?Usage: setup-project PROJECT_DIR [GIT_REPO_URL]}"
+GIT_URL="${2:-}"
+
+if [ -n "$GIT_URL" ]; then
+    git clone "$GIT_URL" "$PROJECT_DIR"
+else
+    mkdir -p "$PROJECT_DIR"
+    git init "$PROJECT_DIR"
+fi
+
+echo "Project set up at $PROJECT_DIR"

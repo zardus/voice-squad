@@ -43,7 +43,17 @@ if [ -f /home/ubuntu/env ]; then
     set +a
 fi
 
-# Captain working directory is /opt/squad/captain (baked into image with CLAUDE.md + .claude/skills/)
+# Pre-configure Claude Code onboarding (skip first-run dialogs)
+mkdir -p /home/ubuntu/.claude
+if [ -f /home/ubuntu/.claude.json ]; then
+    # Merge hasCompletedOnboarding into existing auth data
+    jq '. + {hasCompletedOnboarding: true}' /home/ubuntu/.claude.json > /tmp/.claude.json.tmp \
+        && mv /tmp/.claude.json.tmp /home/ubuntu/.claude.json
+else
+    echo '{"hasCompletedOnboarding": true}' > /home/ubuntu/.claude.json
+fi
+
+# Captain working directory is /opt/squad/captain (baked into image with CLAUDE.md + .claude/settings.json)
 # Task files live under ~/captain/tasks/ on the shared volume
 mkdir -p /home/ubuntu/captain
 mkdir -p /home/ubuntu/captain/tasks/pending
@@ -80,8 +90,7 @@ ln -sf "$WORKSPACE_TMUX_SOCKET" "$TMUX_TMPDIR/tmux-$(id -u)/default"
 tmux -S "$CAPTAIN_TMUX_SOCKET" new-session -d -s captain -c /opt/squad/captain
 
 # Launch captain inside the tmux session using the restart script.
-# --fresh skips --continue/resume since this is the initial boot.
-CAPTAIN_TMUX_SOCKET="$CAPTAIN_TMUX_SOCKET" /opt/squad/restart-captain.sh "$CAPTAIN" --fresh
+CAPTAIN_TMUX_SOCKET="$CAPTAIN_TMUX_SOCKET" /opt/squad/restart-captain.sh "$CAPTAIN"
 
 # Wait for voice URL from voice-server container (written to shared volume)
 echo "[captain-entrypoint] Waiting for voice URL from voice-server container..."
@@ -108,4 +117,4 @@ tmux -S "$CAPTAIN_TMUX_SOCKET" select-window -t captain:0
 # The voice server triggers a restart via: sudo pkill -P 1 sleep
 # That kills this sleep, bash falls through to EOF and exits,
 # and docker-compose restarts the container (reading config.yml for the captain type).
-sleep infinity
+/bin/sleep infinity
