@@ -1,4 +1,5 @@
 import ActivityKit
+import AppIntents
 import SwiftUI
 import WidgetKit
 
@@ -22,6 +23,12 @@ struct VoiceSquadLiveActivityWidget: Widget {
                 }
 
                 Spacer(minLength: 0)
+
+                Button(intent: ToggleAutoReadIntent()) {
+                    Image(systemName: context.state.autoReadEnabled
+                          ? "speaker.wave.2.fill" : "speaker.slash.fill")
+                        .foregroundStyle(context.state.autoReadEnabled ? .green : .secondary)
+                }
             }
             .padding()
             .activityBackgroundTint(.black.opacity(0.8))
@@ -37,6 +44,13 @@ struct VoiceSquadLiveActivityWidget: Widget {
                         Text("VoiceSquad")
                             .font(.caption)
                             .fontWeight(.semibold)
+                    }
+                }
+                DynamicIslandExpandedRegion(.trailing) {
+                    Button(intent: ToggleAutoReadIntent()) {
+                        Image(systemName: context.state.autoReadEnabled
+                              ? "speaker.wave.2.fill" : "speaker.slash.fill")
+                            .foregroundStyle(context.state.autoReadEnabled ? .green : .secondary)
                     }
                 }
                 DynamicIslandExpandedRegion(.bottom) {

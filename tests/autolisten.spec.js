@@ -2,145 +2,273 @@
 /**
  * Auto Listen behavior tests.
  *
- * We stub getUserMedia so we can assert:
- * - No mic pre-acquire when autolisten is false
- * - Turning autolisten OFF stops tracks and prevents re-acquire on user gestures
+ * The app no longer pre-acquires the mic on user gestures. Instead:
+ * - A silent keep-alive oscillator starts on user gesture (to keep Safari alive).
+ * - getUserMedia is only called during push-to-talk (startRecording).
+ * - setAutoListenEnabled no longer takes an `acquire` parameter.
  */
 const { test, expect } = require("@playwright/test");
 const { pageUrl } = require("./helpers/config");
 
+/** Common init script that stubs getUserMedia, WebSocket, AudioContext, and localStorage. */
+function addStubs(page, { autolisten = "true" } = {}) {
+  return page.addInitScript((opts) => {
+    localStorage.setItem("autolisten", opts.autolisten);
+
+    // --- getUserMedia stub ---
+    window.__gumCalls = 0;
+    window.__stopCount = 0;
+    navigator.mediaDevices = navigator.mediaDevices || {};
+    navigator.mediaDevices.getUserMedia = async () => {
+      window.__gumCalls += 1;
+      const track = {
+        readyState: "live",
+        stop() {
+          window.__stopCount += 1;
+          this.readyState = "ended";
+        },
+        onended: null,
+      };
+      return { getTracks: () => [track], getAudioTracks: () => [track] };
+    };
+
+    // --- AudioContext observation ---
+    window.__oscillatorsCreated = 0;
+    window.__gainsCreated = 0;
+    window.__oscConnected = false;
+    window.__oscStarted = false;
+    window.__lastGainValue = null;
+    window.__audioContextState = null;
+
+    const OrigAudioContext = window.AudioContext || window.webkitAudioContext;
+    if (OrigAudioContext) {
+      class ObservedAudioContext extends OrigAudioContext {
+        constructor(...args) {
+          super(...args);
+          window.__audioContextState = this.state;
+          // Track state changes
+          const origClose = this.close.bind(this);
+          this.close = async () => {
+            const result = await origClose();
+            window.__audioContextState = "closed";
+            return result;
+          };
+        }
+        createOscillator() {
+          const osc = super.createOscillator();
+          window.__oscillatorsCreated += 1;
+          const origConnect = osc.connect.bind(osc);
+          osc.connect = (...a) => {
+            window.__oscConnected = true;
+            return origConnect(...a);
+          };
+          const origStart = osc.start.bind(osc);
+          osc.start = (...a) => {
+            window.__oscStarted = true;
+            return origStart(...a);
+          };
+          return osc;
+        }
+        createGain() {
+          const gain = super.createGain();
+          window.__gainsCreated += 1;
+          // Observe gain.value writes via a polling approach (AudioParam is not easily proxied)
+          const origGain = gain.gain;
+          // Record initial value after creation
+          setTimeout(() => {
+            window.__lastGainValue = origGain.value;
+          }, 0);
+          // Intercept the value setter
+          try {
+            const desc = Object.getOwnPropertyDescriptor(AudioParam.prototype, "value");
+            if (desc && desc.set) {
+              Object.defineProperty(origGain, "value", {
+                get: () => desc.get.call(origGain),
+                set: (v) => {
+                  window.__lastGainValue = v;
+                  desc.set.call(origGain, v);
+                },
+                configurable: true,
+              });
+            }
+          } catch {}
+          return gain;
+        }
+      }
+      window.AudioContext = ObservedAudioContext;
+      if (window.webkitAudioContext) window.webkitAudioContext = ObservedAudioContext;
+    }
+
+    // --- Fake WebSocket ---
+    class FakeWebSocket {
+      static OPEN = 1;
+      constructor(url) {
+        this.url = url;
+        this.readyState = FakeWebSocket.OPEN;
+        this.bufferedAmount = 0;
+        this.binaryType = "arraybuffer";
+        window.__testWs = this;
+        setTimeout(() => this.onopen && this.onopen(), 0);
+      }
+      send() {}
+      close() {
+        this.readyState = 3;
+        if (this.onclose) this.onclose();
+      }
+    }
+    window.WebSocket = FakeWebSocket;
+  }, { autolisten });
+}
+
 test.describe("Auto Listen", () => {
-  test("autolisten=false does not pre-acquire mic (even after user gestures)", async ({ page }) => {
+  test("mic is NOT pre-acquired on user gesture", async ({ page }) => {
     if (process.env.PW_PAGE_DEBUG) {
       page.on("console", (msg) => console.log(`[browser:${msg.type()}] ${msg.text()}`));
       page.on("pageerror", (err) => console.log(`[pageerror] ${err && err.stack ? err.stack : String(err)}`));
     }
 
-    await page.addInitScript(() => {
-      localStorage.setItem("autolisten", "false");
-
-      window.__gumCalls = 0;
-      navigator.mediaDevices = navigator.mediaDevices || {};
-      navigator.mediaDevices.getUserMedia = async () => {
-        window.__gumCalls += 1;
-        const track = {
-          readyState: "live",
-          stop() { this.readyState = "ended"; },
-        };
-        return { getTracks: () => [track] };
-      };
-
-      class FakeWebSocket {
-        static OPEN = 1;
-        constructor(url) {
-          this.url = url;
-          this.readyState = FakeWebSocket.OPEN;
-          this.bufferedAmount = 0;
-          this.binaryType = "arraybuffer";
-          window.__testWs = this;
-          setTimeout(() => this.onopen && this.onopen(), 0);
-        }
-        send() {}
-        close() {
-          this.readyState = 3;
-          if (this.onclose) this.onclose();
-        }
-      }
-      window.WebSocket = FakeWebSocket;
-    });
+    await addStubs(page, { autolisten: "true" });
 
     await page.goto(pageUrl("test-token"));
     await page.waitForFunction(() => !!window.__testWs);
 
+    // No mic acquired yet
     await expect.poll(async () => page.evaluate(() => window.__gumCalls)).toBe(0);
 
-    // User gesture should not re-acquire when Auto Listen is OFF.
+    // Perform a user gesture (click on body)
     await page.click("body");
-    await page.waitForTimeout(50);
+    await page.waitForTimeout(100);
+
+    // getUserMedia should still NOT have been called
+    await expect.poll(async () => page.evaluate(() => window.__gumCalls)).toBe(0);
+
+    // But AudioContext should have been created (for the silent keep-alive)
+    await expect.poll(async () => page.evaluate(() => window.__audioContextState !== null)).toBe(true);
+  });
+
+  test("silent keep-alive starts on user gesture", async ({ page }) => {
+    if (process.env.PW_PAGE_DEBUG) {
+      page.on("console", (msg) => console.log(`[browser:${msg.type()}] ${msg.text()}`));
+      page.on("pageerror", (err) => console.log(`[pageerror] ${err && err.stack ? err.stack : String(err)}`));
+    }
+
+    await addStubs(page, { autolisten: "true" });
+
+    await page.goto(pageUrl("test-token"));
+    await page.waitForFunction(() => !!window.__testWs);
+
+    // Before gesture: no oscillator or gain created
+    await expect.poll(async () => page.evaluate(() => window.__oscillatorsCreated)).toBe(0);
+    await expect.poll(async () => page.evaluate(() => window.__gainsCreated)).toBe(0);
+
+    // Perform a user gesture
+    await page.click("body");
+    await page.waitForTimeout(100);
+
+    // startSilentKeepAlive should have created an OscillatorNode and a GainNode.
+    // Note: the app also uses createOscillator/createGain for chimes/dings, but
+    // startSilentKeepAlive is the first call triggered by a plain click on body.
+    // We check that at least one oscillator and one gain were created.
+    await expect.poll(async () => page.evaluate(() => window.__oscillatorsCreated >= 1)).toBe(true);
+    await expect.poll(async () => page.evaluate(() => window.__gainsCreated >= 1)).toBe(true);
+
+    // Gain value should be 0 (silent)
+    await expect.poll(async () => page.evaluate(() => window.__lastGainValue)).toBe(0);
+
+    // Oscillator should have been connected and started
+    await expect.poll(async () => page.evaluate(() => window.__oscConnected)).toBe(true);
+    await expect.poll(async () => page.evaluate(() => window.__oscStarted)).toBe(true);
+  });
+
+  test("push-to-talk acquires mic on demand", async ({ page }) => {
+    if (process.env.PW_PAGE_DEBUG) {
+      page.on("console", (msg) => console.log(`[browser:${msg.type()}] ${msg.text()}`));
+      page.on("pageerror", (err) => console.log(`[pageerror] ${err && err.stack ? err.stack : String(err)}`));
+    }
+
+    await addStubs(page, { autolisten: "true" });
+
+    await page.goto(pageUrl("test-token"));
+    await page.waitForFunction(() => !!window.__testWs);
+
+    // No mic acquired yet
+    await expect.poll(async () => page.evaluate(() => window.__gumCalls)).toBe(0);
+
+    // Simulate push-to-talk: mousedown on #mic-btn
+    const micBtn = page.locator("#mic-btn");
+    await micBtn.dispatchEvent("mousedown");
+    await page.waitForTimeout(200);
+
+    // getUserMedia should now have been called
+    await expect.poll(async () => page.evaluate(() => window.__gumCalls)).toBe(1);
+
+    // Simulate release: mouseup on #mic-btn
+    await micBtn.dispatchEvent("mouseup");
+
+    // After release + delay, mic tracks should be stopped
+    // stopRecording calls stopMicStream after a 500ms delay
+    await page.waitForTimeout(700);
+    await expect.poll(async () => page.evaluate(() => window.__stopCount >= 1)).toBe(true);
+  });
+
+  test("autolisten OFF disables push-to-talk", async ({ page }) => {
+    if (process.env.PW_PAGE_DEBUG) {
+      page.on("console", (msg) => console.log(`[browser:${msg.type()}] ${msg.text()}`));
+      page.on("pageerror", (err) => console.log(`[pageerror] ${err && err.stack ? err.stack : String(err)}`));
+    }
+
+    await addStubs(page, { autolisten: "false" });
+
+    await page.goto(pageUrl("test-token"));
+    await page.waitForFunction(() => !!window.__testWs);
+
+    // No mic acquired
+    await expect.poll(async () => page.evaluate(() => window.__gumCalls)).toBe(0);
+
+    // Simulate push-to-talk: mousedown on #mic-btn
+    const micBtn = page.locator("#mic-btn");
+    await micBtn.dispatchEvent("mousedown");
+    await page.waitForTimeout(200);
+
+    // getUserMedia should NOT have been called because autolisten is OFF
     await expect.poll(async () => page.evaluate(() => window.__gumCalls)).toBe(0);
   });
 
-  test("turning Auto Listen OFF stops tracks and prevents background re-acquire", async ({ page }) => {
+  test("autolisten OFF does NOT stop silent keep-alive", async ({ page }) => {
     if (process.env.PW_PAGE_DEBUG) {
       page.on("console", (msg) => console.log(`[browser:${msg.type()}] ${msg.text()}`));
       page.on("pageerror", (err) => console.log(`[pageerror] ${err && err.stack ? err.stack : String(err)}`));
     }
 
-    await page.addInitScript(() => {
-      localStorage.setItem("autolisten", "true");
-
-      window.__gumCalls = 0;
-      window.__stopCount = 0;
-      window.__audioCancelCount = 0;
-      navigator.mediaDevices = navigator.mediaDevices || {};
-      navigator.mediaDevices.getUserMedia = async () => {
-        window.__gumCalls += 1;
-        const track = {
-          readyState: "live",
-          stop() {
-            window.__stopCount += 1;
-            this.readyState = "ended";
-          },
-        };
-        return { getTracks: () => [track] };
-      };
-
-      class FakeWebSocket {
-        static OPEN = 1;
-        constructor(url) {
-          this.url = url;
-          this.readyState = FakeWebSocket.OPEN;
-          this.bufferedAmount = 0;
-          this.binaryType = "arraybuffer";
-          window.__testWs = this;
-          setTimeout(() => this.onopen && this.onopen(), 0);
-        }
-        send(data) {
-          if (typeof data !== "string") return;
-          try {
-            const msg = JSON.parse(data);
-            if (msg && msg.type === "audio_cancel") window.__audioCancelCount += 1;
-          } catch {}
-        }
-        close() {
-          this.readyState = 3;
-          if (this.onclose) this.onclose();
-        }
-      }
-      window.WebSocket = FakeWebSocket;
-    });
+    await addStubs(page, { autolisten: "true" });
 
     await page.goto(pageUrl("test-token"));
     await page.waitForFunction(() => !!window.__testWs);
 
-    // In Playwright, the app intentionally skips mic pre-acquire on user gestures
-    // when `navigator.webdriver` is true. Force acquisition directly.
-    await page.evaluate(async () => {
-      // eslint-disable-next-line no-undef
-      await ensureMicStream();
-    });
-    await expect.poll(async () => page.evaluate(() => window.__gumCalls)).toBe(1);
-    await expect.poll(async () => page.evaluate(() => document.documentElement.dataset.micActive)).toBe("true");
-
-    // Toggle OFF: must stop tracks and release mic.
-    await page.evaluate(async () => {
-      // eslint-disable-next-line no-undef
-      await setAutoListenEnabled(false);
-    });
-    await expect.poll(async () => page.evaluate(() => window.__stopCount)).toBe(1);
-    await expect.poll(async () => page.evaluate(() => window.__audioCancelCount)).toBe(1);
-    await expect.poll(async () => page.evaluate(() => document.documentElement.dataset.micActive)).toBe("false");
-
-    // Subsequent gestures should not re-acquire.
+    // Trigger user gesture to start the silent keep-alive
     await page.click("body");
-    await page.waitForTimeout(50);
-    await expect.poll(async () => page.evaluate(() => window.__gumCalls)).toBe(1);
+    await page.waitForTimeout(100);
 
-    // Toggle back ON: should re-acquire.
-    await page.evaluate(async () => {
+    // Verify keep-alive started (oscillator created)
+    await expect.poll(async () => page.evaluate(() => window.__oscillatorsCreated >= 1)).toBe(true);
+
+    // AudioContext should be running (not closed)
+    await expect.poll(async () =>
+      page.evaluate(() => {
+        const state = window.__audioContextState;
+        return state === "running" || state === "suspended";
+      })
+    ).toBe(true);
+
+    // Toggle autolisten OFF
+    await page.evaluate(() => {
       // eslint-disable-next-line no-undef
-      await setAutoListenEnabled(true, { acquire: true });
+      setAutoListenEnabled(false);
     });
-    await expect.poll(async () => page.evaluate(() => window.__gumCalls)).toBe(2);
+    await page.waitForTimeout(100);
+
+    // AudioContext should still be active (not closed) — keep-alive is independent of autolisten
+    const state = await page.evaluate(() => window.__audioContextState);
+    expect(state).not.toBe("closed");
   });
 });

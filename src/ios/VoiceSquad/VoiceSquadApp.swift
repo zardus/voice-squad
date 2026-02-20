@@ -6,6 +6,7 @@ struct VoiceSquadApp: App {
     @StateObject private var webSocket = WebSocketClient()
     @StateObject private var liveActivity = LiveActivityManager()
     @StateObject private var notifications = NotificationManager()
+    @State private var silentAudio = SilentAudioPlayer()
 
     @Environment(\.scenePhase) private var scenePhase
 
@@ -27,6 +28,7 @@ struct VoiceSquadApp: App {
             .onAppear {
                 notifications.requestPermission()
                 liveActivity.startActivity()
+                silentAudio.start()
             }
             .onReceive(webSocket.$lastSpeakText) { text in
                 guard let text else { return }

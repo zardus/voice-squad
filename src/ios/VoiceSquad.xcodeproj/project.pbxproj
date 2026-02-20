@@ -23,6 +23,12 @@
 		11B0B0042B7B000200000001 /* VoiceSquadLiveActivityBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11B0B0242B7B000200000001 /* VoiceSquadLiveActivityBundle.swift */; };
 		11B0B0052B7B000200000001 /* VoiceSquadLiveActivityWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11B0B0252B7B000200000001 /* VoiceSquadLiveActivityWidget.swift */; };
 		11B0B0062B7B000200000001 /* VoiceSquadActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11B0B0212B7B000200000001 /* VoiceSquadActivity.swift */; };
+		/* New files for auto-read toggle + silent audio */
+		11C0C0012B7B000300000001 /* SharedConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11C0C0212B7B000300000001 /* SharedConfig.swift */; };
+		11C0C0022B7B000300000001 /* SharedConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11C0C0212B7B000300000001 /* SharedConfig.swift */; };
+		11C0C0032B7B000300000001 /* ToggleAutoReadIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11C0C0222B7B000300000001 /* ToggleAutoReadIntent.swift */; };
+		11C0C0042B7B000300000001 /* ToggleAutoReadIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11C0C0222B7B000300000001 /* ToggleAutoReadIntent.swift */; };
+		11C0C0052B7B000300000001 /* SilentAudioPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11C0C0232B7B000300000001 /* SilentAudioPlayer.swift */; };
 		/* Embed extension */
 		11B0B0072B7B000200000001 /* VoiceSquadLiveActivity.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 11B0B0302B7B000200000001 /* VoiceSquadLiveActivity.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
@@ -80,6 +86,11 @@
 		11B0B0252B7B000200000001 /* VoiceSquadLiveActivityWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceSquadLiveActivityWidget.swift; sourceTree = "<group>"; };
 		11B0B0302B7B000200000001 /* VoiceSquadLiveActivity.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = VoiceSquadLiveActivity.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		11B0B0262B7B000200000001 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		/* New files for auto-read toggle + silent audio */
+		11C0C0212B7B000300000001 /* SharedConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedConfig.swift; sourceTree = "<group>"; };
+		11C0C0222B7B000300000001 /* ToggleAutoReadIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToggleAutoReadIntent.swift; sourceTree = "<group>"; };
+		11C0C0232B7B000300000001 /* SilentAudioPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SilentAudioPlayer.swift; sourceTree = "<group>"; };
+		11C0C0242B7B000300000001 /* VoiceSquadLiveActivityEntitlements.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = VoiceSquadLiveActivityEntitlements.entitlements; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -127,6 +138,8 @@
 				11B0B0212B7B000200000001 /* VoiceSquadActivity.swift */,
 				11B0B0222B7B000200000001 /* LiveActivityManager.swift */,
 				11B0B0232B7B000200000001 /* NotificationManager.swift */,
+				11C0C0212B7B000300000001 /* SharedConfig.swift */,
+				11C0C0222B7B000300000001 /* ToggleAutoReadIntent.swift */,
 				11A0A01C2B7B000100000001 /* Audio */,
 				11A0A01D2B7B000100000001 /* WebView */,
 				11A0A01E2B7B000100000001 /* Views */,
@@ -158,6 +171,7 @@
 			isa = PBXGroup;
 			children = (
 				11A0A0272B7B000100000001 /* WebSocketClient.swift */,
+				11C0C0232B7B000300000001 /* SilentAudioPlayer.swift */,
 			);
 			path = Audio;
 			sourceTree = "<group>";
@@ -184,6 +198,7 @@
 				11B0B0242B7B000200000001 /* VoiceSquadLiveActivityBundle.swift */,
 				11B0B0252B7B000200000001 /* VoiceSquadLiveActivityWidget.swift */,
 				11B0B0262B7B000200000001 /* Info.plist */,
+				11C0C0242B7B000300000001 /* VoiceSquadLiveActivityEntitlements.entitlements */,
 			);
 			path = VoiceSquadLiveActivity;
 			sourceTree = "<group>";
@@ -334,6 +349,9 @@
 				11B0B0012B7B000200000001 /* VoiceSquadActivity.swift in Sources */,
 				11B0B0022B7B000200000001 /* LiveActivityManager.swift in Sources */,
 				11B0B0032B7B000200000001 /* NotificationManager.swift in Sources */,
+				11C0C0012B7B000300000001 /* SharedConfig.swift in Sources */,
+				11C0C0032B7B000300000001 /* ToggleAutoReadIntent.swift in Sources */,
+				11C0C0052B7B000300000001 /* SilentAudioPlayer.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -344,6 +362,8 @@
 				11B0B0042B7B000200000001 /* VoiceSquadLiveActivityBundle.swift in Sources */,
 				11B0B0052B7B000200000001 /* VoiceSquadLiveActivityWidget.swift in Sources */,
 				11B0B0062B7B000200000001 /* VoiceSquadActivity.swift in Sources */,
+				11C0C0022B7B000300000001 /* SharedConfig.swift in Sources */,
+				11C0C0042B7B000300000001 /* ToggleAutoReadIntent.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -548,6 +568,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_ENTITLEMENTS = VoiceSquadLiveActivity/VoiceSquadLiveActivityEntitlements.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = ZA3PCRS444;
@@ -571,6 +592,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_ENTITLEMENTS = VoiceSquadLiveActivity/VoiceSquadLiveActivityEntitlements.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = ZA3PCRS444;

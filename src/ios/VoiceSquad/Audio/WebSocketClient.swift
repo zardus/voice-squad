@@ -58,6 +58,9 @@ final class WebSocketClient: ObservableObject {
         switch type {
         case "connected":
             isConnected = true
+            if let text = json["lastSpeakText"] as? String {
+                lastSpeakText = text
+            }
         case "speak_text":
             lastSpeakText = json["text"] as? String
         default:

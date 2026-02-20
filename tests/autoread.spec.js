@@ -86,4 +86,39 @@ test.describe("Auto-read", () => {
       .poll(async () => page.evaluate(() => window.__playCount))
       .toBe(before + 1);
   });
+
+  test("setAutoReadEnabled callable from external JS injection", async ({ page }) => {
+    await page.addInitScript(() => {
+      class FakeWebSocket {
+        static OPEN = 1;
+        constructor(url) {
+          this.url = url;
+          this.readyState = FakeWebSocket.OPEN;
+          this.bufferedAmount = 0;
+          this.binaryType = "arraybuffer";
+          window.__testWs = this;
+          setTimeout(() => this.onopen && this.onopen(), 0);
+        }
+        send() {}
+        close() {
+          this.readyState = 3;
+          if (this.onclose) this.onclose();
+        }
+      }
+      window.WebSocket = FakeWebSocket;
+    });
+
+    await page.goto(pageUrl("test-token"));
+    await page.waitForFunction(() => !!window.__testWs);
+
+    const cb = page.locator("#autoread-cb");
+
+    // Programmatically set to false
+    await page.evaluate(() => setAutoReadEnabled(false));
+    await expect(cb).not.toBeChecked();
+
+    // Programmatically set to true
+    await page.evaluate(() => setAutoReadEnabled(true));
+    await expect(cb).toBeChecked();
+  });
 });
