@@ -1,0 +1,7 @@
+#!/bin/bash
+# list-workers — List all active worker windows on the workspace tmux server
+# Usage: list-workers
+
+SOCKET="${WORKSPACE_TMUX_SOCKET:?WORKSPACE_TMUX_SOCKET not set}"
+
+tmux -S "$SOCKET" list-panes -a -F '#{window_name}' 2>/dev/null || echo "(no workers)"

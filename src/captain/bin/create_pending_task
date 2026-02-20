@@ -1,0 +1,13 @@
+#!/bin/bash
+# create_pending_task — Create a task definition file from stdin
+# Usage: create_pending_task TASK_NAME
+# Reads the task prompt from stdin and writes to ~/captain/tasks/pending/TASK_NAME.task
+
+set -euo pipefail
+
+TASK_NAME="${1:?Usage: create_pending_task TASK_NAME}"
+
+mkdir -p ~/captain/tasks/pending
+cat > ~/captain/tasks/pending/"${TASK_NAME}.task"
+
+echo "Task file created: ~/captain/tasks/pending/${TASK_NAME}.task"

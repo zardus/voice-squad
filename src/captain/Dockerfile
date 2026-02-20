@@ -88,7 +88,16 @@ COPY restart-captain.sh /opt/squad/restart-captain.sh
 RUN chmod +x /opt/squad/entrypoint-captain.sh /opt/squad/restart-captain.sh
 
 COPY captain-CLAUDE.md /opt/squad/captain/CLAUDE.md
-COPY skills/ /opt/squad/captain/.claude/skills/
+COPY bin/ /usr/local/bin/
+RUN chmod +x /usr/local/bin/create_pending_task \
+    /usr/local/bin/list-workers \
+    /usr/local/bin/launch-worker \
+    /usr/local/bin/capture-worker-output \
+    /usr/local/bin/send-keys-to-worker \
+    /usr/local/bin/archive-worker \
+    /usr/local/bin/setup-project \
+    /usr/local/bin/sleep
+COPY settings.json /opt/squad/captain/.claude/settings.json
 RUN git init /opt/squad/captain \
     && chown -R ubuntu:ubuntu /opt/squad/captain
 

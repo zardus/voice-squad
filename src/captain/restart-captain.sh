@@ -1,41 +1,25 @@
 #!/bin/bash
-# restart-captain.sh — Unified script to kill and restart the captain agent
+# restart-captain.sh — Start the captain agent in the captain tmux session.
 #
-# Called by: entrypoint-captain.sh, web UI /api/restart-captain
+# Called by: entrypoint-captain.sh on boot.
+# Restarts happen via docker-compose (container restart), not this script.
 #
 # Usage:
-#   restart-captain.sh <claude|codex> [--fresh]
-#
-# Options:
-#   --fresh   Skip --continue/resume and start with the startup recovery prompt instead.
-#             Used by entrypoint-captain.sh on first boot.
+#   restart-captain.sh <claude|codex>
 #
 # Environment:
-#   CAPTAIN_TMUX_SOCKET  Path to the captain's tmux socket (e.g. /run/squad-sockets/captain-tmux/default).
-#                        When set, all tmux commands targeting captain use -S <socket>.
+#   CAPTAIN_TMUX_SOCKET  Path to the captain's tmux socket.
 
 set -euo pipefail
 
-# ---------------------------------------------------------------------------
-# Parse arguments
-# ---------------------------------------------------------------------------
 CAPTAIN="${1:-}"
-FRESH=false
-
-for arg in "$@"; do
-    case "$arg" in
-        --fresh) FRESH=true ;;
-        claude|codex) ;; # already captured as $1
-        *) echo "ERROR: Unknown argument: $arg"; exit 1 ;;
-    esac
-done
 
 if [ "$CAPTAIN" != "claude" ] && [ "$CAPTAIN" != "codex" ]; then
     echo "ERROR: First argument must be 'claude' or 'codex' (got '${CAPTAIN}')"
     exit 1
 fi
 
-echo "[restart-captain] Captain type: $CAPTAIN (fresh=$FRESH)"
+echo "[restart-captain] Captain type: $CAPTAIN"
 
 # ---------------------------------------------------------------------------
 # Build tmux command prefix for captain socket
@@ -60,161 +44,102 @@ fi
 # Check if captain tmux session exists
 # ---------------------------------------------------------------------------
 if ! tmux "${TMUX_OPTS[@]}" has-session -t captain 2>/dev/null; then
-    echo "ERROR: tmux session 'captain' not found. Cannot restart captain."
+    echo "ERROR: tmux session 'captain' not found."
     exit 1
-fi
-
-# ---------------------------------------------------------------------------
-# Kill existing captain (if any) in captain:0
-# ---------------------------------------------------------------------------
-CODEX_SESSION_ID=""
-
-# Get the shell PID running in captain:0
-SHELL_PID=$(tmux "${TMUX_OPTS[@]}" list-panes -t captain:0 -F '#{pane_pid}' 2>/dev/null || echo "")
-
-if [ -z "$SHELL_PID" ]; then
-    echo "[restart-captain] WARNING: Could not get pane PID for captain:0"
-else
-    # Check if there's a captain process running under the shell
-    CAPTAIN_PID=$(ps -o pid= --ppid "$SHELL_PID" 2>/dev/null | head -1 | tr -d ' ' || true)
-
-    if [ -n "$CAPTAIN_PID" ]; then
-        CAPTAIN_CMD=$(ps -o comm= -p "$CAPTAIN_PID" 2>/dev/null || echo "unknown")
-        echo "[restart-captain] Found captain process: PID $CAPTAIN_PID ($CAPTAIN_CMD)"
-
-        # For codex: capture pane BEFORE killing to find resume session ID
-        if [ "$CAPTAIN" = "codex" ] && [ "$FRESH" = false ]; then
-            echo "[restart-captain] Capturing codex pane for session ID..."
-            PANE_OUTPUT=$(tmux "${TMUX_OPTS[@]}" capture-pane -t captain:0 -p -S -200 2>/dev/null || true)
-            CODEX_SESSION_ID=$(echo "$PANE_OUTPUT" | grep -oP 'codex resume \K[a-f0-9-]+' | tail -1 || true)
-            if [ -n "$CODEX_SESSION_ID" ]; then
-                echo "[restart-captain] Found codex session ID (pre-kill): $CODEX_SESSION_ID"
-            fi
-        fi
-
-        # Kill with Ctrl+C (twice, with waits)
-        echo "[restart-captain] Sending Ctrl+C to captain:0..."
-        tmux "${TMUX_OPTS[@]}" send-keys -t captain:0 C-c
-        sleep 1
-
-        tmux "${TMUX_OPTS[@]}" send-keys -t captain:0 C-c
-        sleep 2
-
-        # Check if process exited
-        if kill -0 "$CAPTAIN_PID" 2>/dev/null; then
-            echo "[restart-captain] Still running after Ctrl+C, sending third Ctrl+C..."
-            tmux "${TMUX_OPTS[@]}" send-keys -t captain:0 C-c
-            sleep 2
-        fi
-
-        # If still alive, escalate to SIGTERM then SIGKILL
-        if kill -0 "$CAPTAIN_PID" 2>/dev/null; then
-            echo "[restart-captain] Still alive — sending SIGTERM..."
-            kill -- -"$CAPTAIN_PID" 2>/dev/null || kill "$CAPTAIN_PID" 2>/dev/null || true
-            for _ in $(seq 1 10); do
-                kill -0 "$CAPTAIN_PID" 2>/dev/null || break
-                sleep 0.5
-            done
-        fi
-
-        if kill -0 "$CAPTAIN_PID" 2>/dev/null; then
-            echo "[restart-captain] Still alive — sending SIGKILL..."
-            kill -9 -- -"$CAPTAIN_PID" 2>/dev/null || kill -9 "$CAPTAIN_PID" 2>/dev/null || true
-            sleep 1
-        fi
-
-        # For codex: check pane output AFTER kill for session ID (codex prints it on exit)
-        if [ "$CAPTAIN" = "codex" ] && [ "$FRESH" = false ] && [ -z "$CODEX_SESSION_ID" ]; then
-            echo "[restart-captain] Checking post-kill pane for codex session ID..."
-            PANE_OUTPUT=$(tmux "${TMUX_OPTS[@]}" capture-pane -t captain:0 -p -S -200 2>/dev/null || true)
-            CODEX_SESSION_ID=$(echo "$PANE_OUTPUT" | grep -oP 'codex resume \K[a-f0-9-]+' | tail -1 || true)
-            if [ -n "$CODEX_SESSION_ID" ]; then
-                echo "[restart-captain] Found codex session ID (post-kill): $CODEX_SESSION_ID"
-            fi
-        fi
-
-        if kill -0 "$CAPTAIN_PID" 2>/dev/null; then
-            echo "ERROR: Captain process $CAPTAIN_PID refuses to die!"
-            exit 1
-        fi
-        echo "[restart-captain] Captain process killed."
-    else
-        echo "[restart-captain] No captain process found under shell PID $SHELL_PID — proceeding."
-    fi
-fi
-
-# Wait for the shell to settle
-sleep 1
-
-# Clear any leftover text in the tmux pane input line
-tmux "${TMUX_OPTS[@]}" send-keys -t captain:0 C-c 2>/dev/null || true
-sleep 0.3
-
-# Verify we have a shell prompt (check pane for $ prompt)
-PANE_CHECK=$(tmux "${TMUX_OPTS[@]}" capture-pane -t captain:0 -p -S -5 2>/dev/null || true)
-if echo "$PANE_CHECK" | grep -qE '^\$|ubuntu@|bash.*\$'; then
-    echo "[restart-captain] Shell prompt confirmed."
-else
-    echo "[restart-captain] WARNING: Shell prompt not detected, proceeding anyway."
-    echo "[restart-captain] Last lines: $(echo "$PANE_CHECK" | tail -3)"
 fi
 
 # ---------------------------------------------------------------------------
 # Build the startup command
 # ---------------------------------------------------------------------------
-STARTUP_PROMPT="Run startup recovery: use tmux list-sessions and tmux list-windows to check for surviving workers from a previous session. For each one, capture its output with tmux capture-pane and report status. Then say you are ready for instructions."
+STARTUP_PROMPT="Run startup recovery: use list-workers and capture-worker-output to check for surviving workers from a previous session. For each one, report its status. Then say you are ready for instructions."
 
 if [ "$CAPTAIN" = "claude" ]; then
-    if [ "$FRESH" = true ]; then
-        # Fresh start: use startup prompt, no --continue
-        CMD="claude --dangerously-skip-permissions \"$STARTUP_PROMPT\""
-    else
-        # Resume: use --continue to resume last session
-        CMD="claude --dangerously-skip-permissions --continue"
-    fi
+    CMD="claude \"$STARTUP_PROMPT\""
 else
-    # Codex
-    if [ "$FRESH" = true ] || [ -z "$CODEX_SESSION_ID" ]; then
-        # Fresh start or no session ID found
-        CMD="codex --dangerously-bypass-approvals-and-sandbox \"$STARTUP_PROMPT\""
-        if [ "$FRESH" = false ]; then
-            echo "[restart-captain] No codex session ID found — starting fresh with prompt."
-        fi
-    else
-        # Resume with session ID
-        CMD="codex --dangerously-bypass-approvals-and-sandbox resume $CODEX_SESSION_ID"
-    fi
+    CMD="codex --dangerously-bypass-approvals-and-sandbox \"$STARTUP_PROMPT\""
 fi
 
 # ---------------------------------------------------------------------------
-# Launch new captain
+# Launch captain
 # ---------------------------------------------------------------------------
 echo "[restart-captain] Launching: $CMD"
 
 # Ensure we're in the captain working directory and have env vars.
-# Unset TMUX so the captain CLI doesn't think it's already inside tmux
-# (it has its own tmux server; its TMUX_TMPDIR points to the workspace).
+# Unset TMUX so the captain CLI doesn't think it's already inside tmux.
 tmux "${TMUX_OPTS[@]}" send-keys -t captain:0 "cd /opt/squad/captain && unset TMUX && { [ -f /home/ubuntu/env ] && set -a && . /home/ubuntu/env && set +a || true; } && $CMD" Enter
 
 # ---------------------------------------------------------------------------
-# Verify the new captain started
+# Auto-accept trust/setup dialogs (Claude only)
 # ---------------------------------------------------------------------------
-echo "[restart-captain] Waiting 5s for captain to start..."
-sleep 5
+if [ "$CAPTAIN" = "claude" ]; then
+    echo "[restart-captain] Waiting for Claude to start (handling dialogs)..."
+    for i in $(seq 1 30); do
+        sleep 2
 
-# Re-check the shell PID (should be same) and look for a child process
-SHELL_PID=$(tmux "${TMUX_OPTS[@]}" list-panes -t captain:0 -F '#{pane_pid}' 2>/dev/null || echo "")
-if [ -n "$SHELL_PID" ]; then
-    NEW_CAPTAIN_PID=$(ps -o pid= --ppid "$SHELL_PID" 2>/dev/null | head -1 | tr -d ' ')
-    if [ -n "$NEW_CAPTAIN_PID" ]; then
-        NEW_CAPTAIN_CMD=$(ps -o comm= -p "$NEW_CAPTAIN_PID" 2>/dev/null || echo "unknown")
-        echo "[restart-captain] New captain running: PID $NEW_CAPTAIN_PID ($NEW_CAPTAIN_CMD)"
-    else
-        echo "[restart-captain] WARNING: No captain process detected yet — it may still be starting."
-        # Check pane for signs of life
-        PANE_CONTENT=$(tmux "${TMUX_OPTS[@]}" capture-pane -t captain:0 -p -S -10 2>/dev/null || true)
-        echo "[restart-captain] Pane tail:"
-        echo "$PANE_CONTENT" | tail -5
+        PANE_TEXT=$(tmux "${TMUX_OPTS[@]}" capture-pane -t captain:0 -p -S -30 2>/dev/null | sed 's/\x1b\[[0-9;]*[a-zA-Z]//g' || true)
+
+        # Setup dialogs (text style, getting started)
+        if echo "$PANE_TEXT" | grep -q "Choose the text style\|Let's get started"; then
+            echo "[restart-captain] Handling setup dialog..."
+            tmux "${TMUX_OPTS[@]}" send-keys -t captain:0 Enter
+            continue
+        fi
+
+        # Trust dialog: "Yes, I accept" + "Enter to confirm"
+        if echo "$PANE_TEXT" | grep -q "Yes, I accept"; then
+            # Check if claude exited at trust prompt (no child process)
+            SHELL_PID=$(tmux "${TMUX_OPTS[@]}" list-panes -t captain:0 -F '#{pane_pid}' 2>/dev/null || echo "")
+            CHILD_PID=""
+            [ -n "$SHELL_PID" ] && CHILD_PID=$(ps -o pid= --ppid "$SHELL_PID" 2>/dev/null | head -1 | tr -d ' ' || true)
+
+            if [ -z "$CHILD_PID" ]; then
+                echo "[restart-captain] Claude exited at trust prompt, accepting and restarting..."
+                tmux "${TMUX_OPTS[@]}" send-keys -t captain:0 Enter
+                sleep 1
+                tmux "${TMUX_OPTS[@]}" send-keys -t captain:0 "unset TMUX && $CMD" Enter
+                continue
+            fi
+
+            if echo "$PANE_TEXT" | grep -q "Enter to confirm"; then
+                echo "[restart-captain] Accepting trust dialog..."
+                tmux "${TMUX_OPTS[@]}" send-keys -t captain:0 2
+                sleep 0.5
+                tmux "${TMUX_OPTS[@]}" send-keys -t captain:0 Enter
+                sleep 2
+                continue
+            fi
+        fi
+
+        # Other "Enter to confirm" dialogs
+        if echo "$PANE_TEXT" | grep -q "Enter to confirm"; then
+            echo "[restart-captain] Accepting dialog..."
+            tmux "${TMUX_OPTS[@]}" send-keys -t captain:0 Enter
+            continue
+        fi
+
+        # Check if captain process is running and past dialogs
+        SHELL_PID=$(tmux "${TMUX_OPTS[@]}" list-panes -t captain:0 -F '#{pane_pid}' 2>/dev/null || echo "")
+        if [ -n "$SHELL_PID" ]; then
+            CHILD_PID=$(ps -o pid= --ppid "$SHELL_PID" 2>/dev/null | head -1 | tr -d ' ' || true)
+            if [ -n "$CHILD_PID" ] && ! echo "$PANE_TEXT" | grep -q "Enter to confirm"; then
+                CHILD_CMD=$(ps -o comm= -p "$CHILD_PID" 2>/dev/null || echo "unknown")
+                echo "[restart-captain] Captain running: PID $CHILD_PID ($CHILD_CMD)"
+                break
+            fi
+        fi
+    done
+else
+    # Codex: simple wait and verify
+    echo "[restart-captain] Waiting 5s for captain to start..."
+    sleep 5
+    SHELL_PID=$(tmux "${TMUX_OPTS[@]}" list-panes -t captain:0 -F '#{pane_pid}' 2>/dev/null || echo "")
+    if [ -n "$SHELL_PID" ]; then
+        NEW_PID=$(ps -o pid= --ppid "$SHELL_PID" 2>/dev/null | head -1 | tr -d ' ')
+        if [ -n "$NEW_PID" ]; then
+            echo "[restart-captain] Captain running: PID $NEW_PID"
+        else
+            echo "[restart-captain] WARNING: No captain process detected yet — it may still be starting."
+        fi
     fi
 fi
 
