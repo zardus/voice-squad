@@ -28,7 +28,7 @@ enum LiveActivityUpdateEventDecoder {
             let text = sanitizeSpeechText(json["lastSpeakText"])
                 ?? sanitizeSpeechText(json["last_speak_text"])
                 ?? UserDefaults.shared.string(forKey: SharedKeys.lastSpeechText)
-                ?? LiveActivityManager.waitingText
+                ?? "Waiting for update..."
             return LiveActivityUpdateEvent(latestSpeechText: text, isConnected: true, activityID: nil)
         case "speak_text", "speakText":
             guard let text = sanitizeSpeechText(json["text"]) ?? sanitizeSpeechText(json["latestSpeechText"]) else {
@@ -54,15 +54,17 @@ enum LiveActivityUpdateEventDecoder {
 
         let contentState = aps["content-state"] as? [String: Any] ?? aps["content_state"] as? [String: Any]
         let voiceSquad = userInfo["voice_squad"] as? [String: Any]
-        let text = sanitizeSpeechText(contentState?["latestSpeechText"])
-            ?? sanitizeSpeechText(contentState?["latest_speech_text"])
-            ?? sanitizeSpeechText(contentState?["text"])
-            ?? sanitizeSpeechText(voiceSquad?["latestSpeechText"])
-            ?? sanitizeSpeechText(voiceSquad?["latest_speech_text"])
-            ?? sanitizeSpeechText(voiceSquad?["text"])
-            ?? sanitizeSpeechText(userInfo["latestSpeechText"])
-            ?? sanitizeSpeechText(userInfo["latest_speech_text"])
-            ?? sanitizeSpeechText(userInfo["text"])
+        let text = firstSpeechText([
+            contentState?["latestSpeechText"],
+            contentState?["latest_speech_text"],
+            contentState?["text"],
+            voiceSquad?["latestSpeechText"],
+            voiceSquad?["latest_speech_text"],
+            voiceSquad?["text"],
+            userInfo["latestSpeechText"],
+            userInfo["latest_speech_text"],
+            userInfo["text"],
+        ])
             ?? extractAlertBody(aps["alert"])
             ?? UserDefaults.shared.string(forKey: SharedKeys.lastSpeechText)
         guard let text else {
@@ -87,6 +89,15 @@ enum LiveActivityUpdateEventDecoder {
         guard let text = value as? String else { return nil }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private static func firstSpeechText(_ candidates: [Any?]) -> String? {
+        for candidate in candidates {
+            if let text = sanitizeSpeechText(candidate) {
+                return text
+            }
+        }
+        return nil
     }
 
     private static func extractAlertBody(_ alert: Any?) -> String? {

@@ -76,7 +76,7 @@ struct VoiceSquadApp: App {
     }
 }
 
-final class AppDelegate: NSObject, UIApplicationDelegate {
+final class AppDelegate: NSObject, @preconcurrency UIApplicationDelegate {
     private let logger = Logger(subsystem: "com.voicesquad.app", category: "Push")
 
     func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {

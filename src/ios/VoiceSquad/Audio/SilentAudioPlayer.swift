@@ -73,7 +73,7 @@ final class SpeechAudioPlayer: NSObject, AVAudioPlayerDelegate {
         let next = queue.removeFirst()
         do {
             let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playback, options: [.mixWithOthers, .allowBluetooth, .allowAirPlay])
+            try session.setCategory(.playback, options: [.mixWithOthers, .allowBluetoothHFP, .allowAirPlay])
             try session.setActive(true)
 
             let player = try AVAudioPlayer(data: next)
