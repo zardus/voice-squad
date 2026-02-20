@@ -34,7 +34,9 @@ final class LiveActivityManager: ObservableObject {
 
     func updateActivity(text: String, isConnected: Bool) {
         guard let activity else { return }
-        UserDefaults.shared.set(text, forKey: SharedKeys.lastSpeechText)
+        if isConnected {
+            UserDefaults.shared.set(text, forKey: SharedKeys.lastSpeechText)
+        }
         let state = VoiceSquadAttributes.ContentState(
             latestSpeechText: text,
             isConnected: isConnected,
