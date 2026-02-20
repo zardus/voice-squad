@@ -54,7 +54,7 @@ fi
 STARTUP_PROMPT="Run startup recovery: use list-workers and capture-worker-output to check for surviving workers from a previous session. For each one, report its status. Then say you are ready for instructions."
 
 if [ "$CAPTAIN" = "claude" ]; then
-    CMD="claude \"$STARTUP_PROMPT\""
+    CMD="claude --dangerously-skip-permissions \"$STARTUP_PROMPT\""
 else
     CMD="codex --dangerously-bypass-approvals-and-sandbox \"$STARTUP_PROMPT\""
 fi

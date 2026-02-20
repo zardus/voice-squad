@@ -74,6 +74,7 @@ Each runtime component is isolated under `src/` with its own Dockerfile/build co
   - Voice server and pane monitor read from both via `CAPTAIN_TMUX_SOCKET` and `WORKSPACE_TMUX_SOCKET`.
 - **Captain lifecycle**:
   - Captain entrypoint creates the `captain` tmux session and starts tool via `/opt/squad/restart-captain.sh`.
+  - `restart-captain.sh` launches Claude with `--dangerously-skip-permissions` and Codex with `--dangerously-bypass-approvals-and-sandbox`.
   - Voice UI restart endpoint (`/api/restart-captain`) updates `config.yml`, then kills entrypoint `sleep` to let compose restart captain with the new tool.
 - **Voice pipeline**:
   - Browser audio -> WebSocket -> OpenAI Whisper (`stt.js`) -> tmux send-keys to `captain:0`

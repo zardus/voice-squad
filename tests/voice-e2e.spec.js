@@ -181,7 +181,7 @@ async function ensureCaptainRunning() {
   // Start Claude
   console.log("[voice-e2e] Starting Claude captain...");
   captainExec(
-    'send-keys -t captain:0 "cd /opt/squad/captain && unset TMUX && source ~/.bashrc && claude" Enter',
+    'send-keys -t captain:0 "cd /opt/squad/captain && unset TMUX && source ~/.bashrc && claude --dangerously-skip-permissions" Enter',
     { timeout: 10000 }
   );
 
@@ -204,7 +204,7 @@ async function ensureCaptainRunning() {
           captainExec("send-keys -t captain:0 Enter");
           await sleep(1000);
           captainExec(
-            'send-keys -t captain:0 "unset TMUX && claude" Enter',
+            'send-keys -t captain:0 "unset TMUX && claude --dangerously-skip-permissions" Enter',
             { timeout: 10000 }
           );
         }

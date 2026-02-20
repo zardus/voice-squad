@@ -122,7 +122,7 @@ RESTART_MSG="The $TOOL account was just switched to $EMAIL. Restart all $TOOL wo
 # Launch new captain with the restart instruction as its initial prompt
 echo "    Launching new captain ($CAPTAIN) with worker restart instructions..."
 if [ "$CAPTAIN" = "claude" ]; then
-    tmux "${TMUX_OPTS[@]}" send-keys -t captain:0 "unset TMUX && claude '$RESTART_MSG'" Enter
+    tmux "${TMUX_OPTS[@]}" send-keys -t captain:0 "unset TMUX && claude --dangerously-skip-permissions '$RESTART_MSG'" Enter
 else
     tmux "${TMUX_OPTS[@]}" send-keys -t captain:0 "unset TMUX && codex --dangerously-bypass-approvals-and-sandbox '$RESTART_MSG'" Enter
 fi
