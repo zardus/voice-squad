@@ -5,6 +5,8 @@ final class SilentAudioPlayer {
     private var playerNode: AVAudioPlayerNode?
 
     func start() {
+        guard engine == nil, playerNode == nil else { return }
+
         let session = AVAudioSession.sharedInstance()
         do {
             try session.setCategory(.playback, options: .mixWithOthers)
@@ -32,8 +34,8 @@ final class SilentAudioPlayer {
             return
         }
 
-        player.play()
         player.scheduleBuffer(buffer, at: nil, options: .loops)
+        player.play()
 
         self.engine = engine
         self.playerNode = player
@@ -44,5 +46,10 @@ final class SilentAudioPlayer {
         engine?.stop()
         playerNode = nil
         engine = nil
+        do {
+            try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        } catch {
+            // Best-effort cleanup; ignore failures.
+        }
     }
 }

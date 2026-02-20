@@ -6,7 +6,7 @@ enum SharedKeys {
 }
 
 extension UserDefaults {
-    static let shared = UserDefaults(suiteName: SharedKeys.suiteName)!
+    static let shared = UserDefaults(suiteName: SharedKeys.suiteName) ?? .standard
 
     static func autoReadIsEnabled() -> Bool {
         shared.object(forKey: SharedKeys.autoReadEnabled) == nil

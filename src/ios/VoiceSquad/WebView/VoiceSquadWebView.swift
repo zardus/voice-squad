@@ -67,6 +67,10 @@ struct VoiceSquadWebView: UIViewRepresentable {
 
     func updateUIView(_ uiView: WKWebView, context: Context) {
         context.coordinator.webViewID = webViewID
+        if context.coordinator.lastSentAutoReadEnabled != autoReadEnabled {
+            context.coordinator.syncAutoReadToPWA(autoReadEnabled)
+            context.coordinator.lastSentAutoReadEnabled = autoReadEnabled
+        }
         guard let url else { return }
         if uiView.url != url {
             uiView.load(URLRequest(url: url))
@@ -77,6 +81,7 @@ struct VoiceSquadWebView: UIViewRepresentable {
         var webViewID: UUID = UUID()
         weak var webView: WKWebView?
         var autoReadEnabled: Binding<Bool>
+        var lastSentAutoReadEnabled: Bool?
 
         init(autoReadEnabled: Binding<Bool>) {
             self.autoReadEnabled = autoReadEnabled
@@ -107,6 +112,12 @@ struct VoiceSquadWebView: UIViewRepresentable {
             decisionHandler: @escaping (WKPermissionDecision) -> Void
         ) {
             decisionHandler(.grant)
+        }
+
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            let enabled = autoReadEnabled.wrappedValue
+            syncAutoReadToPWA(enabled)
+            lastSentAutoReadEnabled = enabled
         }
     }
 }

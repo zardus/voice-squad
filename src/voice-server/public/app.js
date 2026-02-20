@@ -83,6 +83,7 @@ let statusUpdateTimer = null;
 let reconnectTimer = null;
 let wsConnectionSeq = 0;
 let maxRecordingTimer = null;
+let pendingMicReleaseTimer = null;
 let activePaneSpeech = null; // Web Speech API recognition (uses mic)
 
 let recordingSessionId = 0; // increments per recording; used to abort onstop side effects
@@ -1243,6 +1244,10 @@ if (voiceHistoryBackdrop) {
 
 // Mic recording — acquires stream on demand for push-to-talk
 function startRecording() {
+  if (pendingMicReleaseTimer) {
+    clearTimeout(pendingMicReleaseTimer);
+    pendingMicReleaseTimer = null;
+  }
   unlockAudio();
   if (!autoListenEnabled) {
     wantRecording = false;
@@ -1436,7 +1441,15 @@ function stopRecording() {
   renderMicCaptureState();
 
   // Release mic after a short delay so MediaRecorder onstop handler can read the stream.
-  setTimeout(() => { stopMicStream(); }, 500);
+  if (pendingMicReleaseTimer) {
+    clearTimeout(pendingMicReleaseTimer);
+  }
+  const releaseSessionId = recordingSessionId;
+  pendingMicReleaseTimer = setTimeout(() => {
+    pendingMicReleaseTimer = null;
+    if (releaseSessionId !== recordingSessionId) return;
+    stopMicStream();
+  }, 500);
 
   // Play the most recent speak audio that arrived while recording.
   // Only the latest is played to avoid a cascade of stale messages.

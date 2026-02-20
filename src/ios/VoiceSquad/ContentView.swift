@@ -8,7 +8,6 @@ struct ContentView: View {
     @State private var webViewID = UUID()
     @State private var autoReadEnabled = UserDefaults.autoReadIsEnabled()
     @State private var autoReadPollTimer: Timer?
-    @State private var webViewCoordinator: VoiceSquadWebView.Coordinator?
 
     var body: some View {
         ZStack {
