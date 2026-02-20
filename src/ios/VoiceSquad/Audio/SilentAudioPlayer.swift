@@ -1,4 +1,5 @@
 import AVFoundation
+import OSLog
 
 final class SilentAudioPlayer {
     private var engine: AVAudioEngine?
@@ -51,5 +52,54 @@ final class SilentAudioPlayer {
         } catch {
             // Best-effort cleanup; ignore failures.
         }
+    }
+}
+
+final class SpeechAudioPlayer: NSObject, AVAudioPlayerDelegate {
+    private let logger = Logger(subsystem: "com.voicesquad.app", category: "SpeechAudio")
+    private var queue: [Data] = []
+    private var player: AVAudioPlayer?
+
+    func enqueue(_ audioData: Data) {
+        guard !audioData.isEmpty else { return }
+        queue.append(audioData)
+        if player == nil {
+            playNext()
+        }
+    }
+
+    private func playNext() {
+        while !queue.isEmpty {
+            let next = queue.removeFirst()
+            do {
+                let session = AVAudioSession.sharedInstance()
+                try session.setCategory(.playback, options: [.mixWithOthers, .allowBluetoothHFP, .allowAirPlay])
+                try session.setActive(true)
+
+                let player = try AVAudioPlayer(data: next)
+                player.delegate = self
+                player.prepareToPlay()
+                if player.play() {
+                    self.player = player
+                    return
+                }
+                logger.error("Failed to start speech playback")
+                self.player = nil
+            } catch {
+                logger.error("Failed to play speech audio: \(String(describing: error), privacy: .public)")
+                self.player = nil
+            }
+        }
+    }
+
+    func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        self.player = nil
+        playNext()
+    }
+
+    func audioPlayerDecodeErrorDidOccur(_ player: AVAudioPlayer, error: Error?) {
+        logger.error("Speech decode error: \(String(describing: error), privacy: .public)")
+        self.player = nil
+        playNext()
     }
 }

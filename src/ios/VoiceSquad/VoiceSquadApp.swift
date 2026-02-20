@@ -6,9 +6,10 @@ import OSLog
 struct VoiceSquadApp: App {
     @StateObject private var settings = AppSettings()
     @StateObject private var webSocket = WebSocketClient()
-    @StateObject private var liveActivity = LiveActivityManager()
+    @StateObject private var liveActivity = LiveActivityManager.shared
     @StateObject private var notifications = NotificationManager()
     @State private var silentAudio = SilentAudioPlayer()
+    @State private var speechAudio = SpeechAudioPlayer()
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     @Environment(\.scenePhase) private var scenePhase
@@ -29,7 +30,6 @@ struct VoiceSquadApp: App {
             .environmentObject(settings)
             .environmentObject(webSocket)
             .onAppear {
-                appDelegate.liveActivityManager = liveActivity
                 notifications.requestPermission()
                 liveActivity.startActivityIfNeeded()
                 silentAudio.start()
@@ -40,6 +40,10 @@ struct VoiceSquadApp: App {
             .onReceive(webSocket.$lastIncomingTextMessage) { message in
                 guard let message else { return }
                 liveActivity.handleWebSocketMessage(message)
+            }
+            .onReceive(webSocket.$lastIncomingAudioData) { audioData in
+                guard let audioData else { return }
+                speechAudio.enqueue(audioData)
             }
             .onReceive(webSocket.$lastSpeakText) { text in
                 guard let text else { return }
@@ -72,8 +76,7 @@ struct VoiceSquadApp: App {
     }
 }
 
-final class AppDelegate: NSObject, UIApplicationDelegate {
-    weak var liveActivityManager: LiveActivityManager?
+final class AppDelegate: NSObject, @preconcurrency UIApplicationDelegate {
     private let logger = Logger(subsystem: "com.voicesquad.app", category: "Push")
 
     func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
@@ -89,8 +92,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         _ application: UIApplication,
         didReceiveRemoteNotification userInfo: [AnyHashable: Any]
     ) async -> UIBackgroundFetchResult {
-        guard let liveActivityManager else { return .noData }
-        let handled = await liveActivityManager.handleRemoteNotification(userInfo)
+        let handled = await LiveActivityManager.shared.handleRemoteNotification(userInfo)
         return handled ? .newData : .noData
     }
 }
