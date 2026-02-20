@@ -6,7 +6,15 @@ enum SharedKeys {
 }
 
 extension UserDefaults {
-    static let shared = UserDefaults(suiteName: SharedKeys.suiteName) ?? .standard
+    static let shared: UserDefaults = {
+        if let defaults = UserDefaults(suiteName: SharedKeys.suiteName) {
+            return defaults
+        }
+        #if DEBUG
+        assertionFailure("UserDefaults suite '\(SharedKeys.suiteName)' not found. Check App Group configuration.")
+        #endif
+        return .standard
+    }()
 
     static func autoReadIsEnabled() -> Bool {
         shared.object(forKey: SharedKeys.autoReadEnabled) == nil

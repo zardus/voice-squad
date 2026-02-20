@@ -46,11 +46,15 @@ struct VoiceSquadApp: App {
                 }
             }
             .onChange(of: scenePhase) { _, newPhase in
-                if newPhase == .active {
+                switch newPhase {
+                case .active:
                     liveActivity.startActivity()
                     silentAudio.start()
-                } else {
-                    silentAudio.stop()
+                case .inactive, .background:
+                    // Keep silent audio running to maintain background activity.
+                    break
+                @unknown default:
+                    break
                 }
             }
         }

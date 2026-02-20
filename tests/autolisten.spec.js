@@ -18,17 +18,23 @@ function addStubs(page, { autolisten = "true" } = {}) {
     // --- getUserMedia stub ---
     window.__gumCalls = 0;
     window.__stopCount = 0;
+    window.__trackSeq = 0;
+    window.__tracks = [];
     navigator.mediaDevices = navigator.mediaDevices || {};
     navigator.mediaDevices.getUserMedia = async () => {
       window.__gumCalls += 1;
+      const trackId = ++window.__trackSeq;
       const track = {
+        id: trackId,
         readyState: "live",
         stop() {
           window.__stopCount += 1;
           this.readyState = "ended";
+          if (typeof this.onended === "function") this.onended();
         },
         onended: null,
       };
+      window.__tracks.push(track);
       return { getTracks: () => [track], getAudioTracks: () => [track] };
     };
 
@@ -207,6 +213,57 @@ test.describe("Auto Listen", () => {
 
     // After release + delay, mic tracks should be stopped
     // stopRecording calls stopMicStream after a 500ms delay
+    await page.waitForTimeout(700);
+    await expect.poll(async () => page.evaluate(() => window.__stopCount >= 1)).toBe(true);
+  });
+
+  test("re-press within release window does not stop newly acquired mic stream", async ({ page }) => {
+    if (process.env.PW_PAGE_DEBUG) {
+      page.on("console", (msg) => console.log(`[browser:${msg.type()}] ${msg.text()}`));
+      page.on("pageerror", (err) => console.log(`[pageerror] ${err && err.stack ? err.stack : String(err)}`));
+    }
+
+    await addStubs(page, { autolisten: "true" });
+
+    await page.goto(pageUrl("test-token"));
+    await page.waitForFunction(() => !!window.__testWs);
+
+    const micBtn = page.locator("#mic-btn");
+
+    // First hold: acquire mic stream #1.
+    await micBtn.dispatchEvent("mousedown");
+    await page.waitForTimeout(200);
+    await expect.poll(async () => page.evaluate(() => window.__gumCalls)).toBe(1);
+
+    // Release schedules a 500ms delayed mic release.
+    await micBtn.dispatchEvent("mouseup");
+
+    // Simulate stream #1 ending before the next hold so startRecording reacquires.
+    await page.evaluate(() => {
+      const firstTrack = window.__tracks[0];
+      if (!firstTrack) return;
+      firstTrack.readyState = "ended";
+      if (typeof firstTrack.onended === "function") firstTrack.onended();
+    });
+
+    // Re-press within the 500ms release window; this should acquire stream #2.
+    await page.waitForTimeout(100);
+    await micBtn.dispatchEvent("mousedown");
+    await page.waitForTimeout(200);
+    await expect.poll(async () => page.evaluate(() => window.__gumCalls)).toBe(2);
+
+    // Wait until after the first release timer would have fired.
+    await page.waitForTimeout(300);
+    await expect.poll(async () =>
+      page.evaluate(() => {
+        const latestTrack = window.__tracks[window.__tracks.length - 1];
+        return !!latestTrack && latestTrack.readyState === "live";
+      })
+    ).toBe(true);
+    await expect.poll(async () => page.evaluate(() => window.__stopCount)).toBe(0);
+
+    // Final release should stop the current stream after the delayed release window.
+    await micBtn.dispatchEvent("mouseup");
     await page.waitForTimeout(700);
     await expect.poll(async () => page.evaluate(() => window.__stopCount >= 1)).toBe(true);
   });
