@@ -2,7 +2,7 @@
   "permissions": {
     "allow": [
       "Bash(create_pending_task *)",
-      "Bash(list-workers*)",
+      "Bash(list-workers *)",
       "Bash(launch-worker *)",
       "Bash(capture-worker-output *)",
       "Bash(send-keys-to-worker *)",
@@ -10,8 +10,8 @@
       "Bash(setup-project *)",
       "Bash(speak *)",
       "Bash(sleep *)",
-      "Bash(git show*)",
-      "Bash(git log*)",
+      "Bash(git show *)",
+      "Bash(git log *)",
       "Bash(cat *)",
       "Bash(tail *)"
     ],
