@@ -115,7 +115,7 @@ EOF
 
 ### `launch-worker <claude|codex> [-e ENV=VAL ...] PROJECT_DIR TASK_NAME`
 
-Launch a worker in a new tmux window. Validates the task file exists, sources environment, and starts the agent with the task prompt.
+Launch a worker in its own tmux session (worker is in window 0). Validates the task file exists, sources environment, and starts the agent with the task prompt.
 
 ```bash
 launch-worker claude /home/ubuntu/myproject fix-auth
@@ -124,7 +124,7 @@ launch-worker codex -e GH_TOKEN=xxx /home/ubuntu/myproject add-tests
 
 ### `list-workers`
 
-List all active worker windows.
+List active worker sessions (only panes running worker agent processes).
 
 ```bash
 list-workers
@@ -150,7 +150,7 @@ send-keys-to-worker fix-auth C-c
 
 ### `archive-worker TASK_NAME`
 
-Archive a completed worker. Reads a summary from stdin, captures the full pane log, moves the task file to archived, and kills the tmux window.
+Archive a completed worker. Reads a summary from stdin, captures the full pane log, moves the task file to archived, and kills the worker tmux session.
 
 ```bash
 archive-worker fix-auth << 'EOF'
