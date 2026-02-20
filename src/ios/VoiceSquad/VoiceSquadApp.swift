@@ -30,6 +30,9 @@ struct VoiceSquadApp: App {
                 liveActivity.startActivity()
                 silentAudio.start()
             }
+            .onDisappear {
+                silentAudio.stop()
+            }
             .onReceive(webSocket.$lastSpeakText) { text in
                 guard let text else { return }
                 liveActivity.updateActivity(text: text, isConnected: webSocket.isConnected)
@@ -43,8 +46,15 @@ struct VoiceSquadApp: App {
                 }
             }
             .onChange(of: scenePhase) { _, newPhase in
-                if newPhase == .active {
+                switch newPhase {
+                case .active:
                     liveActivity.startActivity()
+                    silentAudio.start()
+                case .inactive, .background:
+                    // Keep silent audio running to maintain background activity.
+                    break
+                @unknown default:
+                    break
                 }
             }
         }
