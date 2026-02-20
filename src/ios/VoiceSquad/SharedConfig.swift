@@ -3,6 +3,7 @@ import Foundation
 enum SharedKeys {
     static let suiteName = "group.com.voicesquad.app"
     static let autoReadEnabled = "autoReadEnabled"
+    static let lastSpeechText = "lastSpeechText"
 }
 
 extension UserDefaults {

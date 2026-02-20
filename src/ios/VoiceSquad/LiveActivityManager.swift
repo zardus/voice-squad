@@ -3,6 +3,7 @@ import Foundation
 
 @MainActor
 final class LiveActivityManager: ObservableObject {
+    static let waitingText = "Waiting for update..."
     private var activity: Activity<VoiceSquadAttributes>?
 
     func startActivity() {
@@ -14,8 +15,9 @@ final class LiveActivityManager: ObservableObject {
         }
 
         let attributes = VoiceSquadAttributes()
+        let initialText = UserDefaults.shared.string(forKey: SharedKeys.lastSpeechText) ?? Self.waitingText
         let initialState = VoiceSquadAttributes.ContentState(
-            latestSpeechText: "Waiting for update...",
+            latestSpeechText: initialText,
             isConnected: true,
             autoReadEnabled: UserDefaults.autoReadIsEnabled()
         )
@@ -32,6 +34,7 @@ final class LiveActivityManager: ObservableObject {
 
     func updateActivity(text: String, isConnected: Bool) {
         guard let activity else { return }
+        UserDefaults.shared.set(text, forKey: SharedKeys.lastSpeechText)
         let state = VoiceSquadAttributes.ContentState(
             latestSpeechText: text,
             isConnected: isConnected,
@@ -39,6 +42,19 @@ final class LiveActivityManager: ObservableObject {
         )
         Task {
             await activity.update(.init(state: state, staleDate: nil))
+        }
+    }
+
+    static func syncAutoReadForAllActivities() async {
+        let autoReadEnabled = UserDefaults.autoReadIsEnabled()
+        for activity in Activity<VoiceSquadAttributes>.activities {
+            let s = activity.content.state
+            let newState = VoiceSquadAttributes.ContentState(
+                latestSpeechText: s.latestSpeechText,
+                isConnected: s.isConnected,
+                autoReadEnabled: autoReadEnabled
+            )
+            await activity.update(.init(state: newState, staleDate: nil))
         }
     }
 

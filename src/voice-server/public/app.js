@@ -20,8 +20,6 @@ const voiceHistoryModalBtn = document.getElementById("voice-history-modal-btn");
 const updateBtn = document.getElementById("update-btn");
 const autoreadCb = document.getElementById("autoread-cb");
 const voiceAutoreadCb = document.getElementById("voice-autoread-cb");
-const autolistenCb = document.getElementById("autolisten-cb");
-const voiceAutolistenCb = document.getElementById("voice-autolisten-cb");
 const voiceMicBtn = document.getElementById("voice-mic-btn");
 const voiceReplayBtn = document.getElementById("voice-replay-btn");
 const voiceStatusBtn = document.getElementById("voice-status-btn");
@@ -196,33 +194,42 @@ function setLatestVoiceSummary(text) {
   if (voiceSummaryEl) voiceSummaryEl.textContent = t;
 }
 
+function notifyNativeAutoReadChanged(enabled) {
+  try {
+    const handler = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.autoReadChanged;
+    if (handler && typeof handler.postMessage === "function") {
+      handler.postMessage(!!enabled);
+    }
+  } catch {}
+}
+
 // Auto-read toggle: ON by default, persisted in localStorage
-function setAutoReadEnabled(enabled, { persist = true } = {}) {
+function setAutoReadEnabled(enabled, { persist = true, notifyNative = true } = {}) {
   const val = !!enabled;
   if (autoreadCb) autoreadCb.checked = val;
   if (voiceAutoreadCb) voiceAutoreadCb.checked = val;
   if (persist) localStorage.setItem("autoread", String(val));
+  if (notifyNative) notifyNativeAutoReadChanged(val);
   if (!val) {
     stopTtsPlayback();
     speakAudioQueue = [];
   }
 }
 
+window.setAutoRead = function setAutoRead(enabled) {
+  setAutoReadEnabled(enabled, { persist: true, notifyNative: false });
+};
+
 const storedAutoread = localStorage.getItem("autoread");
-setAutoReadEnabled(storedAutoread === null ? true : storedAutoread === "true", { persist: false });
+setAutoReadEnabled(storedAutoread === null ? true : storedAutoread === "true", { persist: false, notifyNative: false });
 [autoreadCb, voiceAutoreadCb].forEach((cb) => {
   if (!cb) return;
-  cb.addEventListener("change", () => setAutoReadEnabled(cb.checked));
+  cb.addEventListener("change", () => setAutoReadEnabled(cb.checked, { persist: true, notifyNative: true }));
 });
 
-// Auto Listen toggle: ON by default (controls push-to-talk availability)
-let autoListenEnabled = true;
+// Auto Listen is always enabled (toggle removed from UI).
+const autoListenEnabled = true;
 let micStreamAcquireSeq = 0; // increments to invalidate in-flight getUserMedia() calls
-function setAutoListenUi(enabled) {
-  const val = !!enabled;
-  if (autolistenCb) autolistenCb.checked = val;
-  if (voiceAutolistenCb) voiceAutolistenCb.checked = val;
-}
 
 function closeAudioContext() {
   stopSilentKeepAlive();
@@ -248,36 +255,6 @@ function stopMicStream() {
   }
 }
 
-function abortActiveRecording() {
-  wantRecording = false;
-  recording = false;
-  abortRecordingUpload = true;
-  // Invalidate any in-flight onstop upload loop even if it already passed its first guard.
-  recordingSessionId++;
-
-  if (maxRecordingTimer) {
-    clearTimeout(maxRecordingTimer);
-    maxRecordingTimer = null;
-  }
-
-  micBtn.classList.remove("recording");
-  voiceMicBtn.classList.remove("recording");
-  speakAudioQueue = [];
-
-  if (mediaRecorder) {
-    // Prevent upload side effects when stopping due to Auto Listen OFF.
-    try { mediaRecorder.ondataavailable = null; } catch {}
-    try { mediaRecorder.onstop = null; } catch {}
-    try {
-      if (mediaRecorder.state !== "inactive") {
-        mediaRecorder.stop();
-      }
-    } catch {}
-  }
-  mediaRecorder = null;
-  renderMicCaptureState();
-}
-
 function maybeSendAudioCancel(reason) {
   try {
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
@@ -288,33 +265,6 @@ function maybeSendAudioCancel(reason) {
   } catch {}
 }
 
-function setAutoListenEnabled(enabled, { persist = true } = {}) {
-  autoListenEnabled = !!enabled;
-  setAutoListenUi(autoListenEnabled);
-  if (persist) localStorage.setItem("autolisten", String(autoListenEnabled));
-
-  if (!autoListenEnabled) {
-    // Invalidate any in-flight `getUserMedia()` so it can't re-acquire after OFF.
-    micStreamAcquireSeq++;
-    // If the user disables listening while holding the mic, stop immediately.
-    if (recording || wantRecording || mediaRecorder) abortActiveRecording();
-    maybeSendAudioCancel("autolisten_off");
-
-    // Web Speech recognition also uses the microphone (iOS Safari shows the mic indicator).
-    stopActivePaneSpeech();
-
-    stopMicStream();
-    renderMicCaptureState();
-    return;
-  }
-}
-
-const storedAutoListen = localStorage.getItem("autolisten");
-setAutoListenEnabled(storedAutoListen === null ? true : storedAutoListen === "true", { persist: false });
-[autolistenCb, voiceAutolistenCb].forEach((cb) => {
-  if (!cb) return;
-  cb.addEventListener("change", () => setAutoListenEnabled(cb.checked));
-});
 renderMicCaptureState();
 // Poll occasionally so UI reflects "true" mic capture state even if a track ends without events.
 setInterval(() => {
