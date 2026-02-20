@@ -52,6 +52,7 @@
   <key>UIBackgroundModes</key>
   <array>
     <string>audio</string>
+    <string>remote-notification</string>
   </array>
 
   <!-- MVP: allow http:// (LAN / local dev). Tighten to specific domains for production. -->

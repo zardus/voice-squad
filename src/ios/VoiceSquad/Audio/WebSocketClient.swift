@@ -1,12 +1,15 @@
 import Foundation
+import OSLog
 
 @MainActor
 final class WebSocketClient: ObservableObject {
     @Published private(set) var isConnected: Bool = false
     @Published private(set) var lastSpeakText: String?
+    @Published private(set) var lastIncomingTextMessage: String?
 
     private var task: URLSessionWebSocketTask?
     private var url: URL?
+    private let logger = Logger(subsystem: "com.voicesquad.app", category: "WebSocket")
 
     func connect(url: URL) {
         self.url = url
@@ -51,9 +54,14 @@ final class WebSocketClient: ObservableObject {
     }
 
     private func handleTextMessage(_ s: String) {
+        lastIncomingTextMessage = s
+
         guard let data = s.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let type = json["type"] as? String else { return }
+              let type = json["type"] as? String else {
+            logger.error("Invalid websocket JSON message")
+            return
+        }
 
         switch type {
         case "connected":
@@ -64,7 +72,7 @@ final class WebSocketClient: ObservableObject {
         case "speak_text":
             lastSpeakText = json["text"] as? String
         default:
-            break
+            logger.debug("Ignoring websocket message type=\(type, privacy: .public)")
         }
     }
 }
