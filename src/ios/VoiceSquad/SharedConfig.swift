@@ -4,6 +4,8 @@ enum SharedKeys {
     static let suiteName = "group.com.voicesquad.app"
     static let autoReadEnabled = "autoReadEnabled"
     static let lastSpeechText = "lastSpeechText"
+    static let liveActivityID = "liveActivityID"
+    static let liveActivityPushToken = "liveActivityPushToken"
 }
 
 extension UserDefaults {

@@ -57,3 +57,14 @@ Notes:
 - The native client connects to WebSocket using `?token=...&tts=mp3`.
 - The embedded web UI may also connect separately; the native shell disables web TTS playback to avoid double audio.
 
+## Live Activity Update Flow
+
+- Foreground path: websocket text frames are decoded by `LiveActivityUpdateEventDecoder` and routed through `LiveActivityManager.updateActivity(with:)`.
+- Background path: APNs remote notifications received by `AppDelegate.application(_:didReceiveRemoteNotification:)` are decoded by the same decoder and routed through the same update method.
+- Activity stability: `LiveActivityManager.startActivityIfNeeded()` reuses the current activity ID (stored in shared defaults) instead of creating a new activity on every app activation. This keeps APNs push tokens valid for the activity lifetime.
+
+Debugging tips:
+
+- `SharedKeys.liveActivityID` tracks the activity currently targeted for updates.
+- `SharedKeys.liveActivityPushToken` stores the latest push token emitted by `activity.pushTokenUpdates`.
+- Invalid websocket or APNs payloads are logged and ignored, rather than partially applied.
