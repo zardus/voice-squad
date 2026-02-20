@@ -6,6 +6,7 @@ final class WebSocketClient: ObservableObject {
     @Published private(set) var isConnected: Bool = false
     @Published private(set) var lastSpeakText: String?
     @Published private(set) var lastIncomingTextMessage: String?
+    @Published private(set) var lastIncomingAudioData: Data?
 
     private var task: URLSessionWebSocketTask?
     private var url: URL?
@@ -42,8 +43,8 @@ final class WebSocketClient: ObservableObject {
                     switch msg {
                     case .string(let s):
                         self.handleTextMessage(s)
-                    case .data:
-                        break // ignore binary TTS frames
+                    case .data(let data):
+                        self.lastIncomingAudioData = data
                     @unknown default:
                         break
                     }

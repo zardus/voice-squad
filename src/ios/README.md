@@ -12,7 +12,7 @@ This folder contains a thin native iOS shell for VoiceSquad:
 
 ## Prerequisites
 
-- macOS with Xcode 15+
+- macOS with Xcode 26+ (iOS 26 SDK or later)
 - iOS 17+ (simulator or device)
 - Apple Developer account for device signing/testing (required for running on device; not required for simulator builds)
 
@@ -35,7 +35,7 @@ For TestFlight/App Store distribution, you will need proper signing/profiles and
 
 ## CI (GitHub Actions)
 
-`.github/workflows/ios-build.yml` builds and runs unit tests on `macos-14` for iOS Simulator.
+`.github/workflows/ios-build.yml` selects Xcode 26 and verifies iOS SDK 26+ before building for iOS Simulator.
 
 - It does not sign or produce a distributable `.ipa`.
 - Simulator builds run with `CODE_SIGNING_ALLOWED=NO`.

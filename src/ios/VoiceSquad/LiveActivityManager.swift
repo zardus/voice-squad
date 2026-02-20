@@ -25,10 +25,13 @@ enum LiveActivityUpdateEventDecoder {
 
         switch type {
         case "connected":
-            guard let text = sanitizeSpeechText(json["lastSpeakText"]) else { return nil }
+            let text = sanitizeSpeechText(json["lastSpeakText"])
+                ?? sanitizeSpeechText(json["last_speak_text"])
+                ?? UserDefaults.shared.string(forKey: SharedKeys.lastSpeechText)
+                ?? LiveActivityManager.waitingText
             return LiveActivityUpdateEvent(latestSpeechText: text, isConnected: true, activityID: nil)
-        case "speak_text":
-            guard let text = sanitizeSpeechText(json["text"]) else {
+        case "speak_text", "speakText":
+            guard let text = sanitizeSpeechText(json["text"]) ?? sanitizeSpeechText(json["latestSpeechText"]) else {
                 throw LiveActivityUpdateDecodeError.invalidSpeechText
             }
             return LiveActivityUpdateEvent(latestSpeechText: text, isConnected: true, activityID: nil)
@@ -42,20 +45,41 @@ enum LiveActivityUpdateEventDecoder {
             throw LiveActivityUpdateDecodeError.missingAPS
         }
 
-        if let event = aps["event"] as? String, event != "update" {
-            return nil
+        let activityID = extractActivityID(userInfo, aps: aps)
+        if let event = (aps["event"] as? String)?.lowercased(),
+           ["end", "ended", "dismiss", "dismissed", "stop", "stopped"].contains(event) {
+            let fallbackText = UserDefaults.shared.string(forKey: SharedKeys.lastSpeechText) ?? "Disconnected"
+            return LiveActivityUpdateEvent(latestSpeechText: fallbackText, isConnected: false, activityID: activityID)
         }
 
         let contentState = aps["content-state"] as? [String: Any] ?? aps["content_state"] as? [String: Any]
-        guard let contentState else {
-            throw LiveActivityUpdateDecodeError.missingContentState
-        }
-        guard let text = sanitizeSpeechText(contentState["latestSpeechText"]) else {
+        let voiceSquad = userInfo["voice_squad"] as? [String: Any]
+        let text = sanitizeSpeechText(contentState?["latestSpeechText"])
+            ?? sanitizeSpeechText(contentState?["latest_speech_text"])
+            ?? sanitizeSpeechText(contentState?["text"])
+            ?? sanitizeSpeechText(voiceSquad?["latestSpeechText"])
+            ?? sanitizeSpeechText(voiceSquad?["latest_speech_text"])
+            ?? sanitizeSpeechText(voiceSquad?["text"])
+            ?? sanitizeSpeechText(userInfo["latestSpeechText"])
+            ?? sanitizeSpeechText(userInfo["latest_speech_text"])
+            ?? sanitizeSpeechText(userInfo["text"])
+            ?? extractAlertBody(aps["alert"])
+            ?? UserDefaults.shared.string(forKey: SharedKeys.lastSpeechText)
+        guard let text else {
             throw LiveActivityUpdateDecodeError.invalidSpeechText
         }
 
-        let isConnected = contentState["isConnected"] as? Bool ?? true
-        let activityID = extractActivityID(userInfo)
+        if contentState == nil && voiceSquad == nil && userInfo["text"] == nil && aps["alert"] == nil {
+            throw LiveActivityUpdateDecodeError.missingContentState
+        }
+
+        let isConnected = boolValue(contentState?["isConnected"])
+            ?? boolValue(contentState?["is_connected"])
+            ?? boolValue(voiceSquad?["isConnected"])
+            ?? boolValue(voiceSquad?["is_connected"])
+            ?? boolValue(userInfo["isConnected"])
+            ?? boolValue(userInfo["is_connected"])
+            ?? true
         return LiveActivityUpdateEvent(latestSpeechText: text, isConnected: isConnected, activityID: activityID)
     }
 
@@ -65,7 +89,35 @@ enum LiveActivityUpdateEventDecoder {
         return trimmed.isEmpty ? nil : trimmed
     }
 
-    private static func extractActivityID(_ userInfo: [AnyHashable: Any]) -> String? {
+    private static func extractAlertBody(_ alert: Any?) -> String? {
+        if let body = alert as? String {
+            return sanitizeSpeechText(body)
+        }
+        if let alertDict = alert as? [String: Any] {
+            return sanitizeSpeechText(alertDict["body"])
+        }
+        return nil
+    }
+
+    private static func boolValue(_ value: Any?) -> Bool? {
+        if let bool = value as? Bool { return bool }
+        if let int = value as? Int { return int != 0 }
+        if let string = value as? String {
+            switch string.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+            case "true", "1", "yes", "connected", "online":
+                return true
+            case "false", "0", "no", "disconnected", "offline":
+                return false
+            default:
+                return nil
+            }
+        }
+        return nil
+    }
+
+    private static func extractActivityID(_ userInfo: [AnyHashable: Any], aps: [String: Any]) -> String? {
+        if let activityID = aps["activity-id"] as? String { return activityID }
+        if let activityID = aps["activity_id"] as? String { return activityID }
         if let activityID = userInfo["activityId"] as? String { return activityID }
         if let activityID = userInfo["activity_id"] as? String { return activityID }
         if let voiceSquad = userInfo["voice_squad"] as? [String: Any] {
@@ -78,14 +130,20 @@ enum LiveActivityUpdateEventDecoder {
 
 @MainActor
 final class LiveActivityManager: ObservableObject {
+    static let shared = LiveActivityManager()
     static let waitingText = "Waiting for update..."
     private let logger = Logger(subsystem: "com.voicesquad.app", category: "LiveActivity")
     private var activity: Activity<VoiceSquadAttributes>?
     private var pushTokenTask: Task<Void, Never>?
     private var activityStateTask: Task<Void, Never>?
 
+    private init() {}
+
     func startActivityIfNeeded() {
-        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+        guard ActivityAuthorizationInfo().areActivitiesEnabled else {
+            logger.error("Live activities are disabled; cannot start activity")
+            return
+        }
 
         if let existing = resolveCurrentActivity() {
             activity = existing

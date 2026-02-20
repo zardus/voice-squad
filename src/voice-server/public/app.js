@@ -560,6 +560,7 @@ document.addEventListener("visibilitychange", () => {
 function handleIncomingTtsAudio(data, opts = {}) {
   lastTtsAudioData = data;
   voiceReplayBtn.disabled = false;
+  if (nativeAppHost) return;
   const autoplay = opts.autoplay !== false;
   if (!autoplay) return;
   // Drop audio that arrives while the page is hidden (backgrounded/locked).
@@ -598,6 +599,7 @@ requestAnimationFrame(renderLoop);
 
 const urlParams = new URLSearchParams(location.search);
 const token = urlParams.get("token") || "";
+const nativeAppHost = urlParams.get("nativeApp") === "1";
 const MESSAGE_HISTORY_KEY = "message_history";
 const MESSAGE_HISTORY_LIMIT = 20;
 const HISTORY_PREVIEW_MAX = 40;
