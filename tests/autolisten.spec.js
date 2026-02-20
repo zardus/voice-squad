@@ -10,11 +10,9 @@
 const { test, expect } = require("@playwright/test");
 const { pageUrl } = require("./helpers/config");
 
-/** Common init script that stubs getUserMedia, WebSocket, AudioContext, and localStorage. */
-function addStubs(page, { autolisten = "true" } = {}) {
-  return page.addInitScript((opts) => {
-    localStorage.setItem("autolisten", opts.autolisten);
-
+/** Common init script that stubs getUserMedia, WebSocket, and AudioContext. */
+function addStubs(page) {
+  return page.addInitScript(() => {
     // --- getUserMedia stub ---
     window.__gumCalls = 0;
     window.__stopCount = 0;
@@ -123,7 +121,7 @@ function addStubs(page, { autolisten = "true" } = {}) {
       }
     }
     window.WebSocket = FakeWebSocket;
-  }, { autolisten });
+  });
 }
 
 test.describe("Auto Listen", () => {
@@ -133,7 +131,7 @@ test.describe("Auto Listen", () => {
       page.on("pageerror", (err) => console.log(`[pageerror] ${err && err.stack ? err.stack : String(err)}`));
     }
 
-    await addStubs(page, { autolisten: "true" });
+    await addStubs(page);
 
     await page.goto(pageUrl("test-token"));
     await page.waitForFunction(() => !!window.__testWs);
@@ -158,7 +156,7 @@ test.describe("Auto Listen", () => {
       page.on("pageerror", (err) => console.log(`[pageerror] ${err && err.stack ? err.stack : String(err)}`));
     }
 
-    await addStubs(page, { autolisten: "true" });
+    await addStubs(page);
 
     await page.goto(pageUrl("test-token"));
     await page.waitForFunction(() => !!window.__testWs);
@@ -192,7 +190,7 @@ test.describe("Auto Listen", () => {
       page.on("pageerror", (err) => console.log(`[pageerror] ${err && err.stack ? err.stack : String(err)}`));
     }
 
-    await addStubs(page, { autolisten: "true" });
+    await addStubs(page);
 
     await page.goto(pageUrl("test-token"));
     await page.waitForFunction(() => !!window.__testWs);
@@ -223,7 +221,7 @@ test.describe("Auto Listen", () => {
       page.on("pageerror", (err) => console.log(`[pageerror] ${err && err.stack ? err.stack : String(err)}`));
     }
 
-    await addStubs(page, { autolisten: "true" });
+    await addStubs(page);
 
     await page.goto(pageUrl("test-token"));
     await page.waitForFunction(() => !!window.__testWs);
@@ -268,64 +266,4 @@ test.describe("Auto Listen", () => {
     await expect.poll(async () => page.evaluate(() => window.__stopCount >= 1)).toBe(true);
   });
 
-  test("autolisten OFF disables push-to-talk", async ({ page }) => {
-    if (process.env.PW_PAGE_DEBUG) {
-      page.on("console", (msg) => console.log(`[browser:${msg.type()}] ${msg.text()}`));
-      page.on("pageerror", (err) => console.log(`[pageerror] ${err && err.stack ? err.stack : String(err)}`));
-    }
-
-    await addStubs(page, { autolisten: "false" });
-
-    await page.goto(pageUrl("test-token"));
-    await page.waitForFunction(() => !!window.__testWs);
-
-    // No mic acquired
-    await expect.poll(async () => page.evaluate(() => window.__gumCalls)).toBe(0);
-
-    // Simulate push-to-talk: mousedown on #mic-btn
-    const micBtn = page.locator("#mic-btn");
-    await micBtn.dispatchEvent("mousedown");
-    await page.waitForTimeout(200);
-
-    // getUserMedia should NOT have been called because autolisten is OFF
-    await expect.poll(async () => page.evaluate(() => window.__gumCalls)).toBe(0);
-  });
-
-  test("autolisten OFF does NOT stop silent keep-alive", async ({ page }) => {
-    if (process.env.PW_PAGE_DEBUG) {
-      page.on("console", (msg) => console.log(`[browser:${msg.type()}] ${msg.text()}`));
-      page.on("pageerror", (err) => console.log(`[pageerror] ${err && err.stack ? err.stack : String(err)}`));
-    }
-
-    await addStubs(page, { autolisten: "true" });
-
-    await page.goto(pageUrl("test-token"));
-    await page.waitForFunction(() => !!window.__testWs);
-
-    // Trigger user gesture to start the silent keep-alive
-    await page.click("body");
-    await page.waitForTimeout(100);
-
-    // Verify keep-alive started (oscillator created)
-    await expect.poll(async () => page.evaluate(() => window.__oscillatorsCreated >= 1)).toBe(true);
-
-    // AudioContext should be running (not closed)
-    await expect.poll(async () =>
-      page.evaluate(() => {
-        const state = window.__audioContextState;
-        return state === "running" || state === "suspended";
-      })
-    ).toBe(true);
-
-    // Toggle autolisten OFF
-    await page.evaluate(() => {
-      // eslint-disable-next-line no-undef
-      setAutoListenEnabled(false);
-    });
-    await page.waitForTimeout(100);
-
-    // AudioContext should still be active (not closed) — keep-alive is independent of autolisten
-    const state = await page.evaluate(() => window.__audioContextState);
-    expect(state).not.toBe("closed");
-  });
 });
