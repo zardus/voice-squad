@@ -15,8 +15,9 @@ final class LiveActivityManager: ObservableObject {
 
         let attributes = VoiceSquadAttributes()
         let initialState = VoiceSquadAttributes.ContentState(
-            latestSpeechText: "Listening...",
-            isConnected: true
+            latestSpeechText: "Waiting for update...",
+            isConnected: true,
+            autoReadEnabled: UserDefaults.autoReadIsEnabled()
         )
 
         do {
@@ -33,7 +34,8 @@ final class LiveActivityManager: ObservableObject {
         guard let activity else { return }
         let state = VoiceSquadAttributes.ContentState(
             latestSpeechText: text,
-            isConnected: isConnected
+            isConnected: isConnected,
+            autoReadEnabled: UserDefaults.autoReadIsEnabled()
         )
         Task {
             await activity.update(.init(state: state, staleDate: nil))

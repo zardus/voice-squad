@@ -939,7 +939,8 @@ wss.on("connection", (ws, req) => {
   let audioBytes = 0;
   let audioTooLarge = false;
 
-  ws.send(JSON.stringify({ type: "connected", captain: CAPTAIN }));
+  const lastSpeak = voiceSummaryHistory.length > 0 ? voiceSummaryHistory[0].text : null;
+  ws.send(JSON.stringify({ type: "connected", captain: CAPTAIN, lastSpeakText: lastSpeak }));
   ws.send(JSON.stringify({ type: "tts_config", format: ws.ttsFormat, mime: ws.ttsMime }));
   ws.send(JSON.stringify({ type: "voice_history", entries: voiceSummaryHistory }));
 

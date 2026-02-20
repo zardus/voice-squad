@@ -498,4 +498,42 @@ test.describe("TTS end-to-end pipeline", () => {
     const remainingAfterFirst = await page.evaluate(() => pendingTtsTexts.length);
     expect(remainingAfterFirst).toBe(1);
   });
+
+  // ── lastSpeakText shown in summary on connect ─────────────────
+
+  test("lastSpeakText shown in summary on connect", async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem("autoread", "true");
+      HTMLMediaElement.prototype.play = function play() { return Promise.resolve(); };
+      class FakeWebSocket {
+        static OPEN = 1;
+        constructor(url) {
+          this.url = url; this.readyState = FakeWebSocket.OPEN;
+          this.bufferedAmount = 0; this.binaryType = "arraybuffer";
+          window.__testWs = this;
+          setTimeout(() => this.onopen && this.onopen(), 0);
+        }
+        send() {}
+        close() { this.readyState = 3; if (this.onclose) this.onclose(); }
+      }
+      window.WebSocket = FakeWebSocket;
+    });
+
+    await page.goto(pageUrl("test-token"));
+    await page.waitForFunction(() => !!window.__testWs);
+
+    // Simulate server sending connected message with lastSpeakText
+    await page.evaluate(() => {
+      const ws = window.__testWs;
+      ws.onmessage({
+        data: JSON.stringify({
+          type: "connected",
+          captain: "claude",
+          lastSpeakText: "Previous status: all workers idle",
+        }),
+      });
+    });
+
+    await expect(page.locator("#summary")).toHaveText("Previous status: all workers idle");
+  });
 });

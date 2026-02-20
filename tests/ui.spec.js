@@ -197,6 +197,11 @@ test.describe("UI", () => {
       await expect(page.locator("#autolisten-toggle")).toBeVisible();
     });
 
+    test("Auto Listen tooltip says Enable push-to-talk", async ({ page }) => {
+      await page.goto(pageUrl());
+      await expect(page.locator("#autolisten-toggle")).toHaveAttribute("title", "Enable push-to-talk");
+    });
+
     test("text input has placeholder", async ({ page }) => {
       await page.goto(pageUrl());
       await expect(page.locator("#text-input")).toHaveAttribute("placeholder", "Type a command...");

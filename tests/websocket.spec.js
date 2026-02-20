@@ -205,6 +205,31 @@ test.describe("WebSocket", () => {
     expect(result).toBe("ok");
   });
 
+  test("connected message includes lastSpeakText field", async ({ page }) => {
+    await page.goto(pageUrl());
+
+    const msg = await page.evaluate(async (params) => {
+      return new Promise((resolve, reject) => {
+        const ws = new WebSocket(`${params.wsUrl}?token=${params.token}`);
+        ws.onmessage = (evt) => {
+          if (typeof evt.data === "string") {
+            const m = JSON.parse(evt.data);
+            if (m.type === "connected") {
+              ws.close();
+              resolve(m);
+            }
+          }
+        };
+        ws.onerror = () => reject(new Error("ws error"));
+        setTimeout(() => reject(new Error("timeout")), 5000);
+      });
+    }, { token: TOKEN, wsUrl: WS_URL });
+
+    expect(msg.type).toBe("connected");
+    // lastSpeakText should be present (null or string depending on history state)
+    expect("lastSpeakText" in msg).toBe(true);
+  });
+
   test("status_tab_active / status_tab_inactive messages accepted", async ({ page }) => {
     await page.goto(pageUrl());
 

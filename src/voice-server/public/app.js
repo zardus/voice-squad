@@ -75,7 +75,6 @@ let recording = false;
 let wantRecording = false; // true while user is holding the mic button
 let recordingStartTime = 0;
 let micStream = null;
-let micStreamAcquired = false;
 let autoScroll = true;
 let disconnectedFlashTimer = null;
 let lastCaptainUpdateAt = 0;
@@ -90,6 +89,30 @@ let recordingSessionId = 0; // increments per recording; used to abort onstop si
 let abortRecordingUpload = false;
 
 let audioCtx = null; // declared early; initialized lazily by getAudioContext()
+let silentKeepAliveNode = null; // oscillator used to keep Safari alive in background
+
+function startSilentKeepAlive() {
+  if (silentKeepAliveNode) return; // already running
+  const ctx = getAudioContext();
+  if (!ctx) return;
+  try {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    gain.gain.value = 0;
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    silentKeepAliveNode = { oscillator: osc, gain };
+  } catch {}
+}
+
+function stopSilentKeepAlive() {
+  if (!silentKeepAliveNode) return;
+  try { silentKeepAliveNode.oscillator.stop(); } catch {}
+  try { silentKeepAliveNode.oscillator.disconnect(); } catch {}
+  try { silentKeepAliveNode.gain.disconnect(); } catch {}
+  silentKeepAliveNode = null;
+}
 
 function isMicStreamLive() {
   try {
@@ -191,7 +214,7 @@ setAutoReadEnabled(storedAutoread === null ? true : storedAutoread === "true", {
   cb.addEventListener("change", () => setAutoReadEnabled(cb.checked));
 });
 
-// Auto Listen toggle: ON by default (keep mic stream acquired in background)
+// Auto Listen toggle: ON by default (controls push-to-talk availability)
 let autoListenEnabled = true;
 let micStreamAcquireSeq = 0; // increments to invalidate in-flight getUserMedia() calls
 function setAutoListenUi(enabled) {
@@ -201,6 +224,7 @@ function setAutoListenUi(enabled) {
 }
 
 function closeAudioContext() {
+  stopSilentKeepAlive();
   if (!audioCtx) return;
   try {
     if (typeof audioCtx.close === "function") {
@@ -263,7 +287,7 @@ function maybeSendAudioCancel(reason) {
   } catch {}
 }
 
-async function setAutoListenEnabled(enabled, { persist = true, acquire = false } = {}) {
+function setAutoListenEnabled(enabled, { persist = true } = {}) {
   autoListenEnabled = !!enabled;
   setAutoListenUi(autoListenEnabled);
   if (persist) localStorage.setItem("autolisten", String(autoListenEnabled));
@@ -279,18 +303,8 @@ async function setAutoListenEnabled(enabled, { persist = true, acquire = false }
     stopActivePaneSpeech();
 
     stopMicStream();
-    micStreamAcquired = false;
-    closeAudioContext();
     renderMicCaptureState();
     return;
-  }
-
-  if (acquire) {
-    try {
-      await ensureMicStream();
-      micStreamAcquired = !!(micStream && micStream.getTracks().some((t) => t.readyState === "live"));
-    } catch {}
-    renderMicCaptureState();
   }
 }
 
@@ -298,7 +312,7 @@ const storedAutoListen = localStorage.getItem("autolisten");
 setAutoListenEnabled(storedAutoListen === null ? true : storedAutoListen === "true", { persist: false });
 [autolistenCb, voiceAutolistenCb].forEach((cb) => {
   if (!cb) return;
-  cb.addEventListener("change", () => setAutoListenEnabled(cb.checked, { acquire: true }));
+  cb.addEventListener("change", () => setAutoListenEnabled(cb.checked));
 });
 renderMicCaptureState();
 // Poll occasionally so UI reflects "true" mic capture state even if a track ends without events.
@@ -967,6 +981,7 @@ function connect() {
           voiceCaptainToolSelect.value = msg.captain;
           updateSelectColors();
         }
+        if (msg.lastSpeakText) setLatestVoiceSummary(msg.lastSpeakText);
         break;
 
       case "tts_config":
@@ -1045,11 +1060,8 @@ function connect() {
   };
 }
 
-// Pre-acquire mic stream so recording starts instantly on press
+// Acquire mic stream on demand for push-to-talk
 async function ensureMicStream() {
-  if (!autoListenEnabled) {
-    throw new Error("Auto Listen is off");
-  }
   if (isMicStreamLive()) return true;
   const seq = ++micStreamAcquireSeq;
   const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -1229,7 +1241,7 @@ if (voiceHistoryBackdrop) {
   voiceHistoryBackdrop.addEventListener("click", closeVoiceHistoryModal);
 }
 
-// Mic recording — uses pre-acquired stream for instant start
+// Mic recording — acquires stream on demand for push-to-talk
 function startRecording() {
   unlockAudio();
   if (!autoListenEnabled) {
@@ -1254,7 +1266,6 @@ function startRecording() {
     // Stream missing or dead — (re)acquire, then start only if user is still holding
     micStream = null;
     ensureMicStream().then((ok) => {
-      if (!autoListenEnabled) return;
       if (!ok) return;
       if (wantRecording) startRecording();
     }).catch((err) => {
@@ -1424,6 +1435,9 @@ function stopRecording() {
   voiceMicBtn.classList.remove("recording");
   renderMicCaptureState();
 
+  // Release mic after a short delay so MediaRecorder onstop handler can read the stream.
+  setTimeout(() => { stopMicStream(); }, 500);
+
   // Play the most recent speak audio that arrived while recording.
   // Only the latest is played to avoid a cascade of stale messages.
   // Audio in the queue already passed the shouldPlay check when it was queued.
@@ -1534,18 +1548,13 @@ voiceStatusBtn.addEventListener("click", () => {
   sendTextCommand("Give me a status update on all the tasks");
 });
 
-// Unlock audio + acquire mic on user interaction.
+// Unlock audio + start silent keep-alive on user interaction.
 // Not once-only: after WS reconnect audioUnlocked resets, so we need subsequent
 // gestures to re-prime the Audio element for autoplay.
 function onUserGesture() {
   if (!audioUnlocked) unlockAudio();
   if (audioCtx && audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
-  if (!micStreamAcquired && autoListenEnabled) {
-    if (navigator.webdriver) return;
-    ensureMicStream().then(() => {
-      if (autoListenEnabled) micStreamAcquired = true;
-    }).catch(() => {});
-  }
+  startSilentKeepAlive();
 }
 document.addEventListener("touchstart", onUserGesture, { passive: true });
 document.addEventListener("pointerdown", onUserGesture, { passive: true });
