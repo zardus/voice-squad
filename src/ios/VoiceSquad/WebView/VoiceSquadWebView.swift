@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import WebKit
 
 struct VoiceSquadWebView: UIViewRepresentable {
@@ -16,41 +17,6 @@ struct VoiceSquadWebView: UIViewRepresentable {
         config.mediaTypesRequiringUserActionForPlayback = []
 
         let controller = config.userContentController
-
-        // Bridge script: intercept PWA setAutoReadEnabled calls and notify native
-        let bridgeScript = WKUserScript(source: """
-            (function() {
-                var _origSetAutoRead = window.setAutoReadEnabled;
-                if (typeof _origSetAutoRead === 'function') {
-                    window.setAutoReadEnabled = function(enabled, opts) {
-                        _origSetAutoRead(enabled, opts);
-                        try {
-                            window.webkit.messageHandlers.autoReadChanged.postMessage(!!enabled);
-                        } catch(e) {}
-                    };
-                } else {
-                    // If setAutoReadEnabled isn't defined yet, observe it
-                    var _desc = Object.getOwnPropertyDescriptor(window, 'setAutoReadEnabled');
-                    if (!_desc || _desc.configurable) {
-                        var _stored;
-                        Object.defineProperty(window, 'setAutoReadEnabled', {
-                            configurable: true,
-                            enumerable: true,
-                            get: function() { return _stored; },
-                            set: function(fn) {
-                                _stored = function(enabled, opts) {
-                                    fn(enabled, opts);
-                                    try {
-                                        window.webkit.messageHandlers.autoReadChanged.postMessage(!!enabled);
-                                    } catch(e) {}
-                                };
-                            }
-                        });
-                    }
-                }
-            })();
-            """, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
-        controller.addUserScript(bridgeScript)
         controller.add(context.coordinator, name: "autoReadChanged")
 
         let webView = WKWebView(frame: .zero, configuration: config)
@@ -82,13 +48,57 @@ struct VoiceSquadWebView: UIViewRepresentable {
         weak var webView: WKWebView?
         var autoReadEnabled: Binding<Bool>
         var lastSentAutoReadEnabled: Bool?
+        private var defaultsObserver: NSObjectProtocol?
+        private var foregroundObserver: NSObjectProtocol?
 
         init(autoReadEnabled: Binding<Bool>) {
             self.autoReadEnabled = autoReadEnabled
+            super.init()
+            defaultsObserver = NotificationCenter.default.addObserver(
+                forName: UserDefaults.didChangeNotification,
+                object: UserDefaults.shared,
+                queue: .main
+            ) { [weak self] _ in
+                self?.syncAutoReadFromDefaults()
+            }
+            foregroundObserver = NotificationCenter.default.addObserver(
+                forName: UIApplication.willEnterForegroundNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                self?.syncAutoReadFromDefaults()
+            }
+        }
+
+        deinit {
+            if let defaultsObserver {
+                NotificationCenter.default.removeObserver(defaultsObserver)
+            }
+            if let foregroundObserver {
+                NotificationCenter.default.removeObserver(foregroundObserver)
+            }
         }
 
         func syncAutoReadToPWA(_ enabled: Bool) {
-            webView?.evaluateJavaScript("if(typeof setAutoReadEnabled==='function')setAutoReadEnabled(\(enabled))") { _, _ in }
+            let js = """
+            if (typeof window.setAutoRead === 'function') {
+                window.setAutoRead(\(enabled));
+            } else if (typeof window.setAutoReadEnabled === 'function') {
+                window.setAutoReadEnabled(\(enabled), { notifyNative: false });
+            }
+            """
+            webView?.evaluateJavaScript(js) { _, _ in }
+        }
+
+        func syncAutoReadFromDefaults() {
+            let enabled = UserDefaults.autoReadIsEnabled()
+            if autoReadEnabled.wrappedValue != enabled {
+                autoReadEnabled.wrappedValue = enabled
+            }
+            if lastSentAutoReadEnabled != enabled {
+                syncAutoReadToPWA(enabled)
+                lastSentAutoReadEnabled = enabled
+            }
         }
 
         // WKScriptMessageHandler — PWA notifies native of auto-read changes
@@ -101,6 +111,8 @@ struct VoiceSquadWebView: UIViewRepresentable {
             Task { @MainActor in
                 self.autoReadEnabled.wrappedValue = enabled
                 UserDefaults.shared.set(enabled, forKey: SharedKeys.autoReadEnabled)
+                await LiveActivityManager.syncAutoReadForAllActivities()
+                self.lastSentAutoReadEnabled = enabled
             }
         }
 
@@ -115,9 +127,7 @@ struct VoiceSquadWebView: UIViewRepresentable {
         }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            let enabled = autoReadEnabled.wrappedValue
-            syncAutoReadToPWA(enabled)
-            lastSentAutoReadEnabled = enabled
+            syncAutoReadFromDefaults()
         }
     }
 }

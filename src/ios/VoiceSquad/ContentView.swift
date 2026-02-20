@@ -7,7 +7,6 @@ struct ContentView: View {
     @State private var showSettings = false
     @State private var webViewID = UUID()
     @State private var autoReadEnabled = UserDefaults.autoReadIsEnabled()
-    @State private var autoReadPollTimer: Timer?
 
     var body: some View {
         ZStack {
@@ -41,11 +40,6 @@ struct ContentView: View {
         }
         .onAppear {
             connectWebSocket()
-            startAutoReadPoll()
-        }
-        .onDisappear {
-            autoReadPollTimer?.invalidate()
-            autoReadPollTimer = nil
         }
         .onChange(of: settings.serverBaseURL) { _, _ in
             settings.persist()
@@ -68,17 +62,6 @@ struct ContentView: View {
         webViewID = UUID()
     }
 
-    private func startAutoReadPoll() {
-        autoReadPollTimer?.invalidate()
-        autoReadPollTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
-            Task { @MainActor in
-                let shared = UserDefaults.autoReadIsEnabled()
-                if shared != autoReadEnabled {
-                    autoReadEnabled = shared
-                }
-            }
-        }
-    }
 }
 
 private struct SettingsView: View {

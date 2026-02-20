@@ -194,12 +194,6 @@ test.describe("UI", () => {
       await expect(page.locator("#text-input")).toBeVisible();
       await expect(page.locator("#send-btn")).toBeVisible();
       await expect(page.locator("#autoread-toggle")).toBeVisible();
-      await expect(page.locator("#autolisten-toggle")).toBeVisible();
-    });
-
-    test("Auto Listen tooltip says Enable push-to-talk", async ({ page }) => {
-      await page.goto(pageUrl());
-      await expect(page.locator("#autolisten-toggle")).toHaveAttribute("title", "Enable push-to-talk");
     });
 
     test("text input has placeholder", async ({ page }) => {
@@ -226,21 +220,6 @@ test.describe("UI", () => {
 
       // Toggle back
       await page.locator("#autoread-toggle").click();
-      const restored = await cb.isChecked();
-      expect(restored).toBe(initialState);
-    });
-
-    test("auto listen toggle checkbox works", async ({ page }) => {
-      await page.goto(pageUrl());
-      const cb = page.locator("#autolisten-cb");
-
-      const initialState = await cb.isChecked();
-
-      await page.locator("#autolisten-toggle").click();
-      const newState = await cb.isChecked();
-      expect(newState).not.toBe(initialState);
-
-      await page.locator("#autolisten-toggle").click();
       const restored = await cb.isChecked();
       expect(restored).toBe(initialState);
     });
@@ -316,11 +295,10 @@ test.describe("UI", () => {
       await expect(page.locator("#voice-hint")).toHaveText("Hold mic or spacebar to speak");
     });
 
-    test("voice tab shows auto-read and auto listen toggles", async ({ page }) => {
+    test("voice tab shows auto-read toggle", async ({ page }) => {
       await page.goto(pageUrl());
       await page.click('[data-tab="voice"]');
       await expect(page.locator("#voice-autoread-toggle")).toBeVisible();
-      await expect(page.locator("#voice-autolisten-toggle")).toBeVisible();
     });
 
     test("no media session / AirPod diagnostics UI is present", async ({ page }) => {
@@ -394,20 +372,6 @@ test.describe("UI", () => {
       await page.click('[data-tab="voice"]');
       const initial = await voiceCb.isChecked();
       await page.locator("#voice-autoread-toggle").click();
-      await expect(voiceCb).toHaveJSProperty("checked", !initial);
-
-      await page.click('[data-tab="terminal"]');
-      await expect(terminalCb).toHaveJSProperty("checked", !initial);
-    });
-
-    test("auto listen toggles stay in sync between terminal controls and voice tab", async ({ page }) => {
-      await page.goto(pageUrl());
-      const terminalCb = page.locator("#autolisten-cb");
-      const voiceCb = page.locator("#voice-autolisten-cb");
-
-      await page.click('[data-tab="voice"]');
-      const initial = await voiceCb.isChecked();
-      await page.locator("#voice-autolisten-toggle").click();
       await expect(voiceCb).toHaveJSProperty("checked", !initial);
 
       await page.click('[data-tab="terminal"]');

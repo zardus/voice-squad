@@ -8,7 +8,6 @@ struct ToggleAutoReadIntent: AppIntent {
     func perform() async throws -> some IntentResult {
         let current = UserDefaults.autoReadIsEnabled()
         UserDefaults.shared.set(!current, forKey: SharedKeys.autoReadEnabled)
-
         for activity in Activity<VoiceSquadAttributes>.activities {
             let s = activity.content.state
             let newState = VoiceSquadAttributes.ContentState(
