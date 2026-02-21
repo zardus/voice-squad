@@ -13,22 +13,24 @@ fi
 SPEAK_SOCKET="${SPEAK_SOCKET_PATH:-/run/squad-sockets/speak.sock}"
 SPEAK_TIMEOUT="${SPEAK_TIMEOUT:-10}"
 
-# Wait for the socket to appear (handles startup race and voice-server restarts)
-waited=0
-interval=0.2
+# Wait for the socket to appear (handles startup race and voice-server restarts).
+# Track wall-clock elapsed time via SECONDS so the timeout is accurate.
+SECONDS=0
+attempts=0
 while [ ! -S "$SPEAK_SOCKET" ]; do
-  if [ "$waited" -ge "$SPEAK_TIMEOUT" ]; then
+  if [ "$SECONDS" -ge "$SPEAK_TIMEOUT" ]; then
     echo "Error: speak socket not available at $SPEAK_SOCKET after ${SPEAK_TIMEOUT}s" >&2
     exit 1
   fi
-  sleep "$interval"
-  waited=$((waited + 1))
   # Back off: 0.2s, 0.2s, 0.5s, then 1s thereafter
-  if [ "$waited" -ge 3 ]; then
-    interval=1
-  elif [ "$waited" -ge 2 ]; then
-    interval=0.5
+  if [ "$attempts" -ge 3 ]; then
+    sleep 1
+  elif [ "$attempts" -ge 2 ]; then
+    sleep 0.5
+  else
+    sleep 0.2
   fi
+  attempts=$((attempts + 1))
 done
 
 curl --silent --show-error --fail --unix-socket "$SPEAK_SOCKET" \

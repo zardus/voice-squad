@@ -22,21 +22,13 @@ test.describe("Speak socket reliability", () => {
   test("internal speak socket exists and is a socket file", () => {
     // The voice-server should have created the socket before tests start
     // (test-runner depends_on voice-server healthy).
-    const exists = fs.existsSync(SPEAK_SOCKET_PATH);
-    if (!exists) {
-      // Socket may not be bind-mounted into test-runner; skip gracefully.
-      test.skip();
-      return;
-    }
+    test.skip(!fs.existsSync(SPEAK_SOCKET_PATH), "speak socket not bind-mounted into test-runner");
     const stat = fs.statSync(SPEAK_SOCKET_PATH);
     expect(stat.isSocket()).toBe(true);
   });
 
   test("speak via internal unix socket returns ok", async () => {
-    if (!fs.existsSync(SPEAK_SOCKET_PATH)) {
-      test.skip();
-      return;
-    }
+    test.skip(!fs.existsSync(SPEAK_SOCKET_PATH), "speak socket not bind-mounted into test-runner");
 
     // Use curl to hit the internal speak socket directly (same as the speak script does)
     const uniqueText = `socket-test-${Date.now()}`;
@@ -89,34 +81,33 @@ test.describe("Speak socket reliability", () => {
   });
 
   test("speak script retries when socket appears after delay", () => {
-    // This test verifies the retry logic in the speak script by:
-    // 1. Pointing SPEAK_SOCKET_PATH at a temp path (no socket yet)
-    // 2. Creating the socket (via a simple listener) after a short delay
-    // 3. Verifying the speak script waits and succeeds
-    //
-    // We use a background socat or node process to create a temporary socket.
-    // If tools are not available, we test the simpler case that the script
-    // waits and eventually errors with a clear timeout message.
-
+    // Verify the retry logic: point at a non-existent socket with SPEAK_TIMEOUT=2.
+    // The script should wait and then time out with a clear error message.
     const tmpSocket = `/tmp/speak-retry-test-${Date.now()}.sock`;
 
     try {
-      // Test that the script properly times out with a clear error message
-      // when the socket never appears (SPEAK_TIMEOUT=1 for fast test).
-      const result = (() => {
+      const { output, elapsedMs, succeeded } = (() => {
+        const start = Date.now();
         try {
           execSync(
-            `SPEAK_SOCKET_PATH="${tmpSocket}" SPEAK_TIMEOUT=1 /opt/squad/captain/speak "test" 2>&1 || true`,
-            { timeout: 5000 }
+            `SPEAK_SOCKET_PATH="${tmpSocket}" SPEAK_TIMEOUT=2 /opt/squad/captain/speak "test" 2>&1`,
+            { timeout: 10000 }
           );
+          return { output: "", elapsedMs: Date.now() - start, succeeded: true };
         } catch (err) {
-          return err.stderr ? err.stderr.toString() : err.stdout ? err.stdout.toString() : "";
+          const elapsedMs = Date.now() - start;
+          const stderr = err.stderr ? err.stderr.toString() : "";
+          const stdout = err.stdout ? err.stdout.toString() : "";
+          return { output: stderr || stdout || "", elapsedMs, succeeded: false };
         }
-        return "";
       })();
-      // The script should NOT have the old instant-failure message
-      // (which would say "not available at" without "after").
-      // It should include the timeout duration in its error.
+
+      // The script should time out (non-zero exit), not succeed.
+      expect(succeeded).toBe(false);
+      // Error message should include the timeout duration.
+      expect(output).toContain("after 2s");
+      // It should have actually waited close to the timeout, not failed instantly.
+      expect(elapsedMs).toBeGreaterThanOrEqual(1500);
     } finally {
       try { fs.unlinkSync(tmpSocket); } catch {}
     }
