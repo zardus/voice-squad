@@ -22,6 +22,13 @@ final class VoiceSquadTests: XCTestCase {
         }
     }
 
+    func testDecodeWebSocketSpeakTextSupportsSummaryFieldAndTimestamp() throws {
+        let message = #"{"type":"speak_text","summary":"Voice summary","timestamp":"2026-02-21T12:34:56Z"}"#
+        let event = try LiveActivityUpdateEventDecoder.decodeWebSocketMessage(message)
+        XCTAssertEqual(event?.latestSpeechText, "Voice summary")
+        XCTAssertEqual(event?.eventDate?.timeIntervalSince1970, 1_771_677_296, accuracy: 0.001)
+    }
+
     func testDecodeRemoteNotificationLiveActivityPayload() throws {
         let payload: [AnyHashable: Any] = [
             "aps": [
@@ -150,6 +157,21 @@ final class VoiceSquadTests: XCTestCase {
         let event = try LiveActivityUpdateEventDecoder.decodeRemoteNotification(payload)
         XCTAssertEqual(event?.latestSpeechText, "Root fallback text")
         XCTAssertEqual(event?.isConnected, false)
+    }
+
+    func testDecodeRemoteNotificationSupportsSummaryFallbackAndTimestamp() throws {
+        let payload: [AnyHashable: Any] = [
+            "aps": [
+                "event": "update",
+                "timestamp": 1_771_677_296
+            ],
+            "summary": "Summary field payload",
+            "isConnected": true
+        ]
+
+        let event = try LiveActivityUpdateEventDecoder.decodeRemoteNotification(payload)
+        XCTAssertEqual(event?.latestSpeechText, "Summary field payload")
+        XCTAssertEqual(event?.eventDate?.timeIntervalSince1970, 1_771_677_296, accuracy: 0.001)
     }
 
     func testDecodeRemoteNotificationEndEventMarksDisconnected() throws {

@@ -62,8 +62,10 @@ Notes:
 - Foreground socket path: websocket text frames are decoded by `LiveActivityUpdateEventDecoder` and routed through `LiveActivityManager.updateActivity(with:)`.
 - Foreground notification path: `AppDelegate.userNotificationCenter(_:willPresent:...)` also decodes/routes incoming push payloads while the app is active.
 - Background notification path: `AppDelegate.application(_:didReceiveRemoteNotification:)` uses the same decode + update path.
+- Remote push registration path: `LiveActivityManager` now POSTs `activityId` + `activityPushToken` to `POST /api/live-activity/register` whenever the activity token changes.
 - Activity routing: updates with explicit `activity-id` now target only that activity. Unknown IDs are logged and dropped (no fallback to another activity).
 - Activity stability: `LiveActivityManager.startActivityIfNeeded()` reuses the current activity ID (stored in shared defaults) instead of creating a new activity on every app activation. This keeps APNs push tokens valid for the activity lifetime.
+- Update ordering: updates are now applied serially and stale timestamped events are dropped, so delayed notification payloads cannot overwrite a newer websocket summary.
 
 Debugging tips:
 
@@ -71,6 +73,21 @@ Debugging tips:
 - `SharedKeys.liveActivityPushToken` stores the latest push token emitted by `activity.pushTokenUpdates`.
 - `LiveActivity` logs now include routing outcomes (`selected`, `unknown requested id`, `no candidates`) and update metadata (`connected`, `textChars`) for easier stale-state diagnosis.
 - Invalid websocket or APNs payloads are logged and ignored, rather than partially applied.
+- Use `GET /api/live-activity/registrations?token=...` to inspect currently registered iOS activity IDs/tokens (token prefix only).
+
+## Lifecycle Constraints (iOS/ActivityKit)
+
+- Foreground (`scenePhase == .active`): latest summary is driven by websocket (`speak_text` / `connected`) and updates Live Activity locally.
+- Background / locked while app is still running: websocket may continue for a period, and `didReceiveRemoteNotification` can update Live Activity when APNs notifications are delivered.
+- Terminated app: app code does not run, so local websocket/notification callbacks cannot execute. Latest-summary updates require ActivityKit APNs liveactivity pushes sent directly to the activity push token.
+
+Backend env required for terminated-state live updates:
+
+- `IOS_LIVE_ACTIVITY_TOPIC` (for example, `<bundle-id>.push-type.liveactivity`)
+- `IOS_LIVE_ACTIVITY_TEAM_ID`
+- `IOS_LIVE_ACTIVITY_KEY_ID`
+- `IOS_LIVE_ACTIVITY_PRIVATE_KEY` (PEM, `\n` escaped in env is supported)
+- Optional: `IOS_LIVE_ACTIVITY_ENV=sandbox|production` (default `sandbox`)
 
 ## Lock/Background Continuity Notes
 

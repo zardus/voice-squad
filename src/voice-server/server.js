@@ -1,10 +1,12 @@
 const express = require("express");
 const http = require("http");
 const https = require("https");
+const http2 = require("http2");
 const os = require("os");
 const path = require("path");
 const fs = require("fs/promises");
 const fsSync = require("fs");
+const crypto = require("crypto");
 const { execSync } = require("child_process");
 const { WebSocketServer, WebSocket } = require("ws");
 const {
@@ -43,6 +45,13 @@ const MAX_AUDIO_UPLOAD_BYTES = Number(process.env.MAX_AUDIO_UPLOAD_BYTES || 64 *
 const VOICE_HISTORY_FILE = process.env.VOICE_HISTORY_FILE || "/tmp/voice-summary-history.json";
 const VOICE_HISTORY_LIMIT = Number(process.env.VOICE_HISTORY_LIMIT || 1000);
 const SPEAK_SOCKET_PATH = process.env.SPEAK_SOCKET_PATH || "/run/squad-sockets/speak.sock";
+const LIVE_ACTIVITY_REGISTRATIONS_FILE = process.env.LIVE_ACTIVITY_REGISTRATIONS_FILE || "/tmp/live-activity-registrations.json";
+const LIVE_ACTIVITY_REGISTRATIONS_LIMIT = Number(process.env.LIVE_ACTIVITY_REGISTRATIONS_LIMIT || 2000);
+const IOS_LIVE_ACTIVITY_TOPIC = process.env.IOS_LIVE_ACTIVITY_TOPIC || "";
+const IOS_LIVE_ACTIVITY_TEAM_ID = process.env.IOS_LIVE_ACTIVITY_TEAM_ID || "";
+const IOS_LIVE_ACTIVITY_KEY_ID = process.env.IOS_LIVE_ACTIVITY_KEY_ID || "";
+const IOS_LIVE_ACTIVITY_PRIVATE_KEY = (process.env.IOS_LIVE_ACTIVITY_PRIVATE_KEY || "").replace(/\\n/g, "\n");
+const IOS_LIVE_ACTIVITY_ENV = (process.env.IOS_LIVE_ACTIVITY_ENV || "sandbox").toLowerCase();
 
 const REQUIRED_ENV = { VOICE_TOKEN: TOKEN, OPENAI_API_KEY: process.env.OPENAI_API_KEY };
 const missing = Object.entries(REQUIRED_ENV).filter(([, v]) => !v).map(([k]) => k);
@@ -53,6 +62,8 @@ if (missing.length) {
 console.log("[voice] env OK: VOICE_TOKEN, OPENAI_API_KEY all set");
 
 let voiceSummaryHistory = [];
+let liveActivityRegistrations = new Map();
+const apnsJwtState = { token: null, expiresAtMs: 0 };
 
 function normalizeVoiceHistoryEntries(entries) {
   if (!Array.isArray(entries)) return [];
@@ -108,6 +119,227 @@ async function addVoiceSummaryEntry(text) {
   }
   await persistVoiceSummaryHistory();
   return entry;
+}
+
+function isLiveActivityPushConfigured() {
+  return Boolean(
+    IOS_LIVE_ACTIVITY_TOPIC &&
+      IOS_LIVE_ACTIVITY_TEAM_ID &&
+      IOS_LIVE_ACTIVITY_KEY_ID &&
+      IOS_LIVE_ACTIVITY_PRIVATE_KEY
+  );
+}
+
+function normalizeLiveActivityRegistrations(entries) {
+  if (!Array.isArray(entries)) return [];
+  const normalized = entries
+    .filter((item) => item && typeof item === "object")
+    .map((item) => {
+      const activityId = String(item.activityId || "").trim();
+      const activityPushToken = String(item.activityPushToken || "").trim().toLowerCase();
+      const updatedAt = typeof item.updatedAt === "string" && item.updatedAt
+        ? item.updatedAt
+        : new Date().toISOString();
+      return { activityId, activityPushToken, updatedAt };
+    })
+    .filter((item) => item.activityId && item.activityPushToken);
+  normalized.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
+  if (Number.isFinite(LIVE_ACTIVITY_REGISTRATIONS_LIMIT) && LIVE_ACTIVITY_REGISTRATIONS_LIMIT > 0) {
+    return normalized.slice(0, LIVE_ACTIVITY_REGISTRATIONS_LIMIT);
+  }
+  return normalized;
+}
+
+async function loadLiveActivityRegistrations() {
+  try {
+    if (!fsSync.existsSync(LIVE_ACTIVITY_REGISTRATIONS_FILE)) {
+      liveActivityRegistrations = new Map();
+      return;
+    }
+    const raw = await fs.readFile(LIVE_ACTIVITY_REGISTRATIONS_FILE, "utf8");
+    const parsed = JSON.parse(raw);
+    const normalized = normalizeLiveActivityRegistrations(parsed.registrations);
+    liveActivityRegistrations = new Map(normalized.map((item) => [item.activityId, item]));
+    console.log(`[live-activity] loaded ${liveActivityRegistrations.size} registrations`);
+  } catch (err) {
+    console.warn(`[live-activity] failed to load registrations: ${err.message}`);
+    liveActivityRegistrations = new Map();
+  }
+}
+
+async function persistLiveActivityRegistrations() {
+  try {
+    await fs.mkdir(path.dirname(LIVE_ACTIVITY_REGISTRATIONS_FILE), { recursive: true });
+    const registrations = Array.from(liveActivityRegistrations.values())
+      .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
+    await fs.writeFile(
+      LIVE_ACTIVITY_REGISTRATIONS_FILE,
+      JSON.stringify({ registrations }, null, 2) + "\n",
+      "utf8"
+    );
+  } catch (err) {
+    console.warn(`[live-activity] failed to persist registrations: ${err.message}`);
+  }
+}
+
+function getApnsHost() {
+  return IOS_LIVE_ACTIVITY_ENV === "production"
+    ? "api.push.apple.com"
+    : "api.sandbox.push.apple.com";
+}
+
+function getApnsJwt() {
+  const nowMs = Date.now();
+  if (apnsJwtState.token && nowMs < apnsJwtState.expiresAtMs) {
+    return apnsJwtState.token;
+  }
+  try {
+    const nowSec = Math.floor(nowMs / 1000);
+    const header = {
+      alg: "ES256",
+      kid: IOS_LIVE_ACTIVITY_KEY_ID,
+    };
+    const claims = {
+      iss: IOS_LIVE_ACTIVITY_TEAM_ID,
+      iat: nowSec,
+    };
+    const encodedHeader = Buffer.from(JSON.stringify(header)).toString("base64url");
+    const encodedClaims = Buffer.from(JSON.stringify(claims)).toString("base64url");
+    const payload = `${encodedHeader}.${encodedClaims}`;
+    const signer = crypto.createSign("sha256");
+    signer.update(payload);
+    signer.end();
+    const signature = signer.sign(IOS_LIVE_ACTIVITY_PRIVATE_KEY).toString("base64url");
+    const jwt = `${payload}.${signature}`;
+    apnsJwtState.token = jwt;
+    apnsJwtState.expiresAtMs = nowMs + (45 * 60 * 1000);
+    return jwt;
+  } catch (err) {
+    console.warn(`[live-activity] failed to generate APNs JWT: ${err.message}`);
+    apnsJwtState.token = null;
+    apnsJwtState.expiresAtMs = 0;
+    return null;
+  }
+}
+
+async function sendLiveActivityUpdate(registration, state) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      resolve(result);
+    };
+    const timestampSeconds = Math.floor(Date.parse(state.timestamp) / 1000) || Math.floor(Date.now() / 1000);
+    const payload = {
+      aps: {
+        timestamp: timestampSeconds,
+        event: "update",
+        "content-state": {
+          latestSpeechText: state.text,
+          isConnected: true,
+          autoReadEnabled: true,
+        },
+      },
+      voice_squad: {
+        activityId: registration.activityId,
+        latestSpeechText: state.text,
+        isConnected: true,
+        timestamp: state.timestamp,
+      },
+      latestSpeechText: state.text,
+      isConnected: true,
+      timestamp: state.timestamp,
+    };
+
+    const client = http2.connect(`https://${getApnsHost()}`);
+    client.on("error", (err) => {
+      finish({ ok: false, status: 0, reason: `http2_connect_error:${err.message}` });
+      client.close();
+    });
+    const jwt = getApnsJwt();
+    if (!jwt) {
+      finish({ ok: false, status: 0, reason: "jwt_generation_failed" });
+      client.close();
+      return;
+    }
+
+    const req = client.request({
+      ":method": "POST",
+      ":path": `/3/device/${registration.activityPushToken}`,
+      "apns-topic": IOS_LIVE_ACTIVITY_TOPIC,
+      "apns-push-type": "liveactivity",
+      authorization: `bearer ${jwt}`,
+      "content-type": "application/json",
+    });
+
+    let responseBody = "";
+    let statusCode = 0;
+    req.on("response", (headers) => {
+      statusCode = Number(headers[":status"] || 0);
+    });
+    req.setEncoding("utf8");
+    req.on("data", (chunk) => {
+      responseBody += chunk;
+    });
+    req.on("error", (err) => {
+      finish({ ok: false, status: statusCode || 0, reason: `request_error:${err.message}` });
+      client.close();
+    });
+    req.on("end", () => {
+      client.close();
+      if (statusCode >= 200 && statusCode < 300) {
+        finish({ ok: true, status: statusCode, reason: null });
+        return;
+      }
+      let reason = `status_${statusCode}`;
+      if (responseBody) {
+        try {
+          const parsed = JSON.parse(responseBody);
+          if (parsed && parsed.reason) reason = parsed.reason;
+        } catch {}
+      }
+      finish({ ok: false, status: statusCode, reason });
+    });
+
+    req.end(JSON.stringify(payload));
+  });
+}
+
+async function pushLiveActivitySummaryUpdate(text, timestamp) {
+  if (!isLiveActivityPushConfigured()) return { pushed: 0, attempted: 0, skipped: "not_configured" };
+  const registrations = Array.from(liveActivityRegistrations.values());
+  if (!registrations.length) return { pushed: 0, attempted: 0, skipped: "no_registrations" };
+
+  const state = { text, timestamp };
+  const results = await Promise.allSettled(
+    registrations.map((registration) => sendLiveActivityUpdate(registration, state))
+  );
+  let pushed = 0;
+  let attempted = 0;
+  for (let i = 0; i < results.length; i++) {
+    attempted++;
+    const registration = registrations[i];
+    const result = results[i];
+    if (result.status === "fulfilled" && result.value.ok) {
+      pushed++;
+      continue;
+    }
+    const reason = result.status === "fulfilled"
+      ? result.value.reason || "unknown"
+      : result.reason?.message || "unknown";
+    const status = result.status === "fulfilled" ? result.value.status : 0;
+    console.warn(`[live-activity] push failed activityId=${registration.activityId} status=${status} reason=${reason}`);
+    if (status === 410 || reason === "BadDeviceToken" || reason === "Unregistered") {
+      liveActivityRegistrations.delete(registration.activityId);
+    }
+  }
+
+  if (liveActivityRegistrations.size !== registrations.length) {
+    await persistLiveActivityRegistrations();
+  }
+
+  return { pushed, attempted, skipped: null };
 }
 
 function checkToken(req) {
@@ -166,6 +398,59 @@ app.get("/api/voice-history", (req, res) => {
     return res.status(401).json({ error: "Unauthorized" });
   }
   res.json({ entries: voiceSummaryHistory });
+});
+
+app.post("/api/live-activity/register", async (req, res) => {
+  const { token, activityId, activityPushToken } = req.body || {};
+  if (token !== TOKEN) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  const normalizedActivityId = String(activityId || "").trim();
+  const normalizedPushToken = String(activityPushToken || "").trim().toLowerCase();
+  if (!normalizedActivityId || !normalizedPushToken) {
+    return res.status(400).json({ error: "Missing activityId or activityPushToken" });
+  }
+
+  liveActivityRegistrations.set(normalizedActivityId, {
+    activityId: normalizedActivityId,
+    activityPushToken: normalizedPushToken,
+    updatedAt: new Date().toISOString(),
+  });
+  if (Number.isFinite(LIVE_ACTIVITY_REGISTRATIONS_LIMIT) && LIVE_ACTIVITY_REGISTRATIONS_LIMIT > 0) {
+    const trimmed = normalizeLiveActivityRegistrations(Array.from(liveActivityRegistrations.values()));
+    liveActivityRegistrations = new Map(trimmed.map((item) => [item.activityId, item]));
+  }
+  await persistLiveActivityRegistrations();
+  console.log(`[live-activity] registration updated activityId=${normalizedActivityId} total=${liveActivityRegistrations.size}`);
+  res.json({
+    ok: true,
+    registered: liveActivityRegistrations.size,
+    pushConfigured: isLiveActivityPushConfigured(),
+    apnsEnvironment: IOS_LIVE_ACTIVITY_ENV,
+  });
+});
+
+app.get("/api/live-activity/registrations", (req, res) => {
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  if (url.searchParams.get("token") !== TOKEN) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  const registrations = Array.from(liveActivityRegistrations.values())
+    .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1))
+    .map((entry) => ({
+      activityId: entry.activityId,
+      pushTokenPrefix: entry.activityPushToken.slice(0, 12),
+      updatedAt: entry.updatedAt,
+    }));
+
+  res.json({
+    pushConfigured: isLiveActivityPushConfigured(),
+    apnsEnvironment: IOS_LIVE_ACTIVITY_ENV,
+    apnsHost: getApnsHost(),
+    topic: IOS_LIVE_ACTIVITY_TOPIC || null,
+    registrations,
+  });
 });
 
 function sanitizeTaskName(taskName) {
@@ -498,6 +783,8 @@ async function handleSpeakRequest(body, res) {
     const speakMsg = JSON.stringify({
       type: "speak_text",
       text: trimmed,
+      latestSpeechText: trimmed,
+      summary: trimmed,
       timestamp: entry ? entry.timestamp : new Date().toISOString(),
     });
 
@@ -531,7 +818,19 @@ async function handleSpeakRequest(body, res) {
     }
 
     console.log(`[speak] sent to ${sent}/${wss.clients.size} client(s)`);
-    res.json({ ok: true, clients: sent, formats: formatsUsed.sort() });
+    const eventTimestamp = entry ? entry.timestamp : new Date().toISOString();
+    const liveActivityPushResult = await pushLiveActivitySummaryUpdate(trimmed, eventTimestamp);
+    if (liveActivityPushResult.skipped) {
+      console.log(`[live-activity] push skipped reason=${liveActivityPushResult.skipped}`);
+    } else {
+      console.log(`[live-activity] push sent=${liveActivityPushResult.pushed}/${liveActivityPushResult.attempted}`);
+    }
+    res.json({
+      ok: true,
+      clients: sent,
+      formats: formatsUsed.sort(),
+      live_activity: liveActivityPushResult,
+    });
   } catch (err) {
     console.error("[speak] error:", err.message);
     res.status(500).json({ error: err.message });
@@ -1139,6 +1438,12 @@ wss.on("connection", (ws, req) => {
 (async () => {
   try {
     await loadVoiceSummaryHistory();
+    await loadLiveActivityRegistrations();
+    if (isLiveActivityPushConfigured()) {
+      console.log(`[live-activity] APNs enabled env=${IOS_LIVE_ACTIVITY_ENV} topic=${IOS_LIVE_ACTIVITY_TOPIC}`);
+    } else {
+      console.log("[live-activity] APNs disabled (set IOS_LIVE_ACTIVITY_* env vars to enable terminated-state updates)");
+    }
     await startInternalSpeakSocket();
     server.listen(PORT, () => {
       console.log(`[voice] server listening on :${PORT}`);
