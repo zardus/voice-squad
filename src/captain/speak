@@ -1,6 +1,9 @@
 #!/bin/bash
 # speak — Send text to the voice interface for TTS playback
 # Usage: speak "Workers are finishing up the auth module"
+#
+# Waits for the speak socket to become available (voice-server may still be
+# starting or restarting). Retries with backoff up to SPEAK_TIMEOUT seconds.
 
 if [ -z "$1" ]; then
   echo "Usage: speak \"text to speak\"" >&2
@@ -8,10 +11,25 @@ if [ -z "$1" ]; then
 fi
 
 SPEAK_SOCKET="${SPEAK_SOCKET_PATH:-/run/squad-sockets/speak.sock}"
-if [ ! -S "$SPEAK_SOCKET" ]; then
-  echo "Error: speak socket not available at $SPEAK_SOCKET" >&2
-  exit 1
-fi
+SPEAK_TIMEOUT="${SPEAK_TIMEOUT:-10}"
+
+# Wait for the socket to appear (handles startup race and voice-server restarts)
+waited=0
+interval=0.2
+while [ ! -S "$SPEAK_SOCKET" ]; do
+  if [ "$waited" -ge "$SPEAK_TIMEOUT" ]; then
+    echo "Error: speak socket not available at $SPEAK_SOCKET after ${SPEAK_TIMEOUT}s" >&2
+    exit 1
+  fi
+  sleep "$interval"
+  waited=$((waited + 1))
+  # Back off: 0.2s, 0.2s, 0.5s, then 1s thereafter
+  if [ "$waited" -ge 3 ]; then
+    interval=1
+  elif [ "$waited" -ge 2 ]; then
+    interval=0.5
+  fi
+done
 
 curl --silent --show-error --fail --unix-socket "$SPEAK_SOCKET" \
   -X POST "http://localhost/speak" \

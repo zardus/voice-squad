@@ -8,6 +8,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y \
     curl \
+    jq \
     tmux \
     ca-certificates \
     gnupg \
@@ -35,7 +36,8 @@ COPY src/tunnel/show-qr.js /opt/squad/voice/show-qr.js
 COPY src/captain/restart-captain.sh /opt/squad/restart-captain.sh
 COPY src/pane-monitor/pane-monitor.sh /opt/squad/pane-monitor.sh
 COPY src/captain/switch-account.sh /opt/tests/src/captain/switch-account.sh
-RUN chmod +x /opt/squad/restart-captain.sh /opt/squad/pane-monitor.sh
+COPY src/captain/speak /opt/squad/captain/speak
+RUN chmod +x /opt/squad/restart-captain.sh /opt/squad/pane-monitor.sh /opt/squad/captain/speak
 
 # ── Switch to ubuntu for npm/playwright install ─────────────
 # Avoids a slow chown -R over hundreds of MB of Chromium binaries.
