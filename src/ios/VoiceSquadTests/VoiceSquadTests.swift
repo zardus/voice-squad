@@ -196,13 +196,33 @@ final class VoiceSquadTests: XCTestCase {
         XCTAssertEqual(decision, .selected(activityID: "requested"))
     }
 
-    func testLiveActivityRouterIgnoresUnknownRequestedId() {
+    func testLiveActivityRouterFallsBackToStoredWhenRequestedIdNotFound() {
+        // When the server sends a stale activity ID that no longer exists on the device,
+        // the router should fall back to the stored/available activity instead of dropping.
         let decision = LiveActivityRouter.chooseActivityID(
             requestedID: "missing",
             storedID: "stored",
             availableIDs: ["stored", "other"]
         )
-        XCTAssertEqual(decision, .ignoreUnknownRequestedID(requestedID: "missing"))
+        XCTAssertEqual(decision, .selected(activityID: "stored"))
+    }
+
+    func testLiveActivityRouterFallsBackToFirstWhenRequestedAndStoredBothMissing() {
+        let decision = LiveActivityRouter.chooseActivityID(
+            requestedID: "stale-server-id",
+            storedID: "also-missing",
+            availableIDs: ["first", "second"]
+        )
+        XCTAssertEqual(decision, .selected(activityID: "first"))
+    }
+
+    func testLiveActivityRouterReturnsNoCandidatesWhenNoneAvailable() {
+        let decision = LiveActivityRouter.chooseActivityID(
+            requestedID: "missing",
+            storedID: "also-missing",
+            availableIDs: []
+        )
+        XCTAssertEqual(decision, .noCandidates)
     }
 
     func testLiveActivityRouterFallsBackToStoredIdWhenNoRequestedId() {
@@ -304,5 +324,44 @@ final class VoiceSquadTests: XCTestCase {
             isConnected: false
         )
         XCTAssertTrue(shouldMark)
+    }
+
+    // MARK: - NotificationDedup tests
+
+    func testNotificationDedupSuppressesSameTextWithinWindow() {
+        var dedup = NotificationDedup(windowSeconds: 300)
+        XCTAssertTrue(dedup.shouldPost(text: "Hello"))
+        XCTAssertFalse(dedup.shouldPost(text: "Hello"))
+    }
+
+    func testNotificationDedupAllowsDifferentText() {
+        var dedup = NotificationDedup(windowSeconds: 300)
+        XCTAssertTrue(dedup.shouldPost(text: "Message A"))
+        XCTAssertTrue(dedup.shouldPost(text: "Message B"))
+    }
+
+    func testNotificationDedupAllowsSameTextAfterWindowExpires() {
+        var dedup = NotificationDedup(windowSeconds: 0)
+        XCTAssertTrue(dedup.shouldPost(text: "Repeat"))
+        // With a 0-second window, the next check should pass (window expired immediately).
+        XCTAssertTrue(dedup.shouldPost(text: "Repeat"))
+    }
+
+    func testNotificationDedupResetClearsState() {
+        var dedup = NotificationDedup(windowSeconds: 300)
+        XCTAssertTrue(dedup.shouldPost(text: "First"))
+        dedup.reset()
+        // After reset, same text should be allowed again.
+        XCTAssertTrue(dedup.shouldPost(text: "First"))
+    }
+
+    func testNotificationDedupSequenceOfTexts() {
+        var dedup = NotificationDedup(windowSeconds: 300)
+        XCTAssertTrue(dedup.shouldPost(text: "A"))
+        XCTAssertFalse(dedup.shouldPost(text: "A"))
+        XCTAssertTrue(dedup.shouldPost(text: "B"))
+        XCTAssertFalse(dedup.shouldPost(text: "B"))
+        // Going back to A should be allowed (last was B).
+        XCTAssertTrue(dedup.shouldPost(text: "A"))
     }
 }

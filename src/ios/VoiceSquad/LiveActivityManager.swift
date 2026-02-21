@@ -18,7 +18,6 @@ struct LiveActivityUpdateEvent: Equatable {
 
 enum LiveActivityRoutingDecision: Equatable {
     case selected(activityID: String)
-    case ignoreUnknownRequestedID(requestedID: String)
     case noCandidates
 }
 
@@ -28,12 +27,15 @@ enum LiveActivityRouter {
         storedID: String?,
         availableIDs: [String]
     ) -> LiveActivityRoutingDecision {
-        if let requestedID = normalizedID(requestedID) {
-            return availableIDs.contains(requestedID)
-                ? .selected(activityID: requestedID)
-                : .ignoreUnknownRequestedID(requestedID: requestedID)
+        // Prefer the explicitly requested activity ID when it exists on this device.
+        if let requestedID = normalizedID(requestedID),
+           availableIDs.contains(requestedID) {
+            return .selected(activityID: requestedID)
         }
 
+        // Requested ID was not found (stale server-side registration) or not provided.
+        // Fall through to stored / first-available instead of dropping the update,
+        // so that Live Activity continues to reflect the latest summary state.
         if let storedID = normalizedID(storedID),
            availableIDs.contains(storedID) {
             return .selected(activityID: storedID)
@@ -470,14 +472,16 @@ final class LiveActivityManager: ObservableObject {
                 logger.error("Routing selected unknown live activity id=\(selectedID, privacy: .public)")
                 return nil
             }
+            // Log when the router fell back from a stale requested ID.
+            if let requested = requestedID?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !requested.isEmpty, requested != match.id {
+                logger.info("Live activity routed from stale requestedId=\(requested, privacy: .public) to id=\(match.id, privacy: .public)")
+            }
             if UserDefaults.shared.string(forKey: SharedKeys.liveActivityID) != match.id {
                 UserDefaults.shared.set(match.id, forKey: SharedKeys.liveActivityID)
                 logger.info("Updated stored live activity id to \(match.id, privacy: .public)")
             }
             return match
-        case .ignoreUnknownRequestedID(let missingID):
-            logger.warning("Ignoring live activity update for unknown requested id=\(missingID, privacy: .public)")
-            return nil
         case .noCandidates:
             logger.error("No live activity available after recovery attempt")
             return nil
