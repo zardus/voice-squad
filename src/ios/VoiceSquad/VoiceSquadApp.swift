@@ -36,6 +36,7 @@ struct VoiceSquadApp: App {
             .onAppear {
                 notifications.requestPermission()
                 liveActivity.startActivityIfNeeded()
+                liveActivity.configureRemotePushSync(serverBaseURL: settings.serverBaseURL, token: settings.token)
                 silentAudio.start()
                 ensureWebSocketConnected(reason: "app_appear")
             }
@@ -85,6 +86,12 @@ struct VoiceSquadApp: App {
                 @unknown default:
                     break
                 }
+            }
+            .onChange(of: settings.serverBaseURL) { _, _ in
+                liveActivity.configureRemotePushSync(serverBaseURL: settings.serverBaseURL, token: settings.token)
+            }
+            .onChange(of: settings.token) { _, _ in
+                liveActivity.configureRemotePushSync(serverBaseURL: settings.serverBaseURL, token: settings.token)
             }
         }
     }
