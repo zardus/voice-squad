@@ -53,7 +53,7 @@ struct ContentView: View {
 
     private func connectWebSocket() {
         guard let url = settings.makeWebSocketURL() else { return }
-        webSocket.connect(url: url)
+        webSocket.connect(url: url, reason: "content_view_connect")
     }
 
     private func reconnectAll() {

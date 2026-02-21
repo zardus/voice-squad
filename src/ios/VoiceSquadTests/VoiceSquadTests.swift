@@ -108,4 +108,87 @@ final class VoiceSquadTests: XCTestCase {
         XCTAssertEqual(event?.isConnected, false)
         XCTAssertEqual(event?.activityID, "activity-xyz")
     }
+
+    func testConnectionTransitionPolicyKeepsBackgroundDisconnectDuringGrace() {
+        let startedAt = Date()
+        let evaluationTime = startedAt.addingTimeInterval(ConnectionTransitionPolicy.backgroundDisconnectGrace - 1)
+        let shouldMark = ConnectionTransitionPolicy.shouldMarkDisconnected(
+            disconnectStartedAt: startedAt,
+            now: evaluationTime,
+            runtimeState: .background,
+            isConnected: false
+        )
+        XCTAssertFalse(shouldMark)
+    }
+
+    func testConnectionTransitionPolicyMarksBackgroundDisconnectAfterGrace() {
+        let startedAt = Date()
+        let evaluationTime = startedAt.addingTimeInterval(ConnectionTransitionPolicy.backgroundDisconnectGrace + 1)
+        let shouldMark = ConnectionTransitionPolicy.shouldMarkDisconnected(
+            disconnectStartedAt: startedAt,
+            now: evaluationTime,
+            runtimeState: .background,
+            isConnected: false
+        )
+        XCTAssertTrue(shouldMark)
+    }
+
+    func testConnectionTransitionPolicyNeverMarksWhileConnected() {
+        let startedAt = Date().addingTimeInterval(-120)
+        let shouldMark = ConnectionTransitionPolicy.shouldMarkDisconnected(
+            disconnectStartedAt: startedAt,
+            now: Date(),
+            runtimeState: .active,
+            isConnected: true
+        )
+        XCTAssertFalse(shouldMark)
+    }
+
+    func testConnectionTransitionPolicyKeepsActiveDisconnectDuringGrace() {
+        let startedAt = Date()
+        let evaluationTime = startedAt.addingTimeInterval(ConnectionTransitionPolicy.activeDisconnectGrace - 1)
+        let shouldMark = ConnectionTransitionPolicy.shouldMarkDisconnected(
+            disconnectStartedAt: startedAt,
+            now: evaluationTime,
+            runtimeState: .active,
+            isConnected: false
+        )
+        XCTAssertFalse(shouldMark)
+    }
+
+    func testConnectionTransitionPolicyMarksActiveDisconnectAfterGrace() {
+        let startedAt = Date()
+        let evaluationTime = startedAt.addingTimeInterval(ConnectionTransitionPolicy.activeDisconnectGrace + 1)
+        let shouldMark = ConnectionTransitionPolicy.shouldMarkDisconnected(
+            disconnectStartedAt: startedAt,
+            now: evaluationTime,
+            runtimeState: .active,
+            isConnected: false
+        )
+        XCTAssertTrue(shouldMark)
+    }
+
+    func testConnectionTransitionPolicyKeepsInactiveDisconnectDuringGrace() {
+        let startedAt = Date()
+        let evaluationTime = startedAt.addingTimeInterval(ConnectionTransitionPolicy.inactiveDisconnectGrace - 1)
+        let shouldMark = ConnectionTransitionPolicy.shouldMarkDisconnected(
+            disconnectStartedAt: startedAt,
+            now: evaluationTime,
+            runtimeState: .inactive,
+            isConnected: false
+        )
+        XCTAssertFalse(shouldMark)
+    }
+
+    func testConnectionTransitionPolicyMarksInactiveDisconnectAfterGrace() {
+        let startedAt = Date()
+        let evaluationTime = startedAt.addingTimeInterval(ConnectionTransitionPolicy.inactiveDisconnectGrace + 1)
+        let shouldMark = ConnectionTransitionPolicy.shouldMarkDisconnected(
+            disconnectStartedAt: startedAt,
+            now: evaluationTime,
+            runtimeState: .inactive,
+            isConnected: false
+        )
+        XCTAssertTrue(shouldMark)
+    }
 }
