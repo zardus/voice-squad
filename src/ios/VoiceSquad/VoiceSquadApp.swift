@@ -10,9 +10,12 @@ struct VoiceSquadApp: App {
     @StateObject private var notifications = NotificationManager()
     @State private var silentAudio = SilentAudioPlayer()
     @State private var speechAudio = SpeechAudioPlayer()
+    @State private var disconnectStartedAt: Date?
+    @State private var disconnectEvaluationTask: Task<Void, Never>?
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     @Environment(\.scenePhase) private var scenePhase
+    private let logger = Logger(subsystem: "com.voicesquad.app", category: "Lifecycle")
 
     var body: some Scene {
         WindowGroup {
@@ -33,8 +36,10 @@ struct VoiceSquadApp: App {
                 notifications.requestPermission()
                 liveActivity.startActivityIfNeeded()
                 silentAudio.start()
+                ensureWebSocketConnected(reason: "app_appear")
             }
             .onDisappear {
+                disconnectEvaluationTask?.cancel()
                 silentAudio.stop()
             }
             .onReceive(webSocket.$lastIncomingTextMessage) { message in
@@ -52,26 +57,93 @@ struct VoiceSquadApp: App {
                 }
             }
             .onReceive(webSocket.$isConnected) { connected in
-                if !connected {
-                    liveActivity.updateActivity(with: .init(
+                if connected {
+                    disconnectStartedAt = nil
+                    disconnectEvaluationTask?.cancel()
+                    return
+                }
+                disconnectStartedAt = Date()
+                scheduleDisconnectEvaluation(reason: "socket_disconnected")
+            }
+            .onChange(of: scenePhase) { _, newPhase in
+                logger.info("Scene phase changed to \(scenePhaseLabel(newPhase), privacy: .public)")
+                switch newPhase {
+                case .active:
+                    liveActivity.startActivityIfNeeded()
+                    silentAudio.start()
+                    ensureWebSocketConnected(reason: "scene_active")
+                    if disconnectStartedAt != nil {
+                        scheduleDisconnectEvaluation(reason: "scene_active_recheck")
+                    }
+                case .inactive, .background:
+                    // Keep silent audio running to maintain background activity.
+                    silentAudio.start()
+                    if disconnectStartedAt != nil {
+                        scheduleDisconnectEvaluation(reason: "scene_background_recheck")
+                    }
+                @unknown default:
+                    break
+                }
+            }
+        }
+    }
+
+    private func ensureWebSocketConnected(reason: String) {
+        guard let url = settings.makeWebSocketURL() else { return }
+        webSocket.ensureConnected(url: url, reason: reason)
+    }
+
+    private func currentRuntimeState() -> AppRuntimeState {
+        switch scenePhase {
+        case .active:
+            return .active
+        case .inactive:
+            return .inactive
+        case .background:
+            return .background
+        @unknown default:
+            return .inactive
+        }
+    }
+
+    private func scheduleDisconnectEvaluation(reason: String) {
+        guard let disconnectStartedAt else { return }
+        disconnectEvaluationTask?.cancel()
+        let runtimeState = currentRuntimeState()
+        let grace = ConnectionTransitionPolicy.disconnectGrace(for: runtimeState)
+        logger.info("Scheduling disconnect evaluation reason=\(reason, privacy: .public) state=\(String(describing: runtimeState), privacy: .public) grace=\(grace, privacy: .public)s")
+        disconnectEvaluationTask = Task {
+            try? await Task.sleep(nanoseconds: UInt64(grace * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                guard let activeDisconnectStartedAt = self.disconnectStartedAt else { return }
+                let state = self.currentRuntimeState()
+                if ConnectionTransitionPolicy.shouldMarkDisconnected(
+                    disconnectStartedAt: activeDisconnectStartedAt,
+                    runtimeState: state,
+                    isConnected: self.webSocket.isConnected
+                ) {
+                    self.logger.info("Publishing disconnected live activity state after grace window")
+                    self.liveActivity.updateActivity(with: .init(
                         latestSpeechText: "Disconnected",
                         isConnected: false,
                         activityID: nil
                     ))
                 }
             }
-            .onChange(of: scenePhase) { _, newPhase in
-                switch newPhase {
-                case .active:
-                    liveActivity.startActivityIfNeeded()
-                    silentAudio.start()
-                case .inactive, .background:
-                    // Keep silent audio running to maintain background activity.
-                    break
-                @unknown default:
-                    break
-                }
-            }
+        }
+    }
+
+    private func scenePhaseLabel(_ phase: ScenePhase) -> String {
+        switch phase {
+        case .active:
+            return "active"
+        case .inactive:
+            return "inactive"
+        case .background:
+            return "background"
+        @unknown default:
+            return "unknown"
         }
     }
 }
@@ -92,6 +164,7 @@ final class AppDelegate: NSObject, @preconcurrency UIApplicationDelegate {
         _ application: UIApplication,
         didReceiveRemoteNotification userInfo: [AnyHashable: Any]
     ) async -> UIBackgroundFetchResult {
+        logger.info("Received remote notification while appState=\(application.applicationState.rawValue, privacy: .public)")
         let handled = await LiveActivityManager.shared.handleRemoteNotification(userInfo)
         return handled ? .newData : .noData
     }

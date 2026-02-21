@@ -68,3 +68,13 @@ Debugging tips:
 - `SharedKeys.liveActivityID` tracks the activity currently targeted for updates.
 - `SharedKeys.liveActivityPushToken` stores the latest push token emitted by `activity.pushTokenUpdates`.
 - Invalid websocket or APNs payloads are logged and ignored, rather than partially applied.
+
+## Lock/Background Continuity Notes
+
+- The app now applies a disconnect grace window before publishing `Disconnected` to Live Activity:
+  - `active`: 2s
+  - `inactive` (transitions like lock): 12s
+  - `background`: 20s
+- This avoids false disconnects during foreground -> background -> lock transitions where iOS briefly pauses networking.
+- `WebSocketClient` now auto-reconnects with capped exponential backoff (1s -> 15s cap) and logs reconnect attempts.
+- `SilentAudioPlayer` now listens for interruption/reset lifecycle notifications and restarts the silent keepalive engine automatically.
