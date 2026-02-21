@@ -43,6 +43,62 @@ final class VoiceSquadTests: XCTestCase {
         )
     }
 
+    func testDecodeRemoteNotificationSupportsAnyHashableNestedPayload() throws {
+        let payload: [AnyHashable: Any] = [
+            "aps": [
+                AnyHashable("event"): "update",
+                AnyHashable("content-state"): [
+                    AnyHashable("latestSpeechText"): "Foreground payload",
+                    AnyHashable("isConnected"): true
+                ],
+                AnyHashable("activity-id"): "activity-foreground"
+            ]
+        ]
+
+        let event = try LiveActivityUpdateEventDecoder.decodeRemoteNotification(payload)
+        XCTAssertEqual(
+            event,
+            .init(latestSpeechText: "Foreground payload", isConnected: true, activityID: "activity-foreground")
+        )
+    }
+
+    func testDecodeRemoteNotificationExtractsActivityIdFromVoiceSquadPayload() throws {
+        let payload: [AnyHashable: Any] = [
+            "aps": [
+                "event": "update",
+                "content-state": [
+                    "latestSpeechText": "Routing test",
+                    "isConnected": true
+                ]
+            ],
+            "voice_squad": [
+                AnyHashable("activity_id"): "voice-squad-activity-id"
+            ]
+        ]
+
+        let event = try LiveActivityUpdateEventDecoder.decodeRemoteNotification(payload)
+        XCTAssertEqual(event?.activityID, "voice-squad-activity-id")
+    }
+
+    func testDecodeRemoteNotificationSupportsAnyHashableTopLevelKeys() throws {
+        let payload: [AnyHashable: Any] = [
+            AnyHashable("aps"): [
+                AnyHashable("event"): "update",
+                AnyHashable("content-state"): [
+                    AnyHashable("latestSpeechText"): "Top-level AnyHashable",
+                    AnyHashable("isConnected"): true
+                ]
+            ],
+            AnyHashable("voice_squad"): [
+                AnyHashable("activity_id"): "top-level-activity-id"
+            ]
+        ]
+
+        let event = try LiveActivityUpdateEventDecoder.decodeRemoteNotification(payload)
+        XCTAssertEqual(event?.latestSpeechText, "Top-level AnyHashable")
+        XCTAssertEqual(event?.activityID, "top-level-activity-id")
+    }
+
     func testDecodeRemoteNotificationRequiresAPS() {
         XCTAssertThrowsError(try LiveActivityUpdateEventDecoder.decodeRemoteNotification([:])) { error in
             XCTAssertEqual(error as? LiveActivityUpdateDecodeError, .missingAPS)
@@ -107,6 +163,42 @@ final class VoiceSquadTests: XCTestCase {
         let event = try LiveActivityUpdateEventDecoder.decodeRemoteNotification(payload)
         XCTAssertEqual(event?.isConnected, false)
         XCTAssertEqual(event?.activityID, "activity-xyz")
+    }
+
+    func testLiveActivityRouterUsesRequestedIdWhenPresent() {
+        let decision = LiveActivityRouter.chooseActivityID(
+            requestedID: "requested",
+            storedID: "stored",
+            availableIDs: ["stored", "requested", "other"]
+        )
+        XCTAssertEqual(decision, .selected(activityID: "requested"))
+    }
+
+    func testLiveActivityRouterIgnoresUnknownRequestedId() {
+        let decision = LiveActivityRouter.chooseActivityID(
+            requestedID: "missing",
+            storedID: "stored",
+            availableIDs: ["stored", "other"]
+        )
+        XCTAssertEqual(decision, .ignoreUnknownRequestedID(requestedID: "missing"))
+    }
+
+    func testLiveActivityRouterFallsBackToStoredIdWhenNoRequestedId() {
+        let decision = LiveActivityRouter.chooseActivityID(
+            requestedID: nil,
+            storedID: "stored",
+            availableIDs: ["stored", "other"]
+        )
+        XCTAssertEqual(decision, .selected(activityID: "stored"))
+    }
+
+    func testLiveActivityRouterUsesFirstAvailableWhenStoredIdMissing() {
+        let decision = LiveActivityRouter.chooseActivityID(
+            requestedID: nil,
+            storedID: "missing",
+            availableIDs: ["first", "second"]
+        )
+        XCTAssertEqual(decision, .selected(activityID: "first"))
     }
 
     func testConnectionTransitionPolicyKeepsBackgroundDisconnectDuringGrace() {

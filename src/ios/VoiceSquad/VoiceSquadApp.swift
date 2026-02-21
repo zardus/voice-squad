@@ -1,6 +1,7 @@
 import SwiftUI
 import UIKit
 import OSLog
+import UserNotifications
 
 @main
 struct VoiceSquadApp: App {
@@ -148,8 +149,16 @@ struct VoiceSquadApp: App {
     }
 }
 
-final class AppDelegate: NSObject, @preconcurrency UIApplicationDelegate {
+final class AppDelegate: NSObject, @preconcurrency UIApplicationDelegate, UNUserNotificationCenterDelegate {
     private let logger = Logger(subsystem: "com.voicesquad.app", category: "Push")
+
+    func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
+    ) -> Bool {
+        UNUserNotificationCenter.current().delegate = self
+        return true
+    }
 
     func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
         let token = deviceToken.map { String(format: "%02x", $0) }.joined()
@@ -166,6 +175,39 @@ final class AppDelegate: NSObject, @preconcurrency UIApplicationDelegate {
     ) async -> UIBackgroundFetchResult {
         logger.info("Received remote notification while appState=\(application.applicationState.rawValue, privacy: .public)")
         let handled = await LiveActivityManager.shared.handleRemoteNotification(userInfo)
+        if !handled {
+            logger.debug("Remote notification did not contain a live activity update")
+        }
         return handled ? .newData : .noData
+    }
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        logger.info("Will present notification while app is foregrounded")
+        Task {
+            let handled = await LiveActivityManager.shared.handleRemoteNotification(notification.request.content.userInfo)
+            if handled {
+                logger.debug("Foreground notification applied to live activity")
+            }
+        }
+        completionHandler([.banner, .list, .sound])
+    }
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        logger.info("User interacted with notification id=\(response.notification.request.identifier, privacy: .public)")
+        Task {
+            let handled = await LiveActivityManager.shared.handleRemoteNotification(response.notification.request.content.userInfo)
+            if handled {
+                logger.debug("Notification response payload applied to live activity")
+            }
+            completionHandler()
+        }
     }
 }

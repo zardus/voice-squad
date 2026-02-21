@@ -59,14 +59,17 @@ Notes:
 
 ## Live Activity Update Flow
 
-- Foreground path: websocket text frames are decoded by `LiveActivityUpdateEventDecoder` and routed through `LiveActivityManager.updateActivity(with:)`.
-- Background path: APNs remote notifications received by `AppDelegate.application(_:didReceiveRemoteNotification:)` are decoded by the same decoder and routed through the same update method.
+- Foreground socket path: websocket text frames are decoded by `LiveActivityUpdateEventDecoder` and routed through `LiveActivityManager.updateActivity(with:)`.
+- Foreground notification path: `AppDelegate.userNotificationCenter(_:willPresent:...)` also decodes/routes incoming push payloads while the app is active.
+- Background notification path: `AppDelegate.application(_:didReceiveRemoteNotification:)` uses the same decode + update path.
+- Activity routing: updates with explicit `activity-id` now target only that activity. Unknown IDs are logged and dropped (no fallback to another activity).
 - Activity stability: `LiveActivityManager.startActivityIfNeeded()` reuses the current activity ID (stored in shared defaults) instead of creating a new activity on every app activation. This keeps APNs push tokens valid for the activity lifetime.
 
 Debugging tips:
 
 - `SharedKeys.liveActivityID` tracks the activity currently targeted for updates.
 - `SharedKeys.liveActivityPushToken` stores the latest push token emitted by `activity.pushTokenUpdates`.
+- `LiveActivity` logs now include routing outcomes (`selected`, `unknown requested id`, `no candidates`) and update metadata (`connected`, `textChars`) for easier stale-state diagnosis.
 - Invalid websocket or APNs payloads are logged and ignored, rather than partially applied.
 
 ## Lock/Background Continuity Notes
