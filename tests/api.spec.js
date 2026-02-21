@@ -133,6 +133,15 @@ test.describe("API endpoints", () => {
     expect(resp.status).toBe(401);
   });
 
+  test("POST /api/live-activity/register with missing fields returns 400", async () => {
+    const resp = await fetch(`${BASE_URL}/api/live-activity/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token: TOKEN, activityId: "", activityPushToken: "" }),
+    });
+    expect(resp.status).toBe(400);
+  });
+
   test("POST /api/live-activity/register stores registration and list endpoint shows it", async () => {
     const registerResp = await fetch(`${BASE_URL}/api/live-activity/register`, {
       method: "POST",
@@ -157,6 +166,11 @@ test.describe("API endpoints", () => {
     const found = listJson.registrations.find((item) => item.activityId === `${TEST_PREFIX}-activity-1`);
     expect(found).toBeTruthy();
     expect(found.pushTokenPrefix).toBe("aabbccddeeff");
+  });
+
+  test("GET /api/live-activity/registrations without token returns 401", async () => {
+    const resp = await fetch(`${BASE_URL}/api/live-activity/registrations`);
+    expect(resp.status).toBe(401);
   });
 
   // --- POST /api/interrupt ---

@@ -46,6 +46,7 @@ const VOICE_HISTORY_FILE = process.env.VOICE_HISTORY_FILE || "/tmp/voice-summary
 const VOICE_HISTORY_LIMIT = Number(process.env.VOICE_HISTORY_LIMIT || 1000);
 const SPEAK_SOCKET_PATH = process.env.SPEAK_SOCKET_PATH || "/run/squad-sockets/speak.sock";
 const LIVE_ACTIVITY_REGISTRATIONS_FILE = process.env.LIVE_ACTIVITY_REGISTRATIONS_FILE || "/tmp/live-activity-registrations.json";
+const LIVE_ACTIVITY_REGISTRATIONS_LIMIT = Number(process.env.LIVE_ACTIVITY_REGISTRATIONS_LIMIT || 2000);
 const IOS_LIVE_ACTIVITY_TOPIC = process.env.IOS_LIVE_ACTIVITY_TOPIC || "";
 const IOS_LIVE_ACTIVITY_TEAM_ID = process.env.IOS_LIVE_ACTIVITY_TEAM_ID || "";
 const IOS_LIVE_ACTIVITY_KEY_ID = process.env.IOS_LIVE_ACTIVITY_KEY_ID || "";
@@ -131,7 +132,7 @@ function isLiveActivityPushConfigured() {
 
 function normalizeLiveActivityRegistrations(entries) {
   if (!Array.isArray(entries)) return [];
-  return entries
+  const normalized = entries
     .filter((item) => item && typeof item === "object")
     .map((item) => {
       const activityId = String(item.activityId || "").trim();
@@ -142,6 +143,11 @@ function normalizeLiveActivityRegistrations(entries) {
       return { activityId, activityPushToken, updatedAt };
     })
     .filter((item) => item.activityId && item.activityPushToken);
+  normalized.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
+  if (Number.isFinite(LIVE_ACTIVITY_REGISTRATIONS_LIMIT) && LIVE_ACTIVITY_REGISTRATIONS_LIMIT > 0) {
+    return normalized.slice(0, LIVE_ACTIVITY_REGISTRATIONS_LIMIT);
+  }
+  return normalized;
 }
 
 async function loadLiveActivityRegistrations() {
@@ -187,26 +193,33 @@ function getApnsJwt() {
   if (apnsJwtState.token && nowMs < apnsJwtState.expiresAtMs) {
     return apnsJwtState.token;
   }
-  const nowSec = Math.floor(nowMs / 1000);
-  const header = {
-    alg: "ES256",
-    kid: IOS_LIVE_ACTIVITY_KEY_ID,
-  };
-  const claims = {
-    iss: IOS_LIVE_ACTIVITY_TEAM_ID,
-    iat: nowSec,
-  };
-  const encodedHeader = Buffer.from(JSON.stringify(header)).toString("base64url");
-  const encodedClaims = Buffer.from(JSON.stringify(claims)).toString("base64url");
-  const payload = `${encodedHeader}.${encodedClaims}`;
-  const signer = crypto.createSign("sha256");
-  signer.update(payload);
-  signer.end();
-  const signature = signer.sign(IOS_LIVE_ACTIVITY_PRIVATE_KEY).toString("base64url");
-  const jwt = `${payload}.${signature}`;
-  apnsJwtState.token = jwt;
-  apnsJwtState.expiresAtMs = nowMs + (45 * 60 * 1000);
-  return jwt;
+  try {
+    const nowSec = Math.floor(nowMs / 1000);
+    const header = {
+      alg: "ES256",
+      kid: IOS_LIVE_ACTIVITY_KEY_ID,
+    };
+    const claims = {
+      iss: IOS_LIVE_ACTIVITY_TEAM_ID,
+      iat: nowSec,
+    };
+    const encodedHeader = Buffer.from(JSON.stringify(header)).toString("base64url");
+    const encodedClaims = Buffer.from(JSON.stringify(claims)).toString("base64url");
+    const payload = `${encodedHeader}.${encodedClaims}`;
+    const signer = crypto.createSign("sha256");
+    signer.update(payload);
+    signer.end();
+    const signature = signer.sign(IOS_LIVE_ACTIVITY_PRIVATE_KEY).toString("base64url");
+    const jwt = `${payload}.${signature}`;
+    apnsJwtState.token = jwt;
+    apnsJwtState.expiresAtMs = nowMs + (45 * 60 * 1000);
+    return jwt;
+  } catch (err) {
+    console.warn(`[live-activity] failed to generate APNs JWT: ${err.message}`);
+    apnsJwtState.token = null;
+    apnsJwtState.expiresAtMs = 0;
+    return null;
+  }
 }
 
 async function sendLiveActivityUpdate(registration, state) {
@@ -242,14 +255,21 @@ async function sendLiveActivityUpdate(registration, state) {
     const client = http2.connect(`https://${getApnsHost()}`);
     client.on("error", (err) => {
       finish({ ok: false, status: 0, reason: `http2_connect_error:${err.message}` });
+      client.close();
     });
+    const jwt = getApnsJwt();
+    if (!jwt) {
+      finish({ ok: false, status: 0, reason: "jwt_generation_failed" });
+      client.close();
+      return;
+    }
 
     const req = client.request({
       ":method": "POST",
       ":path": `/3/device/${registration.activityPushToken}`,
       "apns-topic": IOS_LIVE_ACTIVITY_TOPIC,
       "apns-push-type": "liveactivity",
-      authorization: `bearer ${getApnsJwt()}`,
+      authorization: `bearer ${jwt}`,
       "content-type": "application/json",
     });
 
@@ -396,6 +416,10 @@ app.post("/api/live-activity/register", async (req, res) => {
     activityPushToken: normalizedPushToken,
     updatedAt: new Date().toISOString(),
   });
+  if (Number.isFinite(LIVE_ACTIVITY_REGISTRATIONS_LIMIT) && LIVE_ACTIVITY_REGISTRATIONS_LIMIT > 0) {
+    const trimmed = normalizeLiveActivityRegistrations(Array.from(liveActivityRegistrations.values()));
+    liveActivityRegistrations = new Map(trimmed.map((item) => [item.activityId, item]));
+  }
   await persistLiveActivityRegistrations();
   console.log(`[live-activity] registration updated activityId=${normalizedActivityId} total=${liveActivityRegistrations.size}`);
   res.json({
