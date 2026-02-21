@@ -143,4 +143,52 @@ final class VoiceSquadTests: XCTestCase {
         )
         XCTAssertFalse(shouldMark)
     }
+
+    func testConnectionTransitionPolicyKeepsActiveDisconnectDuringGrace() {
+        let startedAt = Date()
+        let evaluationTime = startedAt.addingTimeInterval(ConnectionTransitionPolicy.activeDisconnectGrace - 1)
+        let shouldMark = ConnectionTransitionPolicy.shouldMarkDisconnected(
+            disconnectStartedAt: startedAt,
+            now: evaluationTime,
+            runtimeState: .active,
+            isConnected: false
+        )
+        XCTAssertFalse(shouldMark)
+    }
+
+    func testConnectionTransitionPolicyMarksActiveDisconnectAfterGrace() {
+        let startedAt = Date()
+        let evaluationTime = startedAt.addingTimeInterval(ConnectionTransitionPolicy.activeDisconnectGrace + 1)
+        let shouldMark = ConnectionTransitionPolicy.shouldMarkDisconnected(
+            disconnectStartedAt: startedAt,
+            now: evaluationTime,
+            runtimeState: .active,
+            isConnected: false
+        )
+        XCTAssertTrue(shouldMark)
+    }
+
+    func testConnectionTransitionPolicyKeepsInactiveDisconnectDuringGrace() {
+        let startedAt = Date()
+        let evaluationTime = startedAt.addingTimeInterval(ConnectionTransitionPolicy.inactiveDisconnectGrace - 1)
+        let shouldMark = ConnectionTransitionPolicy.shouldMarkDisconnected(
+            disconnectStartedAt: startedAt,
+            now: evaluationTime,
+            runtimeState: .inactive,
+            isConnected: false
+        )
+        XCTAssertFalse(shouldMark)
+    }
+
+    func testConnectionTransitionPolicyMarksInactiveDisconnectAfterGrace() {
+        let startedAt = Date()
+        let evaluationTime = startedAt.addingTimeInterval(ConnectionTransitionPolicy.inactiveDisconnectGrace + 1)
+        let shouldMark = ConnectionTransitionPolicy.shouldMarkDisconnected(
+            disconnectStartedAt: startedAt,
+            now: evaluationTime,
+            runtimeState: .inactive,
+            isConnected: false
+        )
+        XCTAssertTrue(shouldMark)
+    }
 }

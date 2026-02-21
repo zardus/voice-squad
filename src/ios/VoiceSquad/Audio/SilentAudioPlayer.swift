@@ -14,7 +14,11 @@ final class SilentAudioPlayer {
     func start() {
         shouldBeRunning = true
         installObserversIfNeeded()
-        guard engine == nil, playerNode == nil else { return }
+        if let engine, engine.isRunning, playerNode != nil {
+            return
+        }
+        engine = nil
+        playerNode = nil
         startAudioEngine()
     }
 
@@ -96,7 +100,10 @@ final class SilentAudioPlayer {
                 object: nil,
                 queue: .main
             ) { [weak self] _ in
-                guard let self, self.shouldBeRunning, self.engine == nil || self.playerNode == nil else { return }
+                guard let self, self.shouldBeRunning else { return }
+                if let engine = self.engine, engine.isRunning, self.playerNode != nil {
+                    return
+                }
                 self.logger.info("Restarting silent audio after app became active")
                 self.startAudioEngine()
             }
@@ -132,6 +139,9 @@ final class SilentAudioPlayer {
         case .ended:
             logger.info("Silent audio interruption ended; restarting engine")
             startAudioEngine()
+            if engine?.isRunning != true {
+                logger.error("Silent audio engine restart failed after interruption end")
+            }
         @unknown default:
             break
         }

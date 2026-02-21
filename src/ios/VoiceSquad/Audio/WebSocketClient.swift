@@ -30,7 +30,7 @@ final class WebSocketClient: ObservableObject {
             connect(url: url, reason: reason)
             return
         }
-        guard task == nil else { return }
+        guard task == nil || !isConnected else { return }
         shouldReconnect = true
         openSocket(url: url, reason: reason)
     }
@@ -45,6 +45,7 @@ final class WebSocketClient: ObservableObject {
     }
 
     private func openSocket(url: URL, reason: String) {
+        teardownActiveSocket()
         session = URLSession(configuration: .default)
         guard let session else { return }
         let task = session.webSocketTask(with: url)
@@ -102,7 +103,7 @@ final class WebSocketClient: ObservableObject {
         reconnectAttempt += 1
         let delaySeconds = min(pow(2.0, Double(max(0, reconnectAttempt - 1))), 15.0)
         logger.info("Scheduling reconnect attempt=\(self.reconnectAttempt, privacy: .public) delay=\(delaySeconds, privacy: .public)s")
-        reconnectTask = Task { [weak self] in
+        reconnectTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(delaySeconds * 1_000_000_000))
             guard let self else { return }
             guard !Task.isCancelled else { return }
