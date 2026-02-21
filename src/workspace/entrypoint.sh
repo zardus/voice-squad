@@ -40,6 +40,10 @@ if [ -f /home/ubuntu/env ]; then
     set +a
 fi
 
+# Use underscored key names from ~/env when primary vars are unset.
+export OPENAI_API_KEY="${OPENAI_API_KEY:-${_OPENAI_API_KEY:-}}"
+export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-${_ANTHROPIC_API_KEY:-}}"
+
 # Create workspace tmux session at a fixed socket path (workers run here)
 tmux -S "$WORKSPACE_TMUX_SOCKET" new-session -d -s workspace -c /home/ubuntu
 

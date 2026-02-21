@@ -43,6 +43,10 @@ if [ -f /home/ubuntu/env ]; then
     set +a
 fi
 
+# Use underscored key names from ~/env when primary vars are unset.
+export OPENAI_API_KEY="${OPENAI_API_KEY:-${_OPENAI_API_KEY:-}}"
+export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-${_ANTHROPIC_API_KEY:-}}"
+
 # Pre-configure Claude Code onboarding (skip first-run dialogs)
 mkdir -p /home/ubuntu/.claude
 if [ -f /home/ubuntu/.claude.json ]; then
