@@ -8,6 +8,44 @@ struct LiveActivityUpdateEvent: Equatable {
     let activityID: String?
 }
 
+enum LiveActivityRoutingDecision: Equatable {
+    case selected(activityID: String)
+    case ignoreUnknownRequestedID(requestedID: String)
+    case noCandidates
+}
+
+enum LiveActivityRouter {
+    static func chooseActivityID(
+        requestedID: String?,
+        storedID: String?,
+        availableIDs: [String]
+    ) -> LiveActivityRoutingDecision {
+        if let requestedID = normalizedID(requestedID) {
+            return availableIDs.contains(requestedID)
+                ? .selected(activityID: requestedID)
+                : .ignoreUnknownRequestedID(requestedID: requestedID)
+        }
+
+        if let storedID = normalizedID(storedID),
+           availableIDs.contains(storedID) {
+            return .selected(activityID: storedID)
+        }
+
+        if let first = availableIDs.first {
+            return .selected(activityID: first)
+        }
+        return .noCandidates
+    }
+
+    private static func normalizedID(_ value: String?) -> String? {
+        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty else {
+            return nil
+        }
+        return trimmed
+    }
+}
+
 enum LiveActivityUpdateDecodeError: Error, Equatable {
     case invalidJSON
     case missingAPS
@@ -41,7 +79,7 @@ enum LiveActivityUpdateEventDecoder {
     }
 
     static func decodeRemoteNotification(_ userInfo: [AnyHashable: Any]) throws -> LiveActivityUpdateEvent? {
-        guard let aps = userInfo["aps"] as? [String: Any] else {
+        guard let aps = dictionaryValue(userInfo["aps"]) else {
             throw LiveActivityUpdateDecodeError.missingAPS
         }
 
@@ -52,8 +90,8 @@ enum LiveActivityUpdateEventDecoder {
             return LiveActivityUpdateEvent(latestSpeechText: fallbackText, isConnected: false, activityID: activityID)
         }
 
-        let contentState = aps["content-state"] as? [String: Any] ?? aps["content_state"] as? [String: Any]
-        let voiceSquad = userInfo["voice_squad"] as? [String: Any]
+        let contentState = dictionaryValue(aps["content-state"]) ?? dictionaryValue(aps["content_state"])
+        let voiceSquad = dictionaryValue(userInfo["voice_squad"])
         let text = firstSpeechText([
             contentState?["latestSpeechText"],
             contentState?["latest_speech_text"],
@@ -109,8 +147,25 @@ enum LiveActivityUpdateEventDecoder {
         if let body = alert as? String {
             return sanitizeSpeechText(body)
         }
-        if let alertDict = alert as? [String: Any] {
+        if let alertDict = dictionaryValue(alert) {
             return sanitizeSpeechText(alertDict["body"])
+        }
+        return nil
+    }
+
+    private static func dictionaryValue(_ raw: Any?) -> [String: Any]? {
+        if let dict = raw as? [String: Any] {
+            return dict
+        }
+        if let dict = raw as? [AnyHashable: Any] {
+            var normalized: [String: Any] = [:]
+            normalized.reserveCapacity(dict.count)
+            for (key, value) in dict {
+                if let stringKey = key as? String {
+                    normalized[stringKey] = value
+                }
+            }
+            return normalized
         }
         return nil
     }
@@ -136,7 +191,7 @@ enum LiveActivityUpdateEventDecoder {
         if let activityID = aps["activity_id"] as? String { return activityID }
         if let activityID = userInfo["activityId"] as? String { return activityID }
         if let activityID = userInfo["activity_id"] as? String { return activityID }
-        if let voiceSquad = userInfo["voice_squad"] as? [String: Any] {
+        if let voiceSquad = dictionaryValue(userInfo["voice_squad"]) {
             if let activityID = voiceSquad["activityId"] as? String { return activityID }
             if let activityID = voiceSquad["activity_id"] as? String { return activityID }
         }
@@ -198,7 +253,7 @@ final class LiveActivityManager: ObservableObject {
 
     func updateActivity(with event: LiveActivityUpdateEvent) {
         guard let targetActivity = resolveActivity(for: event.activityID) else {
-            logger.error("No live activity found for update. requestedId=\(event.activityID ?? "none", privacy: .public)")
+            logger.warning("Dropped live activity update requestedId=\(event.activityID ?? "none", privacy: .public)")
             return
         }
 
@@ -211,6 +266,7 @@ final class LiveActivityManager: ObservableObject {
             isConnected: event.isConnected,
             autoReadEnabled: UserDefaults.autoReadIsEnabled()
         )
+        logger.debug("Queueing live activity update id=\(targetActivity.id, privacy: .public) connected=\(event.isConnected, privacy: .public) textChars=\(event.latestSpeechText.count, privacy: .public)")
         Task {
             await targetActivity.update(.init(state: state, staleDate: nil))
         }
@@ -264,19 +320,42 @@ final class LiveActivityManager: ObservableObject {
     }
 
     private func resolveActivity(for requestedID: String?) -> Activity<VoiceSquadAttributes>? {
-        if let requestedID {
-            if let match = Activity<VoiceSquadAttributes>.activities.first(where: { $0.id == requestedID }) {
-                return match
+        var activities = Activity<VoiceSquadAttributes>.activities
+        let storedID = UserDefaults.shared.string(forKey: SharedKeys.liveActivityID)
+        var decision = LiveActivityRouter.chooseActivityID(
+            requestedID: requestedID,
+            storedID: storedID,
+            availableIDs: activities.map(\.id)
+        )
+
+        if case .noCandidates = decision {
+            startActivityIfNeeded()
+            activities = Activity<VoiceSquadAttributes>.activities
+            decision = LiveActivityRouter.chooseActivityID(
+                requestedID: requestedID,
+                storedID: UserDefaults.shared.string(forKey: SharedKeys.liveActivityID),
+                availableIDs: activities.map(\.id)
+            )
+        }
+
+        switch decision {
+        case .selected(let selectedID):
+            guard let match = activities.first(where: { $0.id == selectedID }) else {
+                logger.error("Routing selected unknown live activity id=\(selectedID, privacy: .public)")
+                return nil
             }
-            logger.error("Requested live activity id not found: \(requestedID, privacy: .public)")
+            if UserDefaults.shared.string(forKey: SharedKeys.liveActivityID) != match.id {
+                UserDefaults.shared.set(match.id, forKey: SharedKeys.liveActivityID)
+                logger.info("Updated stored live activity id to \(match.id, privacy: .public)")
+            }
+            return match
+        case .ignoreUnknownRequestedID(let missingID):
+            logger.warning("Ignoring live activity update for unknown requested id=\(missingID, privacy: .public)")
+            return nil
+        case .noCandidates:
+            logger.error("No live activity available after recovery attempt")
+            return nil
         }
-
-        if let current = resolveCurrentActivity() {
-            return current
-        }
-
-        startActivityIfNeeded()
-        return resolveCurrentActivity()
     }
 
     private func resolveCurrentActivity() -> Activity<VoiceSquadAttributes>? {
