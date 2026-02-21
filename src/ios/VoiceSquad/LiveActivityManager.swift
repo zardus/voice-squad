@@ -543,10 +543,10 @@ final class LiveActivityManager: ObservableObject {
 
     private func markApplied(event: LiveActivityUpdateEvent, sequence: UInt64, activityID: String) {
         if let eventDate = event.eventDate {
-            if let latestAppliedEventDate {
-                latestAppliedEventDate = max(latestAppliedEventDate, eventDate)
+            if let currentLatest = self.latestAppliedEventDate {
+                self.latestAppliedEventDate = max(currentLatest, eventDate)
             } else {
-                latestAppliedEventDate = eventDate
+                self.latestAppliedEventDate = eventDate
             }
         }
         logger.debug("Applied live activity update seq=\(sequence, privacy: .public) id=\(activityID, privacy: .public) connected=\(event.isConnected, privacy: .public)")
