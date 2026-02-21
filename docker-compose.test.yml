@@ -57,6 +57,7 @@ services:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-test-anthropic-key}
       - CAPTAIN_TMUX_SOCKET=/run/squad-sockets/captain-tmux/default
       - WORKSPACE_TMUX_SOCKET=/run/squad-sockets/workspace-tmux/default
+      - SPEAK_SOCKET_PATH=/run/squad-sockets/speak.sock
 
 volumes:
   test-home:
