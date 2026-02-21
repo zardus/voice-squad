@@ -80,6 +80,25 @@ final class VoiceSquadTests: XCTestCase {
         XCTAssertEqual(event?.activityID, "voice-squad-activity-id")
     }
 
+    func testDecodeRemoteNotificationSupportsAnyHashableTopLevelKeys() throws {
+        let payload: [AnyHashable: Any] = [
+            AnyHashable("aps"): [
+                AnyHashable("event"): "update",
+                AnyHashable("content-state"): [
+                    AnyHashable("latestSpeechText"): "Top-level AnyHashable",
+                    AnyHashable("isConnected"): true
+                ]
+            ],
+            AnyHashable("voice_squad"): [
+                AnyHashable("activity_id"): "top-level-activity-id"
+            ]
+        ]
+
+        let event = try LiveActivityUpdateEventDecoder.decodeRemoteNotification(payload)
+        XCTAssertEqual(event?.latestSpeechText, "Top-level AnyHashable")
+        XCTAssertEqual(event?.activityID, "top-level-activity-id")
+    }
+
     func testDecodeRemoteNotificationRequiresAPS() {
         XCTAssertThrowsError(try LiveActivityUpdateEventDecoder.decodeRemoteNotification([:])) { error in
             XCTAssertEqual(error as? LiveActivityUpdateDecodeError, .missingAPS)

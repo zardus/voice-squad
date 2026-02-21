@@ -54,6 +54,8 @@ enum LiveActivityUpdateDecodeError: Error, Equatable {
 }
 
 enum LiveActivityUpdateEventDecoder {
+    private static let logger = Logger(subsystem: "com.voicesquad.app", category: "LiveActivityDecode")
+
     static func decodeWebSocketMessage(_ message: String) throws -> LiveActivityUpdateEvent? {
         guard let data = message.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -160,10 +162,16 @@ enum LiveActivityUpdateEventDecoder {
         if let dict = raw as? [AnyHashable: Any] {
             var normalized: [String: Any] = [:]
             normalized.reserveCapacity(dict.count)
+            var droppedKeyCount = 0
             for (key, value) in dict {
                 if let stringKey = key as? String {
                     normalized[stringKey] = value
+                } else {
+                    droppedKeyCount += 1
                 }
+            }
+            if droppedKeyCount > 0 {
+                logger.debug("Dropped non-string notification payload keys count=\(droppedKeyCount, privacy: .public)")
             }
             return normalized
         }
@@ -331,6 +339,7 @@ final class LiveActivityManager: ObservableObject {
         if case .noCandidates = decision {
             startActivityIfNeeded()
             activities = Activity<VoiceSquadAttributes>.activities
+            // Re-read defaults after startActivityIfNeeded() in case it created a fresh activity and persisted a new id.
             decision = LiveActivityRouter.chooseActivityID(
                 requestedID: requestedID,
                 storedID: UserDefaults.shared.string(forKey: SharedKeys.liveActivityID),
