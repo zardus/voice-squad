@@ -71,10 +71,10 @@ services:
       - ./home:/home/ubuntu
       - sockets:/run/squad-sockets
     environment:
-      - OPENAI_API_KEY
-      - _OPENAI_API_KEY
       - ANTHROPIC_API_KEY
       - _ANTHROPIC_API_KEY
+      - OPENAI_API_KEY
+      - _OPENAI_API_KEY
       - VOICE_TOKEN
       - SQUAD_CAPTAIN=${SQUAD_CAPTAIN:-claude}
       - CAPTAIN_TMUX_SOCKET=/run/squad-sockets/captain-tmux/default
