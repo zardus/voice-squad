@@ -501,7 +501,7 @@ private final class MockSpeechAudioSession: SpeechAudioSessionControlling {
         setCategoryCallCount += 1
     }
 
-    func setActive(_ active: Bool) throws {
+    func setActive(_ active: Bool, options: AVAudioSession.SetActiveOptions) throws {
         setActiveCallCount += 1
     }
 }

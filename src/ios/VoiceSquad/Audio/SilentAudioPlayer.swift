@@ -189,7 +189,7 @@ final class SpeechAudioPlayer: NSObject, AVAudioPlayerDelegate {
             let next = queue.removeFirst()
             do {
                 try prepareAudioSessionIfNeeded()
-                try audioSession.setActive(true)
+                try audioSession.setActive(true, options: [])
 
                 let playback = try playbackFactory.makePlayback(data: next)
                 playback.onFinish = { [weak self] successfully in
@@ -244,7 +244,7 @@ final class SpeechAudioPlayer: NSObject, AVAudioPlayerDelegate {
 
 protocol SpeechAudioSessionControlling {
     func setCategory(_ category: AVAudioSession.Category, options: AVAudioSession.CategoryOptions) throws
-    func setActive(_ active: Bool) throws
+    func setActive(_ active: Bool, options: AVAudioSession.SetActiveOptions) throws
 }
 
 extension AVAudioSession: SpeechAudioSessionControlling {}
