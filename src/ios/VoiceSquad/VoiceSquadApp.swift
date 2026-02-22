@@ -52,7 +52,7 @@ struct VoiceSquadApp: App {
                 guard let audioData else { return }
                 speechAudio.enqueue(audioData)
             }
-            .onReceive(webSocket.$lastSpeakText) { text in
+            .onReceive(webSocket.$newestSpeakTextEvent) { text in
                 guard let text else { return }
                 if scenePhase != .active {
                     notifications.postSpeakNotification(text: text)

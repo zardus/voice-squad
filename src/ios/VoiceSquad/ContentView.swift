@@ -38,9 +38,6 @@ struct ContentView: View {
                 token: $settings.token
             )
         }
-        .onAppear {
-            connectWebSocket()
-        }
         .onChange(of: settings.serverBaseURL) { _, _ in
             settings.persist()
             reconnectAll()

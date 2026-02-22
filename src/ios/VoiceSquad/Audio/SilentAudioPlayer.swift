@@ -159,48 +159,138 @@ final class SilentAudioPlayer {
 final class SpeechAudioPlayer: NSObject, AVAudioPlayerDelegate {
     private let logger = Logger(subsystem: "com.voicesquad.app", category: "SpeechAudio")
     private var queue: [Data] = []
-    private var player: AVAudioPlayer?
+    private var playback: SpeechPlayback?
+    private let audioSession: SpeechAudioSessionControlling
+    private let playbackFactory: SpeechPlaybackFactory
+    private var sessionPrepared = false
+
+    init(
+        audioSession: SpeechAudioSessionControlling = AVAudioSession.sharedInstance(),
+        playbackFactory: SpeechPlaybackFactory = AVFoundationSpeechPlaybackFactory()
+    ) {
+        self.audioSession = audioSession
+        self.playbackFactory = playbackFactory
+        super.init()
+    }
 
     func enqueue(_ audioData: Data) {
         guard !audioData.isEmpty else { return }
         queue.append(audioData)
-        if player == nil {
+        if playback == nil {
             playNext()
         }
     }
+
+    var queuedItemCountForTesting: Int { queue.count }
+    var isPlayingForTesting: Bool { playback != nil }
 
     private func playNext() {
         while !queue.isEmpty {
             let next = queue.removeFirst()
             do {
-                let session = AVAudioSession.sharedInstance()
-                try session.setCategory(.playback, options: [.mixWithOthers, .allowBluetoothHFP, .allowAirPlay])
-                try session.setActive(true)
+                try prepareAudioSessionIfNeeded()
+                try audioSession.setActive(true)
 
-                let player = try AVAudioPlayer(data: next)
-                player.delegate = self
-                player.prepareToPlay()
-                if player.play() {
-                    self.player = player
+                let playback = try playbackFactory.makePlayback(data: next)
+                playback.onFinish = { [weak self] successfully in
+                    self?.handleFinish(successfully: successfully)
+                }
+                playback.onDecodeError = { [weak self] error in
+                    self?.handleDecodeError(error)
+                }
+                playback.prepareToPlay()
+                if playback.play() {
+                    self.playback = playback
                     return
                 }
                 logger.error("Failed to start speech playback")
-                self.player = nil
+                self.playback = nil
             } catch {
                 logger.error("Failed to play speech audio: \(String(describing: error), privacy: .public)")
-                self.player = nil
+                self.playback = nil
             }
         }
     }
 
-    func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
-        self.player = nil
+    private func prepareAudioSessionIfNeeded() throws {
+        guard !sessionPrepared else { return }
+        // Keep category aligned with SilentAudioPlayer's long-lived engine configuration.
+        try audioSession.setCategory(.playback, options: [.mixWithOthers, .allowAirPlay])
+        sessionPrepared = true
+    }
+
+    private func handleFinish(successfully: Bool) {
+        if !successfully {
+            logger.error("Speech playback ended unsuccessfully")
+        }
+        playback = nil
         playNext()
     }
 
-    func audioPlayerDecodeErrorDidOccur(_ player: AVAudioPlayer, error: Error?) {
+    private func handleDecodeError(_ error: Error?) {
         logger.error("Speech decode error: \(String(describing: error), privacy: .public)")
-        self.player = nil
+        playback = nil
         playNext()
+    }
+
+    func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        handleFinish(successfully: flag)
+    }
+
+    func audioPlayerDecodeErrorDidOccur(_ player: AVAudioPlayer, error: Error?) {
+        handleDecodeError(error)
+    }
+}
+
+protocol SpeechAudioSessionControlling {
+    func setCategory(_ category: AVAudioSession.Category, options: AVAudioSession.CategoryOptions) throws
+    func setActive(_ active: Bool) throws
+}
+
+extension AVAudioSession: SpeechAudioSessionControlling {}
+
+protocol SpeechPlayback: AnyObject {
+    var onFinish: ((Bool) -> Void)? { get set }
+    var onDecodeError: ((Error?) -> Void)? { get set }
+    func prepareToPlay()
+    func play() -> Bool
+}
+
+protocol SpeechPlaybackFactory {
+    func makePlayback(data: Data) throws -> SpeechPlayback
+}
+
+final class AVFoundationSpeechPlaybackFactory: SpeechPlaybackFactory {
+    func makePlayback(data: Data) throws -> SpeechPlayback {
+        let player = try AVAudioPlayer(data: data)
+        return AVAudioPlayerPlayback(player: player)
+    }
+}
+
+private final class AVAudioPlayerPlayback: NSObject, SpeechPlayback, AVAudioPlayerDelegate {
+    var onFinish: ((Bool) -> Void)?
+    var onDecodeError: ((Error?) -> Void)?
+    private let player: AVAudioPlayer
+
+    init(player: AVAudioPlayer) {
+        self.player = player
+        super.init()
+        self.player.delegate = self
+    }
+
+    func prepareToPlay() {
+        player.prepareToPlay()
+    }
+
+    func play() -> Bool {
+        player.play()
+    }
+
+    func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        onFinish?(flag)
+    }
+
+    func audioPlayerDecodeErrorDidOccur(_ player: AVAudioPlayer, error: Error?) {
+        onDecodeError?(error)
     }
 }

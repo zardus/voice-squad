@@ -1,4 +1,5 @@
 import XCTest
+import AVFoundation
 @testable import VoiceSquad
 
 final class VoiceSquadTests: XCTestCase {
@@ -329,34 +330,39 @@ final class VoiceSquadTests: XCTestCase {
     // MARK: - NotificationDedup tests
 
     func testNotificationDedupSuppressesSameTextWithinWindow() {
-        var dedup = NotificationDedup(windowSeconds: 300)
+        let clock = MutableClock(start: Date(timeIntervalSince1970: 1_700_000_000))
+        var dedup = NotificationDedup(windowSeconds: 300, nowProvider: { clock.now })
         XCTAssertTrue(dedup.shouldPost(text: "Hello"))
         XCTAssertFalse(dedup.shouldPost(text: "Hello"))
     }
 
     func testNotificationDedupAllowsDifferentText() {
-        var dedup = NotificationDedup(windowSeconds: 300)
+        let clock = MutableClock(start: Date(timeIntervalSince1970: 1_700_000_000))
+        var dedup = NotificationDedup(windowSeconds: 300, nowProvider: { clock.now })
         XCTAssertTrue(dedup.shouldPost(text: "Message A"))
         XCTAssertTrue(dedup.shouldPost(text: "Message B"))
     }
 
     func testNotificationDedupAllowsSameTextAfterWindowExpires() {
-        var dedup = NotificationDedup(windowSeconds: 0)
+        let clock = MutableClock(start: Date(timeIntervalSince1970: 1_700_000_000))
+        var dedup = NotificationDedup(windowSeconds: 0, nowProvider: { clock.now })
         XCTAssertTrue(dedup.shouldPost(text: "Repeat"))
         // With a 0-second window, the next check should pass (window expired immediately).
         XCTAssertTrue(dedup.shouldPost(text: "Repeat"))
     }
 
     func testNotificationDedupAllowsSameTextAfterRealWindowExpires() {
-        var dedup = NotificationDedup(windowSeconds: 1)
+        let clock = MutableClock(start: Date(timeIntervalSince1970: 1_700_000_000))
+        var dedup = NotificationDedup(windowSeconds: 1, nowProvider: { clock.now })
         XCTAssertTrue(dedup.shouldPost(text: "Repeat"))
         XCTAssertFalse(dedup.shouldPost(text: "Repeat"))
-        Thread.sleep(forTimeInterval: 1.1)
+        clock.advance(by: 1.1)
         XCTAssertTrue(dedup.shouldPost(text: "Repeat"))
     }
 
     func testNotificationDedupResetClearsState() {
-        var dedup = NotificationDedup(windowSeconds: 300)
+        let clock = MutableClock(start: Date(timeIntervalSince1970: 1_700_000_000))
+        var dedup = NotificationDedup(windowSeconds: 300, nowProvider: { clock.now })
         XCTAssertTrue(dedup.shouldPost(text: "First"))
         dedup.reset()
         // After reset, same text should be allowed again.
@@ -364,12 +370,181 @@ final class VoiceSquadTests: XCTestCase {
     }
 
     func testNotificationDedupSequenceOfTexts() {
-        var dedup = NotificationDedup(windowSeconds: 300)
+        let clock = MutableClock(start: Date(timeIntervalSince1970: 1_700_000_000))
+        var dedup = NotificationDedup(windowSeconds: 300, nowProvider: { clock.now })
         XCTAssertTrue(dedup.shouldPost(text: "A"))
         XCTAssertFalse(dedup.shouldPost(text: "A"))
         XCTAssertTrue(dedup.shouldPost(text: "B"))
         XCTAssertFalse(dedup.shouldPost(text: "B"))
         // Going back to A should be allowed (last was B).
         XCTAssertTrue(dedup.shouldPost(text: "A"))
+    }
+
+    // MARK: - SpeechAudioPlayer tests
+
+    func testSpeechAudioPlayerPlaysQueuedAudioInOrder() {
+        let session = MockSpeechAudioSession()
+        let first = MockSpeechPlayback(playReturns: true)
+        let second = MockSpeechPlayback(playReturns: true)
+        let factory = MockSpeechPlaybackFactory(playbacks: [first, second])
+        let player = SpeechAudioPlayer(audioSession: session, playbackFactory: factory)
+
+        player.enqueue(Data([0x01]))
+        player.enqueue(Data([0x02]))
+
+        XCTAssertEqual(factory.makePlaybackCallCount, 1)
+        XCTAssertEqual(first.playCallCount, 1)
+        XCTAssertTrue(player.isPlayingForTesting)
+        XCTAssertEqual(player.queuedItemCountForTesting, 1)
+
+        first.triggerFinish(successfully: true)
+        XCTAssertEqual(factory.makePlaybackCallCount, 2)
+        XCTAssertEqual(second.playCallCount, 1)
+        XCTAssertTrue(player.isPlayingForTesting)
+        XCTAssertEqual(player.queuedItemCountForTesting, 0)
+    }
+
+    func testSpeechAudioPlayerContinuesAfterDecodeError() {
+        let session = MockSpeechAudioSession()
+        let first = MockSpeechPlayback(playReturns: true)
+        let second = MockSpeechPlayback(playReturns: true)
+        let factory = MockSpeechPlaybackFactory(playbacks: [first, second])
+        let player = SpeechAudioPlayer(audioSession: session, playbackFactory: factory)
+
+        player.enqueue(Data([0x10]))
+        player.enqueue(Data([0x20]))
+
+        first.triggerDecodeError()
+        XCTAssertEqual(factory.makePlaybackCallCount, 2)
+        XCTAssertEqual(second.playCallCount, 1)
+        XCTAssertTrue(player.isPlayingForTesting)
+    }
+
+    func testSpeechAudioPlayerSkipsFailedPlaybackAndAdvancesQueue() {
+        let session = MockSpeechAudioSession()
+        let failed = MockSpeechPlayback(playReturns: false)
+        let good = MockSpeechPlayback(playReturns: true)
+        let factory = MockSpeechPlaybackFactory(playbacks: [failed, good])
+        let player = SpeechAudioPlayer(audioSession: session, playbackFactory: factory)
+
+        player.enqueue(Data([0xAA]))
+        player.enqueue(Data([0xBB]))
+
+        XCTAssertEqual(factory.makePlaybackCallCount, 2)
+        XCTAssertEqual(failed.playCallCount, 1)
+        XCTAssertEqual(good.playCallCount, 1)
+        XCTAssertTrue(player.isPlayingForTesting)
+        XCTAssertEqual(player.queuedItemCountForTesting, 0)
+    }
+
+    // MARK: - WebSocketClient tests
+
+    @MainActor
+    func testWebSocketClientConnectedReplayUpdatesLastSpeakWithoutNewEvent() {
+        let client = WebSocketClient()
+        client.processTextMessageForTesting(#"{"type":"connected","lastSpeakText":"Recovered"}"#)
+
+        XCTAssertTrue(client.isConnected)
+        XCTAssertEqual(client.lastSpeakText, "Recovered")
+        XCTAssertNil(client.newestSpeakTextEvent)
+    }
+
+    @MainActor
+    func testWebSocketClientSpeakTextPublishesNewEvent() {
+        let client = WebSocketClient()
+        client.processTextMessageForTesting(#"{"type":"speak_text","text":"New summary"}"#)
+
+        XCTAssertEqual(client.lastSpeakText, "New summary")
+        XCTAssertEqual(client.newestSpeakTextEvent, "New summary")
+    }
+
+    @MainActor
+    func testWebSocketClientConnectDisconnectLifecycle() {
+        let client = WebSocketClient()
+        client.networkingEnabledForTesting = false
+
+        var opened: [(URL, String)] = []
+        client.onSocketOpenedForTesting = { url, reason in
+            opened.append((url, reason))
+        }
+
+        let url = URL(string: "ws://localhost:3000?token=test&tts=mp3")!
+        client.connect(url: url, reason: "unit_test_connect")
+        client.processTextMessageForTesting(#"{"type":"connected"}"#)
+        XCTAssertTrue(client.isConnected)
+
+        client.ensureConnected(url: url, reason: "unit_test_ensure")
+        XCTAssertEqual(opened.count, 2)
+
+        client.disconnect()
+        XCTAssertFalse(client.isConnected)
+    }
+}
+
+private final class MutableClock {
+    var now: Date
+
+    init(start: Date) {
+        self.now = start
+    }
+
+    func advance(by delta: TimeInterval) {
+        now = now.addingTimeInterval(delta)
+    }
+}
+
+private final class MockSpeechAudioSession: SpeechAudioSessionControlling {
+    private(set) var setCategoryCallCount = 0
+    private(set) var setActiveCallCount = 0
+
+    func setCategory(_ category: AVAudioSession.Category, options: AVAudioSession.CategoryOptions) throws {
+        setCategoryCallCount += 1
+    }
+
+    func setActive(_ active: Bool) throws {
+        setActiveCallCount += 1
+    }
+}
+
+private final class MockSpeechPlaybackFactory: SpeechPlaybackFactory {
+    private var playbacks: [MockSpeechPlayback]
+    private(set) var makePlaybackCallCount = 0
+
+    init(playbacks: [MockSpeechPlayback]) {
+        self.playbacks = playbacks
+    }
+
+    func makePlayback(data: Data) throws -> SpeechPlayback {
+        makePlaybackCallCount += 1
+        guard !playbacks.isEmpty else {
+            throw NSError(domain: "VoiceSquadTests", code: 1)
+        }
+        return playbacks.removeFirst()
+    }
+}
+
+private final class MockSpeechPlayback: SpeechPlayback {
+    var onFinish: ((Bool) -> Void)?
+    var onDecodeError: ((Error?) -> Void)?
+    private let playReturns: Bool
+    private(set) var playCallCount = 0
+
+    init(playReturns: Bool) {
+        self.playReturns = playReturns
+    }
+
+    func prepareToPlay() {}
+
+    func play() -> Bool {
+        playCallCount += 1
+        return playReturns
+    }
+
+    func triggerFinish(successfully: Bool) {
+        onFinish?(successfully)
+    }
+
+    func triggerDecodeError() {
+        onDecodeError?(NSError(domain: "VoiceSquadTests", code: 2))
     }
 }
