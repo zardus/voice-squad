@@ -50,6 +50,8 @@ FULL_CMD="{ [ -f /home/ubuntu/env ] && set -a && . /home/ubuntu/env && set +a ||
 # Create a dedicated session for this worker; worker process is always in window 0.
 tmux -S "$SOCKET" new-session -d ${TMUX_ENV_FLAGS[@]+"${TMUX_ENV_FLAGS[@]}"} -s "$SESSION_NAME" -c "$PROJECT_DIR"
 sleep 0.5
-tmux -S "$SOCKET" send-keys -t "${SESSION_NAME}:0" "$FULL_CMD" Enter
+tmux -S "$SOCKET" send-keys -t "${SESSION_NAME}:0" "$FULL_CMD"
+sleep 1
+tmux -S "$SOCKET" send-keys -t "${SESSION_NAME}:0" Enter
 
 echo "Worker '$TASK_NAME' launched ($TOOL) in session '$SESSION_NAME' ($PROJECT_DIR)"
