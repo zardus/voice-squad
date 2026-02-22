@@ -36,4 +36,5 @@ if ! [[ "$LINE_COUNT" =~ ^[0-9]+$ ]]; then
     exit 1
 fi
 
-tmux -S "$SOCKET" capture-pane -t "$PANE_ID" -p -S "-${LINE_COUNT}"
+tmux -S "$SOCKET" capture-pane -t "$PANE_ID" -p -S "-${LINE_COUNT}" \
+    | perl -pe 's/\d+% context left/" " x length($&)/ge'
