@@ -21,7 +21,7 @@ test.describe("Notification dedup", () => {
   test("POST /api/speak deduplicates identical text within time window", async () => {
     const uniqueText = `dedup-same-${Date.now()}`;
 
-    // First call — may succeed or fail at TTS, but dedup state is recorded.
+    // First call may succeed or fail at TTS.
     const resp1 = await fetch(`${BASE_URL}/api/speak`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -30,17 +30,27 @@ test.describe("Notification dedup", () => {
     // Accept 200 (ok) or 500 (TTS synthesis error in test env without real key).
     expect([200, 500]).toContain(resp1.status);
 
-    // Second call with identical text — should be caught by dedup.
+    // Second call with identical text:
+    // - If first call succeeded, should be deduplicated.
+    // - If first call failed, dedup should not be pre-recorded.
     const resp2 = await fetch(`${BASE_URL}/api/speak`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ token: TOKEN, text: uniqueText }),
     });
-    expect(resp2.status).toBe(200);
-    const json2 = await resp2.json();
-    expect(json2.ok).toBe(true);
-    expect(json2.deduplicated).toBe(true);
-    expect(json2.clients).toBe(0);
+    if (resp1.status === 200) {
+      expect(resp2.status).toBe(200);
+      const json2 = await resp2.json();
+      expect(json2.ok).toBe(true);
+      expect(json2.deduplicated).toBe(true);
+      expect(json2.clients).toBe(0);
+    } else {
+      expect([200, 500]).toContain(resp2.status);
+      if (resp2.status === 200) {
+        const json2 = await resp2.json();
+        expect(json2.deduplicated).toBeFalsy();
+      }
+    }
   });
 
   test("POST /api/speak allows different text immediately after", async () => {

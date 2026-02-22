@@ -47,7 +47,7 @@ const VOICE_HISTORY_LIMIT = Number(process.env.VOICE_HISTORY_LIMIT || 1000);
 const SPEAK_SOCKET_PATH = process.env.SPEAK_SOCKET_PATH || "/run/squad-sockets/speak.sock";
 const LIVE_ACTIVITY_REGISTRATIONS_FILE = process.env.LIVE_ACTIVITY_REGISTRATIONS_FILE || "/tmp/live-activity-registrations.json";
 const LIVE_ACTIVITY_REGISTRATIONS_LIMIT = Number(process.env.LIVE_ACTIVITY_REGISTRATIONS_LIMIT || 2000);
-const SPEAK_DEDUP_WINDOW_MS = Number(process.env.SPEAK_DEDUP_WINDOW_MS || 30000);
+const SPEAK_DEDUP_WINDOW_MS = Number(process.env.SPEAK_DEDUP_WINDOW_MS || 300000);
 const IOS_LIVE_ACTIVITY_TOPIC = process.env.IOS_LIVE_ACTIVITY_TOPIC || "";
 const IOS_LIVE_ACTIVITY_TEAM_ID = process.env.IOS_LIVE_ACTIVITY_TEAM_ID || "";
 const IOS_LIVE_ACTIVITY_KEY_ID = process.env.IOS_LIVE_ACTIVITY_KEY_ID || "";
@@ -69,12 +69,12 @@ const lastSpeakDedup = { text: null, timestampMs: 0 };
 
 function isDuplicateSpeak(text) {
   const now = Date.now();
-  if (lastSpeakDedup.text === text && (now - lastSpeakDedup.timestampMs) < SPEAK_DEDUP_WINDOW_MS) {
-    return true;
-  }
+  return lastSpeakDedup.text === text && (now - lastSpeakDedup.timestampMs) < SPEAK_DEDUP_WINDOW_MS;
+}
+
+function markSpeakDedup(text) {
   lastSpeakDedup.text = text;
-  lastSpeakDedup.timestampMs = now;
-  return false;
+  lastSpeakDedup.timestampMs = Date.now();
 }
 
 function normalizeVoiceHistoryEntries(entries) {
@@ -847,6 +847,7 @@ async function handleSpeakRequest(body, res) {
     } else {
       console.log(`[live-activity] push sent=${liveActivityPushResult.pushed}/${liveActivityPushResult.attempted}`);
     }
+    markSpeakDedup(trimmed);
     res.json({
       ok: true,
       clients: sent,

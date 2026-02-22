@@ -347,6 +347,14 @@ final class VoiceSquadTests: XCTestCase {
         XCTAssertTrue(dedup.shouldPost(text: "Repeat"))
     }
 
+    func testNotificationDedupAllowsSameTextAfterRealWindowExpires() {
+        var dedup = NotificationDedup(windowSeconds: 1)
+        XCTAssertTrue(dedup.shouldPost(text: "Repeat"))
+        XCTAssertFalse(dedup.shouldPost(text: "Repeat"))
+        Thread.sleep(forTimeInterval: 1.1)
+        XCTAssertTrue(dedup.shouldPost(text: "Repeat"))
+    }
+
     func testNotificationDedupResetClearsState() {
         var dedup = NotificationDedup(windowSeconds: 300)
         XCTAssertTrue(dedup.shouldPost(text: "First"))
