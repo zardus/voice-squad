@@ -58,7 +58,7 @@ cd src/ios
 xcodebuild \
   -project VoiceSquad.xcodeproj \
   -scheme VoiceSquad \
-  -destination 'platform=iOS Simulator,name=iPhone 16' \
+  -destination 'platform=iOS Simulator,OS=17.0' \
   test
 ```
 

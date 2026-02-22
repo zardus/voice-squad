@@ -402,6 +402,10 @@ final class VoiceSquadTests: XCTestCase {
         XCTAssertEqual(second.playCallCount, 1)
         XCTAssertTrue(player.isPlayingForTesting)
         XCTAssertEqual(player.queuedItemCountForTesting, 0)
+
+        second.triggerFinish(successfully: true)
+        XCTAssertFalse(player.isPlayingForTesting)
+        XCTAssertEqual(player.queuedItemCountForTesting, 0)
     }
 
     func testSpeechAudioPlayerContinuesAfterDecodeError() {

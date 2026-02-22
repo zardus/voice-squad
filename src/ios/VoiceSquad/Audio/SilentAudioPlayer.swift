@@ -156,7 +156,7 @@ final class SilentAudioPlayer {
     }
 }
 
-final class SpeechAudioPlayer: NSObject, AVAudioPlayerDelegate {
+final class SpeechAudioPlayer: NSObject {
     private let logger = Logger(subsystem: "com.voicesquad.app", category: "SpeechAudio")
     private var queue: [Data] = []
     private var playback: SpeechPlayback?
@@ -233,13 +233,6 @@ final class SpeechAudioPlayer: NSObject, AVAudioPlayerDelegate {
         playNext()
     }
 
-    func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
-        handleFinish(successfully: flag)
-    }
-
-    func audioPlayerDecodeErrorDidOccur(_ player: AVAudioPlayer, error: Error?) {
-        handleDecodeError(error)
-    }
 }
 
 protocol SpeechAudioSessionControlling {

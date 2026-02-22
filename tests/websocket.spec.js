@@ -379,7 +379,10 @@ test.describe("WebSocket", () => {
         }
       });
       await capturePromise.catch(() => null);
-      expect(speakResp.status).toBe(500);
+      expect(
+        speakResp.status,
+        "speak API failed unexpectedly while testing mp3 websocket broadcast"
+      ).toBe(500);
       return;
     }
 
