@@ -47,6 +47,7 @@ const VOICE_HISTORY_LIMIT = Number(process.env.VOICE_HISTORY_LIMIT || 1000);
 const SPEAK_SOCKET_PATH = process.env.SPEAK_SOCKET_PATH || "/run/squad-sockets/speak.sock";
 const LIVE_ACTIVITY_REGISTRATIONS_FILE = process.env.LIVE_ACTIVITY_REGISTRATIONS_FILE || "/tmp/live-activity-registrations.json";
 const LIVE_ACTIVITY_REGISTRATIONS_LIMIT = Number(process.env.LIVE_ACTIVITY_REGISTRATIONS_LIMIT || 2000);
+const SPEAK_DEDUP_WINDOW_MS = Number(process.env.SPEAK_DEDUP_WINDOW_MS || 300000);
 const IOS_LIVE_ACTIVITY_TOPIC = process.env.IOS_LIVE_ACTIVITY_TOPIC || "";
 const IOS_LIVE_ACTIVITY_TEAM_ID = process.env.IOS_LIVE_ACTIVITY_TEAM_ID || "";
 const IOS_LIVE_ACTIVITY_KEY_ID = process.env.IOS_LIVE_ACTIVITY_KEY_ID || "";
@@ -64,6 +65,17 @@ console.log("[voice] env OK: VOICE_TOKEN, OPENAI_API_KEY all set");
 let voiceSummaryHistory = [];
 let liveActivityRegistrations = new Map();
 const apnsJwtState = { token: null, expiresAtMs: 0 };
+const lastSpeakDedup = { text: null, timestampMs: 0 };
+
+function isDuplicateSpeak(text) {
+  const now = Date.now();
+  return lastSpeakDedup.text === text && (now - lastSpeakDedup.timestampMs) < SPEAK_DEDUP_WINDOW_MS;
+}
+
+function markSpeakDedup(text) {
+  lastSpeakDedup.text = text;
+  lastSpeakDedup.timestampMs = Date.now();
+}
 
 function normalizeVoiceHistoryEntries(entries) {
   if (!Array.isArray(entries)) return [];
@@ -770,6 +782,16 @@ async function handleSpeakRequest(body, res) {
     const requestTtsFormat = normalizeTtsFormat(format);
     const requestTtsMime = ttsMimeFromFormat(requestTtsFormat);
     console.log(`[speak] "${trimmed.slice(0, 100)}${trimmed.length > 100 ? "..." : ""}"`);
+    if (playbackOnly !== true && isDuplicateSpeak(trimmed)) {
+      console.log(`[speak] deduplicated "${trimmed.slice(0, 80)}..." (same text within ${SPEAK_DEDUP_WINDOW_MS}ms)`);
+      return res.json({
+        ok: true,
+        deduplicated: true,
+        clients: 0,
+        formats: [],
+        live_activity: { pushed: 0, attempted: 0, skipped: "deduplicated" },
+      });
+    }
     if (playbackOnly === true) {
       const { audio } = await synthesize(trimmed, requestTtsFormat);
       console.log(`[speak] synthesized ${audio.length} bytes (format=${requestTtsFormat}, playbackOnly=true)`);
@@ -825,6 +847,7 @@ async function handleSpeakRequest(body, res) {
     } else {
       console.log(`[live-activity] push sent=${liveActivityPushResult.pushed}/${liveActivityPushResult.attempted}`);
     }
+    markSpeakDedup(trimmed);
     res.json({
       ok: true,
       clients: sent,
