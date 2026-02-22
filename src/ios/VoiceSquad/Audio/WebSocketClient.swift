@@ -5,6 +5,7 @@ import OSLog
 final class WebSocketClient: ObservableObject {
     @Published private(set) var isConnected: Bool = false
     @Published private(set) var lastSpeakText: String?
+    @Published private(set) var newestSpeakTextEvent: String?
     @Published private(set) var lastIncomingTextMessage: String?
     @Published private(set) var lastIncomingAudioData: Data?
 
@@ -15,6 +16,8 @@ final class WebSocketClient: ObservableObject {
     private var shouldReconnect = false
     private var reconnectAttempt = 0
     private let logger = Logger(subsystem: "com.voicesquad.app", category: "WebSocket")
+    var networkingEnabledForTesting = true
+    var onSocketOpenedForTesting: ((URL, String) -> Void)?
 
     func connect(url: URL, reason: String = "manual") {
         self.url = url
@@ -45,6 +48,8 @@ final class WebSocketClient: ObservableObject {
     }
 
     private func openSocket(url: URL, reason: String) {
+        onSocketOpenedForTesting?(url, reason)
+        guard networkingEnabledForTesting else { return }
         teardownActiveSocket()
         session = URLSession(configuration: .default)
         guard let session else { return }
@@ -130,9 +135,15 @@ final class WebSocketClient: ObservableObject {
                 lastSpeakText = text
             }
         case "speak_text":
-            lastSpeakText = json["text"] as? String
+            let text = json["text"] as? String
+            lastSpeakText = text
+            newestSpeakTextEvent = text
         default:
             logger.debug("Ignoring websocket message type=\(type, privacy: .public)")
         }
+    }
+
+    func processTextMessageForTesting(_ message: String) {
+        handleTextMessage(message)
     }
 }

@@ -40,6 +40,35 @@ For TestFlight/App Store distribution, you will need proper signing/profiles and
 - It does not sign or produce a distributable `.ipa`.
 - Simulator builds run with `CODE_SIGNING_ALLOWED=NO`.
 
+## Testing Strategy
+
+Use layered tests so regressions are caught before release:
+
+- `XCTest` unit tests (`src/ios/VoiceSquadTests/VoiceSquadTests.swift`) cover:
+  - websocket message decoding/routing for Live Activity updates
+  - notification dedup window behavior
+  - native speech audio queue sequencing and decode-error recovery
+  - websocket client state transitions (connected replay vs new `speak_text` events)
+- `Playwright` integration tests (`tests/*.spec.js`) cover end-to-end server/websocket behavior, including iOS-oriented websocket negotiation (`tts=mp3`) and binary audio delivery.
+
+Run iOS unit tests on macOS:
+
+```bash
+cd src/ios
+xcodebuild \
+  -project VoiceSquad.xcodeproj \
+  -scheme VoiceSquad \
+  -destination 'platform=iOS Simulator,OS=17.0' \
+  test
+```
+
+Run server/websocket integration tests from repo root:
+
+```bash
+./test.sh
+./test.sh websocket.spec.js
+```
+
 ## Server Configuration
 
 The app needs:

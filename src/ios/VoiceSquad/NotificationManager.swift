@@ -9,19 +9,22 @@ struct NotificationDedup {
     private(set) var lastText: String?
     private(set) var lastTime: Date?
     let windowSeconds: TimeInterval
+    private let nowProvider: () -> Date
 
-    init(windowSeconds: TimeInterval = 300) {
+    init(windowSeconds: TimeInterval = 300, nowProvider: @escaping () -> Date = Date.init) {
         self.windowSeconds = windowSeconds
+        self.nowProvider = nowProvider
     }
 
     /// Returns `true` if the text should be posted (not a duplicate within the window).
     mutating func shouldPost(text: String) -> Bool {
+        let now = nowProvider()
         if let lastText, lastText == text,
-           let lastTime, Date().timeIntervalSince(lastTime) < windowSeconds {
+           let lastTime, now.timeIntervalSince(lastTime) < windowSeconds {
             return false
         }
         lastText = text
-        lastTime = Date()
+        lastTime = now
         return true
     }
 

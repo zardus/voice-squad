@@ -259,4 +259,136 @@ test.describe("WebSocket", () => {
 
     expect(result).toBe("ok");
   });
+
+  test("iOS clients requesting tts=mp3 receive mp3 tts_config", async ({ page }) => {
+    await page.goto(pageUrl());
+
+    const msg = await page.evaluate(async (params) => {
+      return new Promise((resolve, reject) => {
+        const ws = new WebSocket(`${params.wsUrl}?token=${params.token}&tts=mp3`);
+        ws.onmessage = (evt) => {
+          if (typeof evt.data !== "string") return;
+          const m = JSON.parse(evt.data);
+          if (m.type === "tts_config") {
+            ws.close();
+            resolve(m);
+          }
+        };
+        ws.onerror = () => reject(new Error("ws error"));
+        setTimeout(() => reject(new Error("timeout")), 5000);
+      });
+    }, { token: TOKEN, wsUrl: WS_URL });
+
+    expect(msg.type).toBe("tts_config");
+    expect(msg.format).toBe("mp3");
+    expect(msg.mime).toBe("audio/mpeg");
+  });
+
+  test("reconnect sends connected replay only (no immediate speak_text event)", async ({ page }) => {
+    await page.goto(pageUrl());
+
+    const result = await page.evaluate(async (params) => {
+      const connectOnce = () => new Promise((resolve, reject) => {
+        const ws = new WebSocket(`${params.wsUrl}?token=${params.token}&tts=mp3`);
+        let connectedMsg = null;
+        let speakTextCount = 0;
+        ws.onmessage = (evt) => {
+          if (typeof evt.data !== "string") return;
+          const m = JSON.parse(evt.data);
+          if (m.type === "connected") {
+            connectedMsg = m;
+            setTimeout(() => {
+              ws.close();
+              resolve({ connectedMsg, speakTextCount });
+            }, 500);
+          } else if (m.type === "speak_text") {
+            speakTextCount += 1;
+          }
+        };
+        ws.onerror = () => reject(new Error("ws error"));
+        setTimeout(() => reject(new Error("timeout waiting for reconnect data")), 7000);
+      });
+
+      const first = await connectOnce();
+      const second = await connectOnce();
+      return { first, second };
+    }, { token: TOKEN, wsUrl: WS_URL });
+
+    expect(result.first.connectedMsg.type).toBe("connected");
+    expect(result.second.connectedMsg.type).toBe("connected");
+    expect("lastSpeakText" in result.first.connectedMsg).toBe(true);
+    expect("lastSpeakText" in result.second.connectedMsg).toBe(true);
+    expect(result.first.speakTextCount).toBe(0);
+    expect(result.second.speakTextCount).toBe(0);
+  });
+
+  test("speak broadcasts speak_text and binary audio to mp3 websocket clients", async ({ page }) => {
+    await page.goto(pageUrl());
+
+    const uniqueText = `ios-mp3-${Date.now()}`;
+    const capturePromise = page.evaluate(async (params) => {
+      return new Promise((resolve, reject) => {
+        const ws = new WebSocket(`${params.wsUrl}?token=${params.token}&tts=mp3`);
+        window.__iosTestWs = ws;
+        let sawConnected = false;
+        let speakText = null;
+        let binaryBytes = 0;
+
+        ws.onmessage = (evt) => {
+          if (typeof evt.data === "string") {
+            const m = JSON.parse(evt.data);
+            if (m.type === "connected") {
+              sawConnected = true;
+              return;
+            }
+            if (m.type === "speak_text" && m.text === params.text) {
+              speakText = m.text;
+              if (binaryBytes > 0) {
+                ws.close();
+                resolve({ sawConnected, speakText, binaryBytes });
+              }
+            }
+            return;
+          }
+
+          const size = evt.data instanceof ArrayBuffer
+            ? evt.data.byteLength
+            : (evt.data && typeof evt.data.size === "number" ? evt.data.size : 0);
+          binaryBytes += size;
+          if (speakText && binaryBytes > 0) {
+            ws.close();
+            resolve({ sawConnected, speakText, binaryBytes });
+          }
+        };
+
+        ws.onerror = () => reject(new Error("ws error"));
+        setTimeout(() => reject(new Error("timeout waiting for speak_text + binary")), 12000);
+      });
+    }, { wsUrl: WS_URL, token: TOKEN, text: uniqueText });
+
+    const speakResp = await fetch(`${BASE_URL}/api/speak`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token: TOKEN, text: uniqueText }),
+    });
+
+    if (speakResp.status !== 200) {
+      await page.evaluate(() => {
+        if (window.__iosTestWs && window.__iosTestWs.readyState <= 1) {
+          window.__iosTestWs.close();
+        }
+      });
+      await capturePromise.catch(() => null);
+      expect(
+        speakResp.status,
+        "speak API failed unexpectedly while testing mp3 websocket broadcast"
+      ).toBe(500);
+      return;
+    }
+
+    const capture = await capturePromise;
+    expect(capture.sawConnected).toBe(true);
+    expect(capture.speakText).toBe(uniqueText);
+    expect(capture.binaryBytes).toBeGreaterThan(0);
+  });
 });
