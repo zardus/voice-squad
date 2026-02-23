@@ -161,7 +161,7 @@ EOF
 
 ### `sleep SECONDS`
 
-Sleep for the specified duration (max 59 seconds).
+Sleep for the specified duration (max 30 seconds).
 
 ```bash
 sleep 5
