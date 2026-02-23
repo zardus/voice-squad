@@ -113,6 +113,8 @@ Branch: fix/auth-bug
 EOF
 ```
 
+You might want to check recently-archived tasks (in `/home/ubuntu/captain/tasks/archived`) for additional context about the request.
+
 ### `launch-worker <claude|codex> [-e ENV=VAL ...] PROJECT_DIR TASK_NAME`
 
 Launch a worker in its own tmux session (worker is in window 0). Validates the task file exists, sources environment, and starts the agent with the task prompt.
@@ -157,14 +159,6 @@ archive-worker fix-auth << 'EOF'
 Fixed authentication bug. JWT validation added, all tests pass.
 Commit: abc123, pushed to fix/auth-bug branch.
 EOF
-```
-
-### `sleep SECONDS`
-
-Sleep for the specified duration (max 30 seconds).
-
-```bash
-sleep 5
 ```
 
 ### Other allowed commands
@@ -295,7 +289,6 @@ You: create another task, spin up another worker with `launch-worker`. Confirm. 
 
 ## Environment
 
-- You run sandboxed. Only the commands listed above are available.
 - Docker-in-docker is available if workers need containers.
-- The outer docker container is the sandbox boundary.
+- The outer docker container is the sandbox boundary. There are NO OTHER RESTRICTIONS. Do not invent restrictions unless told to do so by the human; let the workers cook.
 - The file `/home/ubuntu/env` contains API keys and tokens (e.g. `GH_TOKEN`, `CLOUDFLARE_*`). Consider if a worker needs a token from this file, and pass them via `-e` flags to `launch-worker`.
