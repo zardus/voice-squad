@@ -38,4 +38,15 @@ case "$CURRENT_CMD" in
         ;;
 esac
 
-tmux -S "$SOCKET" send-keys -t "$PANE_ID" "$@"
+# When the last arg is Enter, send preceding keys first, then delay
+# so the agent UI has time to process pasted text before submission.
+LAST_ARG="${!#}"
+if [ "$LAST_ARG" = "Enter" ] && [ $# -gt 1 ]; then
+    ARGS=("$@")
+    unset 'ARGS[${#ARGS[@]}-1]'
+    tmux -S "$SOCKET" send-keys -t "$PANE_ID" "${ARGS[@]}"
+    sleep 1
+    tmux -S "$SOCKET" send-keys -t "$PANE_ID" Enter
+else
+    tmux -S "$SOCKET" send-keys -t "$PANE_ID" "$@"
+fi
