@@ -27,7 +27,7 @@ struct VoiceSquadLiveActivityWidget: Widget {
                 Button(intent: ToggleAutoReadIntent()) {
                     Image(systemName: context.state.autoReadEnabled
                           ? "speaker.wave.2.fill" : "speaker.slash.fill")
-                        .foregroundStyle(context.state.autoReadEnabled ? .green : .secondary)
+                        .foregroundStyle(context.state.autoReadEnabled ? .green : .red)
                 }
             }
             .padding()
@@ -50,7 +50,7 @@ struct VoiceSquadLiveActivityWidget: Widget {
                     Button(intent: ToggleAutoReadIntent()) {
                         Image(systemName: context.state.autoReadEnabled
                               ? "speaker.wave.2.fill" : "speaker.slash.fill")
-                            .foregroundStyle(context.state.autoReadEnabled ? .green : .secondary)
+                            .foregroundStyle(context.state.autoReadEnabled ? .green : .red)
                     }
                 }
                 DynamicIslandExpandedRegion(.bottom) {
