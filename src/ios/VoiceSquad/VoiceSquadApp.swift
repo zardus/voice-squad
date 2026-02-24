@@ -38,19 +38,12 @@ struct VoiceSquadApp: App {
                 liveActivity.startActivityIfNeeded()
                 liveActivity.configureRemotePushSync(serverBaseURL: settings.serverBaseURL, token: settings.token)
                 silentAudio.start()
+                installWebSocketCallbacks()
                 ensureWebSocketConnected(reason: "app_appear")
             }
             .onDisappear {
                 disconnectEvaluationTask?.cancel()
                 silentAudio.stop()
-            }
-            .onReceive(webSocket.$lastIncomingTextMessage) { message in
-                guard let message else { return }
-                liveActivity.handleWebSocketMessage(message)
-            }
-            .onReceive(webSocket.$lastIncomingAudioData) { audioData in
-                guard let audioData else { return }
-                speechAudio.enqueue(audioData)
             }
             .onReceive(webSocket.$newestSpeakTextEvent) { text in
                 guard let text else { return }
@@ -93,6 +86,21 @@ struct VoiceSquadApp: App {
             .onChange(of: settings.token) { _, _ in
                 liveActivity.configureRemotePushSync(serverBaseURL: settings.serverBaseURL, token: settings.token)
             }
+        }
+    }
+
+    /// Wire up direct callbacks on the WebSocket client.  These fire
+    /// synchronously on the main actor for every received frame, avoiding
+    /// the coalescing issue with @Published + onReceive where rapid
+    /// tmux_snapshot messages could overwrite a speak_text before SwiftUI
+    /// delivered it.
+    private func installWebSocketCallbacks() {
+        webSocket.onAudioData = { [speechAudio] audioData in
+            guard UserDefaults.autoReadIsEnabled() else { return }
+            speechAudio.enqueue(audioData)
+        }
+        webSocket.onTextMessage = { [liveActivity] message in
+            liveActivity.handleWebSocketMessage(message)
         }
     }
 

@@ -9,6 +9,17 @@ final class WebSocketClient: ObservableObject {
     @Published private(set) var lastIncomingTextMessage: String?
     @Published private(set) var lastIncomingAudioData: Data?
 
+    /// Callback fired for every binary audio frame.  Unlike @Published (which
+    /// can coalesce rapid updates via SwiftUI's onReceive), this fires
+    /// synchronously on the main actor for each received frame.
+    var onAudioData: ((Data) -> Void)?
+
+    /// Callback fired for every incoming text message (JSON).
+    /// Use this for event-driven processing (e.g. Live Activity) instead of
+    /// observing lastIncomingTextMessage, which can miss messages if a rapid
+    /// tmux_snapshot overwrites the value before onReceive fires.
+    var onTextMessage: ((String) -> Void)?
+
     private var session: URLSession?
     private var task: URLSessionWebSocketTask?
     private var reconnectTask: Task<Void, Never>?
@@ -86,6 +97,7 @@ final class WebSocketClient: ObservableObject {
                         self.handleTextMessage(s)
                     case .data(let data):
                         self.lastIncomingAudioData = data
+                        self.onAudioData?(data)
                     @unknown default:
                         break
                     }
@@ -119,6 +131,7 @@ final class WebSocketClient: ObservableObject {
 
     private func handleTextMessage(_ s: String) {
         lastIncomingTextMessage = s
+        onTextMessage?(s)
 
         guard let data = s.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
