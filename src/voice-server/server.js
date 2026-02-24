@@ -1424,24 +1424,35 @@ wss.on("connection", (ws, req) => {
     }
   });
 
+  function safeSend(data) {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(data);
+      return true;
+    }
+    console.warn("[ws] safeSend: socket no longer open, dropping message");
+    return false;
+  }
+
   async function handleAudioCommand(audioBuffer, mimeType) {
     try {
-      ws.send(JSON.stringify({ type: "transcribing" }));
+      if (!safeSend(JSON.stringify({ type: "transcribing" }))) return;
       const t0 = Date.now();
       const text = await transcribe(audioBuffer, mimeType);
       console.log(`[stt] transcribed in ${Date.now() - t0}ms: "${text}"`);
       if (!text || !text.trim()) {
         console.log("[stt] blank transcription, skipping");
-        ws.send(JSON.stringify({ type: "stt_error", message: "No speech detected" }));
+        safeSend(JSON.stringify({ type: "stt_error", message: "No speech detected" }));
         return;
       }
-      ws.send(JSON.stringify({ type: "transcription", text }));
+      safeSend(JSON.stringify({ type: "transcription", text }));
       sendCommand("INPUT FROM SPEECH-TO-TEXT (might have transcription errors): " + text);
     } catch (err) {
       console.error("[stt] error:", err.message);
-      ws.send(
-        JSON.stringify({ type: "stt_error", message: err.message })
-      );
+      try {
+        safeSend(JSON.stringify({ type: "stt_error", message: err.message }));
+      } catch (sendErr) {
+        console.error("[stt] failed to send error to client:", sendErr.message);
+      }
     }
   }
 
