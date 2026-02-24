@@ -10,7 +10,6 @@ struct VoiceSquadApp: App {
     @StateObject private var liveActivity = LiveActivityManager.shared
     @StateObject private var notifications = NotificationManager()
     @State private var silentAudio = SilentAudioPlayer()
-    @State private var speechAudio = SpeechAudioPlayer()
     @State private var disconnectStartedAt: Date?
     @State private var disconnectEvaluationTask: Task<Void, Never>?
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
@@ -95,10 +94,12 @@ struct VoiceSquadApp: App {
     /// tmux_snapshot messages could overwrite a speak_text before SwiftUI
     /// delivered it.
     private func installWebSocketCallbacks() {
-        webSocket.onAudioData = { [speechAudio] audioData in
-            guard UserDefaults.autoReadIsEnabled() else { return }
-            speechAudio.enqueue(audioData)
-        }
+        // Audio playback is handled by the PWA running inside the WKWebView.
+        // The WKWebView is configured with mediaTypesRequiringUserActionForPlayback = []
+        // which enables autoplay.  Previous attempts to play audio natively via
+        // SpeechAudioPlayer failed silently due to AVAudioSession conflicts with
+        // the SilentAudioPlayer background engine.  The native WebSocket is kept
+        // for Live Activity text updates only.
         webSocket.onTextMessage = { [liveActivity] message in
             liveActivity.handleWebSocketMessage(message)
         }
