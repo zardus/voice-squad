@@ -459,8 +459,10 @@ function evictStaleTtsEntries() {
 
 function enqueueTtsPlayback(data, { reason = "tts", text = "", fallbackTried = false } = {}) {
   if (!data) return;
-  // Don't queue audio while the page is hidden — it would pile up and play back-to-back on return.
-  if (document.hidden) return;
+  // NOTE: We intentionally do NOT drop audio when document.hidden.
+  // The 30-second stale entry eviction and queue cap handle cleanup.
+  // Dropping here caused audio to silently disappear on mobile whenever
+  // the screen dimmed or the user checked notifications.
 
   evictStaleTtsEntries();
 
@@ -557,12 +559,21 @@ function drainTtsPlaybackQueue() {
   });
 }
 
-// When the page becomes visible again, discard any audio that piled up while hidden.
-// This prevents a cascade of stale messages playing back-to-back after the phone is unlocked.
+// When the page becomes visible again, evict stale queued clips but keep
+// currently-playing audio intact.  The previous approach called stopTtsPlayback()
+// which destroyed in-progress playback whenever the user briefly checked
+// notifications or the screen dimmed on mobile.
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) return;
-  stopTtsPlayback();
-  speakAudioQueue = [];
+  evictStaleTtsEntries();
+  // Also flush any audio held while recording, keeping only the newest.
+  if (speakAudioQueue.length > 1) {
+    speakAudioQueue = [speakAudioQueue[speakAudioQueue.length - 1]];
+  }
+  // Kick the drain loop in case playback was deferred while hidden.
+  if (!ttsPlaybackPlaying && ttsPlaybackQueue.length > 0) {
+    drainTtsPlaybackQueueSoon();
+  }
 });
 
 function handleIncomingTtsAudio(data, opts = {}) {
@@ -571,9 +582,12 @@ function handleIncomingTtsAudio(data, opts = {}) {
   if (nativeAppHost) return;
   const autoplay = opts.autoplay !== false;
   if (!autoplay) return;
-  // Drop audio that arrives while the page is hidden (backgrounded/locked).
-  // This prevents a pile-up of stale audio playing back-to-back when the user returns.
-  if (document.hidden) return;
+  // NOTE: We intentionally do NOT check document.hidden here.
+  // The TTS queue has its own 30-second stale eviction and cap,
+  // so audio won't pile up.  Dropping audio when hidden caused
+  // TTS to silently disappear on mobile whenever the screen
+  // dimmed or the user briefly checked notifications.
+
   // Respect the auto-read toggle for autoplay; replay is always available.
   const shouldPlay = autoreadCb.checked;
   if (shouldPlay) {

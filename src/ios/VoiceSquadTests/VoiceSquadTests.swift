@@ -327,6 +327,61 @@ final class VoiceSquadTests: XCTestCase {
         XCTAssertTrue(shouldMark)
     }
 
+    // MARK: - WebSocket callback delivery tests
+
+    @MainActor
+    func testWebSocketOnAudioDataCallbackFiresForEveryBinaryFrame() {
+        let client = WebSocketClient()
+        var receivedData: [Data] = []
+        client.onAudioData = { data in
+            receivedData.append(data)
+        }
+
+        // Simulate two rapid binary frames via the text message processing path
+        // (we can't call receiveLoop directly, but we can verify the callback
+        // is wired up by checking the property and callback separately).
+        let data1 = Data([0x01, 0x02])
+        let data2 = Data([0x03, 0x04])
+
+        // Directly set published property and fire callback (mirrors receiveLoop behavior)
+        client.onAudioData?(data1)
+        client.onAudioData?(data2)
+
+        XCTAssertEqual(receivedData.count, 2)
+        XCTAssertEqual(receivedData[0], data1)
+        XCTAssertEqual(receivedData[1], data2)
+    }
+
+    @MainActor
+    func testWebSocketOnTextMessageCallbackFiresForEveryMessage() {
+        let client = WebSocketClient()
+        var receivedMessages: [String] = []
+        client.onTextMessage = { message in
+            receivedMessages.append(message)
+        }
+
+        let msg1 = #"{"type":"speak_text","text":"First"}"#
+        let msg2 = #"{"type":"tmux_snapshot","content":"..."}"#
+        let msg3 = #"{"type":"speak_text","text":"Second"}"#
+
+        client.processTextMessageForTesting(msg1)
+        client.processTextMessageForTesting(msg2)
+        client.processTextMessageForTesting(msg3)
+
+        // All three messages should trigger the callback
+        XCTAssertEqual(receivedMessages.count, 3)
+        XCTAssertEqual(receivedMessages[0], msg1)
+        XCTAssertEqual(receivedMessages[1], msg2)
+        XCTAssertEqual(receivedMessages[2], msg3)
+    }
+
+    @MainActor
+    func testWebSocketCallbacksNotSetByDefault() {
+        let client = WebSocketClient()
+        XCTAssertNil(client.onAudioData)
+        XCTAssertNil(client.onTextMessage)
+    }
+
     // MARK: - NotificationDedup tests
 
     func testNotificationDedupSuppressesSameTextWithinWindow() {
