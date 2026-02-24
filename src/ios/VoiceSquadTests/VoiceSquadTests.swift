@@ -538,6 +538,84 @@ final class VoiceSquadTests: XCTestCase {
         client.disconnect()
         XCTAssertFalse(client.isConnected)
     }
+
+    // MARK: - Background audio / native playback tests
+
+    func testSpeechAudioPlayerSessionCategoryMatchesSilentAudioPlayer() {
+        // SpeechAudioPlayer must use the exact same AVAudioSession category
+        // and options as SilentAudioPlayer (.playback + .mixWithOthers).
+        // Using different options (e.g. adding .allowAirPlay) causes iOS to
+        // reconfigure the session, which silently stops the AVAudioEngine
+        // that keeps the app alive in background.
+        let session = MockSpeechAudioSession()
+        let playback = MockSpeechPlayback(playReturns: true)
+        let factory = MockSpeechPlaybackFactory(playbacks: [playback])
+        let player = SpeechAudioPlayer(audioSession: session, playbackFactory: factory)
+
+        player.enqueue(Data([0xFF]))
+
+        XCTAssertEqual(session.setCategoryCallCount, 1)
+        XCTAssertEqual(session.lastCategory, .playback)
+        XCTAssertEqual(session.lastOptions, .mixWithOthers,
+                       "SpeechAudioPlayer must use .mixWithOthers only — adding extra options disrupts SilentAudioPlayer's AVAudioEngine")
+    }
+
+    func testNativeAudioCallbackReceivesAllFrames() {
+        // Verify that wiring onAudioData feeds every binary frame to the
+        // speech audio player, which is how background TTS playback works.
+        let session = MockSpeechAudioSession()
+        let p1 = MockSpeechPlayback(playReturns: true)
+        let p2 = MockSpeechPlayback(playReturns: true)
+        let factory = MockSpeechPlaybackFactory(playbacks: [p1, p2])
+        let player = SpeechAudioPlayer(audioSession: session, playbackFactory: factory)
+
+        // Simulate the onAudioData callback path
+        let frames: [Data] = [Data([0x01, 0x02]), Data([0x03, 0x04])]
+        for frame in frames {
+            player.enqueue(frame)
+        }
+
+        XCTAssertEqual(factory.makePlaybackCallCount, 1, "First frame starts immediately")
+        XCTAssertEqual(player.queuedItemCountForTesting, 1, "Second frame is queued")
+
+        p1.triggerFinish(successfully: true)
+        XCTAssertEqual(factory.makePlaybackCallCount, 2, "Second frame starts after first finishes")
+    }
+
+    func testWebURLIncludesNativeAppParam() {
+        let settings = AppSettings()
+        settings.serverBaseURL = "https://example.com"
+        settings.token = "test-token"
+
+        guard let url = settings.makeWebURL(),
+              let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              let items = components.queryItems else {
+            XCTFail("makeWebURL() returned nil or unparseable URL")
+            return
+        }
+
+        let nativeApp = items.first(where: { $0.name == "nativeApp" })
+        XCTAssertEqual(nativeApp?.value, "1",
+                       "Web URL must include nativeApp=1 so PWA defers audio to native SpeechAudioPlayer")
+    }
+
+    func testWebSocketURLIncludesTtsParam() {
+        let settings = AppSettings()
+        settings.serverBaseURL = "https://example.com"
+        settings.token = "test-token"
+
+        guard let url = settings.makeWebSocketURL(),
+              let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              let items = components.queryItems else {
+            XCTFail("makeWebSocketURL() returned nil or unparseable URL")
+            return
+        }
+
+        let tts = items.first(where: { $0.name == "tts" })
+        XCTAssertEqual(tts?.value, "mp3",
+                       "WebSocket URL must request mp3 format for native audio playback")
+        XCTAssertEqual(components.scheme, "wss")
+    }
 }
 
 private final class MutableClock {
@@ -555,9 +633,13 @@ private final class MutableClock {
 private final class MockSpeechAudioSession: SpeechAudioSessionControlling {
     private(set) var setCategoryCallCount = 0
     private(set) var setActiveCallCount = 0
+    private(set) var lastCategory: AVAudioSession.Category?
+    private(set) var lastOptions: AVAudioSession.CategoryOptions?
 
     func setCategory(_ category: AVAudioSession.Category, options: AVAudioSession.CategoryOptions) throws {
         setCategoryCallCount += 1
+        lastCategory = category
+        lastOptions = options
     }
 
     func setActive(_ active: Bool, options: AVAudioSession.SetActiveOptions) throws {
