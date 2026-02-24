@@ -214,8 +214,10 @@ final class SpeechAudioPlayer: NSObject {
 
     private func prepareAudioSessionIfNeeded() throws {
         guard !sessionPrepared else { return }
-        // Keep category aligned with SilentAudioPlayer's long-lived engine configuration.
-        try audioSession.setCategory(.playback, options: [.mixWithOthers, .allowAirPlay])
+        // Use the exact same category and options as SilentAudioPlayer's background
+        // engine.  Using different options (e.g. adding .allowAirPlay) causes iOS to
+        // reconfigure the audio session mid-stream, which silently stops AVAudioEngine.
+        try audioSession.setCategory(.playback, options: .mixWithOthers)
         sessionPrepared = true
     }
 

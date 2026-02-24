@@ -25,8 +25,11 @@ final class AppSettings: ObservableObject {
         guard var comps = URLComponents(string: base) else { return nil }
         if comps.path.isEmpty { comps.path = "/" }
         var items = comps.queryItems ?? []
-        items.removeAll { $0.name == "token" }
+        items.removeAll { ["token", "nativeApp"].contains($0.name) }
         items.append(URLQueryItem(name: "token", value: token))
+        // Tell the PWA to skip audio playback — native handles TTS via
+        // SpeechAudioPlayer so audio continues when the app is backgrounded.
+        items.append(URLQueryItem(name: "nativeApp", value: "1"))
         comps.queryItems = items
         return comps.url
     }

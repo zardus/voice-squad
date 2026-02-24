@@ -62,7 +62,9 @@ final class WebSocketClient: ObservableObject {
         onSocketOpenedForTesting?(url, reason)
         guard networkingEnabledForTesting else { return }
         teardownActiveSocket()
-        session = URLSession(configuration: .default)
+        let config = URLSessionConfiguration.default
+        config.shouldUseExtendedBackgroundIdleMode = true
+        session = URLSession(configuration: config)
         guard let session else { return }
         let task = session.webSocketTask(with: url)
         self.task = task
