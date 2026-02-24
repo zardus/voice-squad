@@ -276,6 +276,14 @@ const MIN_AUDIO_BYTES = 1000;
 const MEDIARECORDER_TIMESLICE_MS = 250;
 const MAX_RECORDING_MS = 15 * 60 * 1000; // 15 minutes
 const WS_AUDIO_FRAME_BYTES = 64 * 1024;
+// Allow test overrides via globals set before app.js loads (addInitScript).
+const STT_RESPONSE_TIMEOUT_MS = window.__STT_RESPONSE_TIMEOUT_MS || 15 * 1000;
+const STT_TRANSCRIPTION_TIMEOUT_MS = window.__STT_TRANSCRIPTION_TIMEOUT_MS || 90 * 1000;
+
+// Timers for detecting stuck voice pipeline states.
+// Cleared when the expected server response arrives.
+let sttResponseTimer = null;
+let sttTranscriptionTimer = null;
 
 // Persistent audio element — unlocked on first user gesture so TTS can play later
 const ttsAudio = new Audio();
@@ -965,6 +973,7 @@ function connect() {
 
       case "transcription":
         lastCaptainUpdateAt = Date.now();
+        clearSttTimers();
         transcriptionEl.textContent = msg.text;
         transcriptionEl.className = "";
         voiceTranscriptionEl.textContent = "Sent";
@@ -973,10 +982,19 @@ function connect() {
         break;
 
       case "transcribing":
+        clearSttTimers();
         showTranscribingIndicator();
+        // Start a timeout for the transcription phase itself.
+        sttTranscriptionTimer = setTimeout(() => {
+          sttTranscriptionTimer = null;
+          if (transcriptionEl.textContent === "Transcribing...") {
+            showSttError("Transcription timed out — try again");
+          }
+        }, STT_TRANSCRIPTION_TIMEOUT_MS);
         break;
 
       case "stt_error":
+        clearSttTimers();
         transcriptionEl.textContent = msg.message;
         transcriptionEl.className = "error";
         voiceTranscriptionEl.textContent = "Error";
@@ -997,6 +1015,7 @@ function connect() {
 
   socket.onclose = () => {
     if (connSeq !== wsConnectionSeq || ws !== socket) return;
+    clearSttTimers();
     stopStatusTimer();
     lastCaptainUpdateAt = 0;
     captainName = "";
@@ -1114,6 +1133,20 @@ function showUploadingIndicator(pct = 0) {
   transcriptionEl.className = "transcribing";
   voiceTranscriptionEl.textContent = text;
   voiceTranscriptionEl.className = "voice-transcription transcribing";
+}
+
+function showSttError(message) {
+  clearSttTimers();
+  transcriptionEl.textContent = message;
+  transcriptionEl.className = "error";
+  voiceTranscriptionEl.textContent = "Error";
+  voiceTranscriptionEl.className = "voice-transcription error";
+  playDing(false);
+}
+
+function clearSttTimers() {
+  if (sttResponseTimer) { clearTimeout(sttResponseTimer); sttResponseTimer = null; }
+  if (sttTranscriptionTimer) { clearTimeout(sttTranscriptionTimer); sttTranscriptionTimer = null; }
 }
 
 sendBtn.addEventListener("click", sendText);
@@ -1271,6 +1304,9 @@ function startRecording() {
       return;
     }
 
+    // Clear any lingering STT timers from a previous recording before starting
+    // a new upload cycle (prevents a stale timer from falsely tripping).
+    clearSttTimers();
     // Show upload feedback first; switch to "Transcribing..." when server confirms STT started.
     showUploadingIndicator(0);
     playDing(true);
@@ -1356,11 +1392,29 @@ function startRecording() {
           maybeSendAudioCancel("client_abort_during_drain");
           return;
         }
+        // Detect dead socket during drain (e.g. iOS backgrounding killed it).
+        if (ws.readyState !== WebSocket.OPEN) {
+          console.warn("[voice] WebSocket closed during upload drain");
+          showSttError("Connection lost during upload — try again");
+          return;
+        }
         const bufferedDelta = Math.max(0, ws.bufferedAmount - baseBufferedAmount);
         if (bufferedDelta <= DRAIN_EPSILON_BYTES) break;
         await new Promise((r) => setTimeout(r, 50));
       }
       maybeUpdatePct(100, true);
+
+      // Start a fallback timer: if the server never sends "transcribing" (or any
+      // terminal STT response), the client would be stuck at "Uploading... 100%"
+      // forever.  This covers silent WebSocket drops, server crashes, etc.
+      if (sttResponseTimer) clearTimeout(sttResponseTimer);
+      sttResponseTimer = setTimeout(() => {
+        sttResponseTimer = null;
+        // Only act if we're still showing the uploading indicator.
+        if (transcriptionEl.textContent.startsWith("Uploading")) {
+          showSttError("Upload timed out — try again");
+        }
+      }, STT_RESPONSE_TIMEOUT_MS);
     } finally {
       if (monitorTimer) clearInterval(monitorTimer);
     }
