@@ -319,7 +319,8 @@ test.describe("STT server-side audio protocol", () => {
               ws.send(JSON.stringify({ type: "audio_start", mimeType: "audio/wav" }));
               ws.send(new Uint8Array(100).buffer); // too small
               ws.send(JSON.stringify({ type: "audio_end" }));
-            } else if (connected && (msg.type === "stt_error" || msg.type === "transcribing")) {
+            } else if (connected && msg.type === "stt_error") {
+              // Wait specifically for stt_error (transcribing may arrive first).
               ws.close();
               resolve(msg);
             }
@@ -330,9 +331,7 @@ test.describe("STT server-side audio protocol", () => {
       });
     }, { token: TOKEN, wsUrl: WS_URL });
 
-    // Server should send transcribing, then stt_error for the short audio.
-    // Or it could send stt_error directly.  Either way, it should not hang.
-    expect(["transcribing", "stt_error"]).toContain(result.type);
+    expect(result.type).toBe("stt_error");
   });
 
   test("server handles WebSocket close during audio gracefully", async ({ page }) => {

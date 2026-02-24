@@ -1425,12 +1425,17 @@ wss.on("connection", (ws, req) => {
   });
 
   function safeSend(data) {
-    if (ws.readyState === WebSocket.OPEN) {
+    try {
+      if (ws.readyState !== WebSocket.OPEN) {
+        console.warn("[ws] safeSend: socket no longer open, dropping message");
+        return false;
+      }
       ws.send(data);
       return true;
+    } catch (err) {
+      console.warn("[ws] safeSend: send failed:", err.message);
+      return false;
     }
-    console.warn("[ws] safeSend: socket no longer open, dropping message");
-    return false;
   }
 
   async function handleAudioCommand(audioBuffer, mimeType) {

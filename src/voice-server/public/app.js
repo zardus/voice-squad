@@ -1304,6 +1304,9 @@ function startRecording() {
       return;
     }
 
+    // Clear any lingering STT timers from a previous recording before starting
+    // a new upload cycle (prevents a stale timer from falsely tripping).
+    clearSttTimers();
     // Show upload feedback first; switch to "Transcribing..." when server confirms STT started.
     showUploadingIndicator(0);
     playDing(true);
