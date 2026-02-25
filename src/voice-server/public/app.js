@@ -326,6 +326,24 @@ function playChime() {
   } catch (e) {}
 }
 
+function playMicReadyBeep() {
+  try {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(1046, now); // C6 — bright, clear ready tone
+    gain.gain.setValueAtTime(0.18, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.08);
+  } catch (e) {}
+}
+
 function playDing(success) {
   try {
     const ctx = getAudioContext();
@@ -1435,6 +1453,7 @@ function startRecording() {
   };
 
   mediaRecorder.start(MEDIARECORDER_TIMESLICE_MS);
+  playMicReadyBeep();
   recording = true;
   recordingStartTime = Date.now();
   if (maxRecordingTimer) clearTimeout(maxRecordingTimer);
