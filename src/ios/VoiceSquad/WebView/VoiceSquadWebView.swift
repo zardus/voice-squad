@@ -98,6 +98,9 @@ struct VoiceSquadWebView: UIViewRepresentable {
             if lastSentAutoReadEnabled != enabled {
                 syncAutoReadToPWA(enabled)
                 lastSentAutoReadEnabled = enabled
+                Task {
+                    await LiveActivityManager.syncAutoReadForAllActivities()
+                }
             }
         }
 

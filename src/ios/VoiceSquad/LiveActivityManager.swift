@@ -361,16 +361,18 @@ final class LiveActivityManager: ObservableObject {
         if event.isConnected {
             UserDefaults.shared.set(event.latestSpeechText, forKey: SharedKeys.lastSpeechText)
         }
-        let state = VoiceSquadAttributes.ContentState(
-            latestSpeechText: event.latestSpeechText,
-            isConnected: event.isConnected,
-            autoReadEnabled: UserDefaults.autoReadIsEnabled()
-        )
         logger.debug("Queueing live activity update seq=\(sequence, privacy: .public) id=\(targetActivity.id, privacy: .public) connected=\(event.isConnected, privacy: .public) textChars=\(event.latestSpeechText.count, privacy: .public)")
         let previousTask = updateTask
         updateTask = Task { [weak self] in
             await previousTask?.value
             guard let self else { return }
+            // Read auto-read state at apply time so queued updates never
+            // overwrite a toggle that happened after the update was enqueued.
+            let state = VoiceSquadAttributes.ContentState(
+                latestSpeechText: event.latestSpeechText,
+                isConnected: event.isConnected,
+                autoReadEnabled: UserDefaults.autoReadIsEnabled()
+            )
             await targetActivity.update(.init(state: state, staleDate: nil))
             await MainActor.run {
                 self.markApplied(event: event, sequence: sequence, activityID: targetActivity.id)
