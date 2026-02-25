@@ -544,17 +544,21 @@ final class LiveActivityManager: ObservableObject {
                     await MainActor.run {
                         self.clearPushRegistrationCache(activityID: activity.id)
                     }
-                    // Auto-restart after iOS ends the activity (e.g. 8-hour
-                    // system limit).  A brief delay avoids racing the system
-                    // teardown and lets ActivityKit fully release the slot.
-                    logger.info("Auto-restarting live activity after \(String(describing: state), privacy: .public) id=\(activity.id, privacy: .public)")
-                    try? await Task.sleep(nanoseconds: UInt64(Self.autoRestartDelay * 1_000_000_000))
-                    guard !Task.isCancelled else { return }
-                    await MainActor.run {
-                        self.activity = nil
-                        self.startActivityIfNeeded()
+                    if state == .ended {
+                        // Auto-restart after iOS ends the activity (e.g. 8-hour
+                        // system limit).  A brief delay avoids racing the system
+                        // teardown and lets ActivityKit fully release the slot.
+                        logger.info("Auto-restarting live activity after system ended it id=\(activity.id, privacy: .public)")
+                        try? await Task.sleep(nanoseconds: UInt64(Self.autoRestartDelay * 1_000_000_000))
+                        guard !Task.isCancelled else { return }
+                        await MainActor.run {
+                            self.activity = nil
+                            self.startActivityIfNeeded()
+                        }
+                    } else {
+                        logger.info("User dismissed live activity, not auto-restarting id=\(activity.id, privacy: .public)")
                     }
-                    return // lifecycle observer replaced by startActivityIfNeeded
+                    return // lifecycle observer done
                 }
             }
         }
