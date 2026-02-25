@@ -301,6 +301,10 @@ final class LiveActivityManager: ObservableObject {
     private var lastRegisteredActivityID: String?
     private var lastRegisteredPushToken: String?
 
+    /// How long to wait before restarting an activity that iOS auto-ended
+    /// (e.g. after the 8-hour system limit).
+    private static let autoRestartDelay: TimeInterval = 2
+
     private init() {}
 
     func startActivityIfNeeded() {
@@ -364,7 +368,9 @@ final class LiveActivityManager: ObservableObject {
         logger.debug("Queueing live activity update seq=\(sequence, privacy: .public) id=\(targetActivity.id, privacy: .public) connected=\(event.isConnected, privacy: .public) textChars=\(event.latestSpeechText.count, privacy: .public)")
         let previousTask = updateTask
         updateTask = Task { [weak self] in
-            await previousTask?.value
+            // Wait for the previous chained update but never let a failure
+            // break the chain — otherwise all subsequent updates stall.
+            _ = await previousTask?.result
             guard let self else { return }
             // Read auto-read state at apply time so queued updates never
             // overwrite a toggle that happened after the update was enqueued.
@@ -373,7 +379,11 @@ final class LiveActivityManager: ObservableObject {
                 isConnected: event.isConnected,
                 autoReadEnabled: UserDefaults.autoReadIsEnabled()
             )
-            await targetActivity.update(.init(state: state, staleDate: nil))
+            do {
+                await targetActivity.update(.init(state: state, staleDate: nil))
+            } catch {
+                self.logger.error("Activity.update() failed seq=\(sequence, privacy: .public): \(String(describing: error), privacy: .public)")
+            }
             await MainActor.run {
                 self.markApplied(event: event, sequence: sequence, activityID: targetActivity.id)
             }
@@ -534,6 +544,17 @@ final class LiveActivityManager: ObservableObject {
                     await MainActor.run {
                         self.clearPushRegistrationCache(activityID: activity.id)
                     }
+                    // Auto-restart after iOS ends the activity (e.g. 8-hour
+                    // system limit).  A brief delay avoids racing the system
+                    // teardown and lets ActivityKit fully release the slot.
+                    logger.info("Auto-restarting live activity after \(String(describing: state), privacy: .public) id=\(activity.id, privacy: .public)")
+                    try? await Task.sleep(nanoseconds: UInt64(Self.autoRestartDelay * 1_000_000_000))
+                    guard !Task.isCancelled else { return }
+                    await MainActor.run {
+                        self.activity = nil
+                        self.startActivityIfNeeded()
+                    }
+                    return // lifecycle observer replaced by startActivityIfNeeded
                 }
             }
         }
