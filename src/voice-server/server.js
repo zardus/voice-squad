@@ -281,6 +281,7 @@ async function sendLiveActivityUpdate(registration, state) {
       ":path": `/3/device/${registration.activityPushToken}`,
       "apns-topic": IOS_LIVE_ACTIVITY_TOPIC,
       "apns-push-type": "liveactivity",
+      "apns-priority": "5",
       authorization: `bearer ${jwt}`,
       "content-type": "application/json",
     });
