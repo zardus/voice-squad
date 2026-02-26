@@ -8,13 +8,15 @@ struct LiveActivityUpdateEvent: Equatable {
     let activityID: String?
     let eventDate: Date?
     let sequence: UInt64?
+    let instanceID: String?
 
-    init(latestSpeechText: String, isConnected: Bool, activityID: String?, eventDate: Date? = nil, sequence: UInt64? = nil) {
+    init(latestSpeechText: String, isConnected: Bool, activityID: String?, eventDate: Date? = nil, sequence: UInt64? = nil, instanceID: String? = nil) {
         self.latestSpeechText = latestSpeechText
         self.isConnected = isConnected
         self.activityID = activityID
         self.eventDate = eventDate
         self.sequence = sequence
+        self.instanceID = instanceID
     }
 }
 
@@ -68,9 +70,13 @@ enum LiveActivityUpdateDecodeError: Error, Equatable {
 struct LiveActivityOrderingCursor {
     private(set) var latestAppliedSequence: UInt64?
     private(set) var latestAppliedEventDate: Date?
+    private(set) var latestAppliedInstanceID: String?
 
     mutating func isStale(event: LiveActivityUpdateEvent) -> Bool {
-        if let eventSequence = event.sequence,
+        let eventInstanceID = event.instanceID?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let sameInstance = eventInstanceID == latestAppliedInstanceID
+        if sameInstance,
+           let eventSequence = event.sequence,
            let latestAppliedSequence {
             if eventSequence < latestAppliedSequence { return true }
             if eventSequence > latestAppliedSequence { return false }
@@ -91,7 +97,16 @@ struct LiveActivityOrderingCursor {
     }
 
     mutating func markApplied(event: LiveActivityUpdateEvent) {
-        if let eventSequence = event.sequence {
+        if let eventInstanceID = event.instanceID?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !eventInstanceID.isEmpty {
+            if latestAppliedInstanceID != eventInstanceID {
+                latestAppliedInstanceID = eventInstanceID
+                latestAppliedSequence = event.sequence
+            }
+            latestAppliedInstanceID = eventInstanceID
+        }
+        if let eventSequence = event.sequence,
+           latestAppliedInstanceID == eventInstanceIDOrNil(event) {
             if let currentLatest = latestAppliedSequence {
                 latestAppliedSequence = max(currentLatest, eventSequence)
             } else {
@@ -105,6 +120,14 @@ struct LiveActivityOrderingCursor {
                 latestAppliedEventDate = eventDate
             }
         }
+    }
+
+    private func eventInstanceIDOrNil(_ event: LiveActivityUpdateEvent) -> String? {
+        guard let value = event.instanceID?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !value.isEmpty else {
+            return nil
+        }
+        return value
     }
 }
 
@@ -221,12 +244,21 @@ enum LiveActivityUpdateEventDecoder {
             contentState?["sequence"],
             userInfo["sequence"],
         ])
+        let instanceID = firstNonEmptyString([
+            voiceSquad?["instanceId"],
+            voiceSquad?["instance_id"],
+            contentState?["instanceId"],
+            contentState?["instance_id"],
+            userInfo["instanceId"],
+            userInfo["instance_id"],
+        ])
         return LiveActivityUpdateEvent(
             latestSpeechText: text,
             isConnected: isConnected,
             activityID: activityID,
             eventDate: eventDate,
-            sequence: sequence
+            sequence: sequence,
+            instanceID: instanceID
         )
     }
 
@@ -240,6 +272,15 @@ enum LiveActivityUpdateEventDecoder {
         for candidate in candidates {
             if let text = sanitizeSpeechText(candidate) {
                 return text
+            }
+        }
+        return nil
+    }
+
+    private static func firstNonEmptyString(_ candidates: [Any?]) -> String? {
+        for candidate in candidates {
+            if let value = sanitizeSpeechText(candidate) {
+                return value
             }
         }
         return nil

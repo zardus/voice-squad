@@ -40,8 +40,14 @@ test.describe("API endpoints", () => {
     return resp.json();
   }
 
-  function sleep(ms) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+  async function waitForLiveActivityDebug(predicate, { timeoutMs = 5000, intervalMs = 100 } = {}) {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const debug = await fetchLiveActivityDebug();
+      if (predicate(debug)) return debug;
+      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    }
+    throw new Error("Timed out waiting for live activity debug state");
   }
 
   test.beforeEach(async () => {
@@ -473,16 +479,21 @@ test.describe("API endpoints", () => {
       isConnected: true,
       autoReadEnabled: true,
     }));
-    await sleep(250);
     ws.send(JSON.stringify({
       type: "live_activity_state",
       activityId,
       isConnected: true,
       autoReadEnabled: false,
     }));
-    await sleep(350);
-
-    const debugAfterToggle = await fetchLiveActivityDebug();
+    const debugAfterToggle = await waitForLiveActivityDebug((debug) => {
+      const registration = (debug.registrations || []).find((item) => item.activityId === activityId);
+      return Boolean(
+        registration
+        && registration.sessionState
+        && registration.sessionState.autoReadEnabled === false
+        && registration.sessionState.isConnected === true
+      );
+    });
     expect(debugAfterToggle.lastPush).toBeTruthy();
     expect(["client_state", "auto_read_toggle"]).toContain(debugAfterToggle.lastPush.reason);
     const registration = (debugAfterToggle.registrations || []).find((item) => item.activityId === activityId);
@@ -491,8 +502,16 @@ test.describe("API endpoints", () => {
     expect(registration.sessionState.isConnected).toBe(true);
 
     ws.close();
-    await sleep(400);
-    const debugAfterClose = await fetchLiveActivityDebug();
+    const debugAfterClose = await waitForLiveActivityDebug((debug) => {
+      const registration = (debug.registrations || []).find((item) => item.activityId === activityId);
+      return Boolean(
+        registration
+        && registration.sessionState
+        && registration.sessionState.isConnected === false
+        && debug.lastPush
+        && debug.lastPush.reason === "client_disconnect"
+      );
+    });
     const registrationAfterClose = (debugAfterClose.registrations || []).find((item) => item.activityId === activityId);
     expect(registrationAfterClose).toBeTruthy();
     expect(registrationAfterClose.sessionState.isConnected).toBe(false);

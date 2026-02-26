@@ -210,6 +210,24 @@ final class VoiceSquadTests: XCTestCase {
         XCTAssertEqual(event?.sequence, 42)
     }
 
+    func testDecodeRemoteNotificationExtractsInstanceIdFromVoiceSquad() throws {
+        let payload: [AnyHashable: Any] = [
+            "aps": [
+                "event": "update",
+                "content-state": [
+                    "latestSpeechText": "Instance payload",
+                    "isConnected": true
+                ]
+            ],
+            "voice_squad": [
+                "instanceId": "server-boot-abc"
+            ]
+        ]
+
+        let event = try LiveActivityUpdateEventDecoder.decodeRemoteNotification(payload)
+        XCTAssertEqual(event?.instanceID, "server-boot-abc")
+    }
+
     func testDecodeRemoteNotificationEndEventMarksDisconnected() throws {
         let payload: [AnyHashable: Any] = [
             "aps": [
@@ -286,7 +304,8 @@ final class VoiceSquadTests: XCTestCase {
             isConnected: true,
             activityID: nil,
             eventDate: Date(timeIntervalSince1970: 200),
-            sequence: 10
+            sequence: 10,
+            instanceID: "server-A"
         ))
 
         let stale = LiveActivityUpdateEvent(
@@ -294,9 +313,32 @@ final class VoiceSquadTests: XCTestCase {
             isConnected: true,
             activityID: nil,
             eventDate: Date(timeIntervalSince1970: 500),
-            sequence: 9
+            sequence: 9,
+            instanceID: "server-A"
         )
         XCTAssertTrue(cursor.isStale(event: stale))
+    }
+
+    func testLiveActivityOrderingAllowsSequenceResetAcrossServerInstances() {
+        var cursor = LiveActivityOrderingCursor()
+        cursor.markApplied(event: .init(
+            latestSpeechText: "Applied seq 100",
+            isConnected: true,
+            activityID: nil,
+            eventDate: Date(timeIntervalSince1970: 500),
+            sequence: 100,
+            instanceID: "server-A"
+        ))
+
+        let afterRestart = LiveActivityUpdateEvent(
+            latestSpeechText: "Restart seq 1",
+            isConnected: true,
+            activityID: nil,
+            eventDate: Date(timeIntervalSince1970: 510),
+            sequence: 1,
+            instanceID: "server-B"
+        )
+        XCTAssertFalse(cursor.isStale(event: afterRestart))
     }
 
     func testLiveActivityOrderingAllowsEqualTimestampWithoutSequence() {

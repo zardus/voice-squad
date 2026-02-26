@@ -67,6 +67,7 @@ let voiceSummaryHistory = [];
 let liveActivityRegistrations = new Map();
 let liveActivitySessionState = new Map();
 let liveActivitySequence = 0;
+const liveActivityInstanceId = `${Date.now().toString(36)}-${process.pid.toString(36)}`;
 let lastLiveActivityPush = null;
 const apnsJwtState = { token: null, expiresAtMs: 0 };
 const lastSpeakDedup = { text: null, timestampMs: 0 };
@@ -251,7 +252,7 @@ async function sendLiveActivityUpdate(registration, state) {
       : (Date.parse(state.timestamp) || Date.now());
     const payload = {
       aps: {
-        timestamp: timestampMs,
+        timestamp: Math.floor(timestampMs / 1000),
         event: "update",
         "content-state": {
           latestSpeechText: state.text,
@@ -259,6 +260,7 @@ async function sendLiveActivityUpdate(registration, state) {
           autoReadEnabled: state.autoReadEnabled,
           sequence: state.sequence,
           timestamp: timestampMs,
+          instanceId: state.instanceId,
         },
       },
       voice_squad: {
@@ -269,6 +271,7 @@ async function sendLiveActivityUpdate(registration, state) {
         sequence: state.sequence,
         timestamp: timestampMs,
         timestampIso: state.timestamp,
+        instanceId: state.instanceId,
       },
       latestSpeechText: state.text,
       isConnected: state.isConnected,
@@ -364,7 +367,7 @@ function resolveLiveActivityStateForRegistration(registration, options = {}) {
   const isConnected = normalizeOptionalBoolean(options.isConnected) ?? (
     sessionState
       ? Boolean(sessionState.isConnected)
-      : wss.clients.size > 0
+      : getConnectedClientCountForActivity(activityId) > 0
   );
   const autoReadEnabled = normalizeOptionalBoolean(options.autoReadEnabled) ?? (
     sessionState && typeof sessionState.autoReadEnabled === "boolean"
@@ -424,6 +427,7 @@ async function pushLiveActivityStateUpdate({
       timestamp: timestampIso,
       timestampMs,
       sequence,
+      instanceId: liveActivityInstanceId,
       reason,
     };
   });
@@ -619,6 +623,7 @@ app.get("/api/live-activity/debug", (req, res) => {
   }
   res.json({
     sequence: liveActivitySequence,
+    instanceId: liveActivityInstanceId,
     registrations: Array.from(liveActivityRegistrations.values()).map((entry) => ({
       activityId: entry.activityId,
       sessionState: liveActivitySessionState.get(entry.activityId) || null,
