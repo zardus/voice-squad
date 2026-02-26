@@ -6,6 +6,7 @@ const { test, expect } = require("@playwright/test");
 const { BASE_URL, TOKEN } = require("./helpers/config");
 const fs = require("fs/promises");
 const path = require("path");
+const WebSocketCtor = globalThis.WebSocket;
 
 const CAPTAIN_DIR = process.env.SQUAD_CAPTAIN_DIR || "/home/ubuntu/captain";
 const TASK_DEFS_DIR = process.env.SQUAD_TASK_DEFS_DIR || path.join(CAPTAIN_DIR, "tasks");
@@ -29,6 +30,24 @@ test.describe("API endpoints", () => {
     await Promise.all(archivedEntries
       .filter((name) => name.includes(TEST_PREFIX))
       .map((name) => fs.unlink(path.join(TASK_DEFS_ARCHIVED_DIR, name)).catch(() => {})));
+  }
+
+  async function fetchLiveActivityDebug() {
+    const resp = await fetch(
+      `${BASE_URL}/api/live-activity/debug?token=${encodeURIComponent(TOKEN)}`
+    );
+    expect(resp.status).toBe(200);
+    return resp.json();
+  }
+
+  async function waitForLiveActivityDebug(predicate, { timeoutMs = 5000, intervalMs = 100 } = {}) {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const debug = await fetchLiveActivityDebug();
+      if (predicate(debug)) return debug;
+      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    }
+    throw new Error("Timed out waiting for live activity debug state");
   }
 
   test.beforeEach(async () => {
@@ -171,6 +190,34 @@ test.describe("API endpoints", () => {
   test("GET /api/live-activity/registrations without token returns 401", async () => {
     const resp = await fetch(`${BASE_URL}/api/live-activity/registrations`);
     expect(resp.status).toBe(401);
+  });
+
+  test("Live Activity pushes use tracked client state instead of hardcoded values", async () => {
+    const activityId = `${TEST_PREFIX}-state-activity`;
+    const registerResp = await fetch(`${BASE_URL}/api/live-activity/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        token: TOKEN,
+        activityId,
+        activityPushToken: "11223344556677889900AABBCCDDEEFF",
+        autoReadEnabled: false,
+      }),
+    });
+    expect(registerResp.status).toBe(200);
+
+    const speakResp = await fetch(`${BASE_URL}/api/speak`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token: TOKEN, text: `${TEST_PREFIX} state payload` }),
+    });
+    expect(speakResp.status).toBe(200);
+    const speakJson = await speakResp.json();
+    expect(speakJson.live_activity).toBeTruthy();
+    const state = (speakJson.live_activity.states || []).find((item) => item.activityId === activityId);
+    expect(state).toBeTruthy();
+    expect(state.isConnected).toBe(false);
+    expect(state.autoReadEnabled).toBe(false);
   });
 
   // --- POST /api/interrupt ---
@@ -361,6 +408,114 @@ test.describe("API endpoints", () => {
       body: JSON.stringify({ token: TOKEN, text: "   " }),
     });
     expect(resp.status).toBe(400);
+  });
+
+  test("Live Activity sequence numbers are monotonic and deduped speak still pushes", async () => {
+    const activityId = `${TEST_PREFIX}-dedup-activity`;
+    const registerResp = await fetch(`${BASE_URL}/api/live-activity/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        token: TOKEN,
+        activityId,
+        activityPushToken: "FFEEDDCCBBAA00998877665544332211",
+      }),
+    });
+    expect(registerResp.status).toBe(200);
+
+    const firstResp = await fetch(`${BASE_URL}/api/speak`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token: TOKEN, text: `${TEST_PREFIX} dedup` }),
+    });
+    expect(firstResp.status).toBe(200);
+    const firstJson = await firstResp.json();
+    expect(typeof firstJson.live_activity?.sequence).toBe("number");
+
+    const secondResp = await fetch(`${BASE_URL}/api/speak`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token: TOKEN, text: `${TEST_PREFIX} dedup` }),
+    });
+    expect(secondResp.status).toBe(200);
+    const secondJson = await secondResp.json();
+    expect(secondJson.deduplicated).toBe(true);
+    expect(typeof secondJson.live_activity?.sequence).toBe("number");
+    expect(secondJson.live_activity.sequence).toBeGreaterThan(firstJson.live_activity.sequence);
+    expect(secondJson.live_activity.reason).toBe("speak_deduplicated");
+  });
+
+  test("WebSocket connect/disconnect and auto-read toggle trigger Live Activity state pushes", async () => {
+    test.skip(!WebSocketCtor, "WebSocket constructor not available in this runtime");
+    const activityId = `${TEST_PREFIX}-ws-state`;
+    const registerResp = await fetch(`${BASE_URL}/api/live-activity/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        token: TOKEN,
+        activityId,
+        activityPushToken: "ABCDEF00112233445566778899AABBCC",
+      }),
+    });
+    expect(registerResp.status).toBe(200);
+
+    const wsUrl = BASE_URL.replace(/^http/, "ws");
+    const ws = new WebSocketCtor(`${wsUrl}?token=${encodeURIComponent(TOKEN)}&tts=mp3`);
+    await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error("websocket open timeout")), 5000);
+      ws.onopen = () => {
+        clearTimeout(timeout);
+        resolve();
+      };
+      ws.onerror = (err) => {
+        clearTimeout(timeout);
+        reject(err);
+      };
+    });
+
+    ws.send(JSON.stringify({
+      type: "live_activity_state",
+      activityId,
+      isConnected: true,
+      autoReadEnabled: true,
+    }));
+    ws.send(JSON.stringify({
+      type: "live_activity_state",
+      activityId,
+      isConnected: true,
+      autoReadEnabled: false,
+    }));
+    const debugAfterToggle = await waitForLiveActivityDebug((debug) => {
+      const registration = (debug.registrations || []).find((item) => item.activityId === activityId);
+      return Boolean(
+        registration
+        && registration.sessionState
+        && registration.sessionState.autoReadEnabled === false
+        && registration.sessionState.isConnected === true
+      );
+    });
+    expect(debugAfterToggle.lastPush).toBeTruthy();
+    expect(["client_state", "auto_read_toggle"]).toContain(debugAfterToggle.lastPush.reason);
+    const registration = (debugAfterToggle.registrations || []).find((item) => item.activityId === activityId);
+    expect(registration).toBeTruthy();
+    expect(registration.sessionState.autoReadEnabled).toBe(false);
+    expect(registration.sessionState.isConnected).toBe(true);
+
+    ws.close();
+    const debugAfterClose = await waitForLiveActivityDebug((debug) => {
+      const registration = (debug.registrations || []).find((item) => item.activityId === activityId);
+      return Boolean(
+        registration
+        && registration.sessionState
+        && registration.sessionState.isConnected === false
+        && debug.lastPush
+        && debug.lastPush.reason === "client_disconnect"
+      );
+    });
+    const registrationAfterClose = (debugAfterClose.registrations || []).find((item) => item.activityId === activityId);
+    expect(registrationAfterClose).toBeTruthy();
+    expect(registrationAfterClose.sessionState.isConnected).toBe(false);
+    expect(debugAfterClose.lastPush.reason).toBe("client_disconnect");
   });
 
   // --- Completed Tasks API ---

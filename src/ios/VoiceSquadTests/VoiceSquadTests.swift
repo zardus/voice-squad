@@ -175,6 +175,59 @@ final class VoiceSquadTests: XCTestCase {
         XCTAssertEqual(event?.eventDate?.timeIntervalSince1970, 1_771_677_296, accuracy: 0.001)
     }
 
+    func testDecodeRemoteNotificationPrefersVoiceSquadHighResolutionTimestamp() throws {
+        let payload: [AnyHashable: Any] = [
+            "aps": [
+                "event": "update",
+                "timestamp": 1_771_677_296
+            ],
+            "voice_squad": [
+                "timestamp": 1_771_677_296_456
+            ],
+            "summary": "Millisecond timestamp payload",
+            "isConnected": true
+        ]
+
+        let event = try LiveActivityUpdateEventDecoder.decodeRemoteNotification(payload)
+        XCTAssertEqual(event?.eventDate?.timeIntervalSince1970, 1_771_677_296.456, accuracy: 0.0001)
+    }
+
+    func testDecodeRemoteNotificationExtractsSequenceFromVoiceSquad() throws {
+        let payload: [AnyHashable: Any] = [
+            "aps": [
+                "event": "update",
+                "content-state": [
+                    "latestSpeechText": "Sequence payload",
+                    "isConnected": true
+                ]
+            ],
+            "voice_squad": [
+                "sequence": 42
+            ]
+        ]
+
+        let event = try LiveActivityUpdateEventDecoder.decodeRemoteNotification(payload)
+        XCTAssertEqual(event?.sequence, 42)
+    }
+
+    func testDecodeRemoteNotificationExtractsInstanceIdFromVoiceSquad() throws {
+        let payload: [AnyHashable: Any] = [
+            "aps": [
+                "event": "update",
+                "content-state": [
+                    "latestSpeechText": "Instance payload",
+                    "isConnected": true
+                ]
+            ],
+            "voice_squad": [
+                "instanceId": "server-boot-abc"
+            ]
+        ]
+
+        let event = try LiveActivityUpdateEventDecoder.decodeRemoteNotification(payload)
+        XCTAssertEqual(event?.instanceID, "server-boot-abc")
+    }
+
     func testDecodeRemoteNotificationEndEventMarksDisconnected() throws {
         let payload: [AnyHashable: Any] = [
             "aps": [
@@ -242,6 +295,97 @@ final class VoiceSquadTests: XCTestCase {
             availableIDs: ["first", "second"]
         )
         XCTAssertEqual(decision, .selected(activityID: "first"))
+    }
+
+    func testLiveActivityOrderingRejectsOutOfOrderSequenceNumbers() {
+        var cursor = LiveActivityOrderingCursor()
+        cursor.markApplied(event: .init(
+            latestSpeechText: "Applied seq 10",
+            isConnected: true,
+            activityID: nil,
+            eventDate: Date(timeIntervalSince1970: 200),
+            sequence: 10,
+            instanceID: "server-A"
+        ))
+
+        let stale = LiveActivityUpdateEvent(
+            latestSpeechText: "Stale seq 9",
+            isConnected: true,
+            activityID: nil,
+            eventDate: Date(timeIntervalSince1970: 500),
+            sequence: 9,
+            instanceID: "server-A"
+        )
+        XCTAssertTrue(cursor.isStale(event: stale))
+    }
+
+    func testLiveActivityOrderingAllowsSequenceResetAcrossServerInstances() {
+        var cursor = LiveActivityOrderingCursor()
+        cursor.markApplied(event: .init(
+            latestSpeechText: "Applied seq 100",
+            isConnected: true,
+            activityID: nil,
+            eventDate: Date(timeIntervalSince1970: 500),
+            sequence: 100,
+            instanceID: "server-A"
+        ))
+
+        let afterRestart = LiveActivityUpdateEvent(
+            latestSpeechText: "Restart seq 1",
+            isConnected: true,
+            activityID: nil,
+            eventDate: Date(timeIntervalSince1970: 510),
+            sequence: 1,
+            instanceID: "server-B"
+        )
+        XCTAssertFalse(cursor.isStale(event: afterRestart))
+    }
+
+    func testLiveActivityOrderingAllowsEqualTimestampWithoutSequence() {
+        var cursor = LiveActivityOrderingCursor()
+        let sharedDate = Date(timeIntervalSince1970: 300)
+        cursor.markApplied(event: .init(
+            latestSpeechText: "First",
+            isConnected: true,
+            activityID: nil,
+            eventDate: sharedDate
+        ))
+
+        let second = LiveActivityUpdateEvent(
+            latestSpeechText: "Second",
+            isConnected: true,
+            activityID: nil,
+            eventDate: sharedDate
+        )
+        XCTAssertFalse(cursor.isStale(event: second))
+    }
+
+    func testLiveActivityOrderingDoesNotAdvanceCursorWithoutMarkApplied() {
+        var cursor = LiveActivityOrderingCursor()
+        let failedUpdateEvent = LiveActivityUpdateEvent(
+            latestSpeechText: "Failed apply",
+            isConnected: true,
+            activityID: nil,
+            eventDate: Date(timeIntervalSince1970: 100)
+        )
+
+        // Simulate Activity.update() failure: event examined but not marked applied.
+        XCTAssertFalse(cursor.isStale(event: failedUpdateEvent))
+        XCTAssertFalse(cursor.isStale(event: .init(
+            latestSpeechText: "Older but still allowed",
+            isConnected: true,
+            activityID: nil,
+            eventDate: Date(timeIntervalSince1970: 90)
+        )))
+
+        // Once applied successfully, older timestamp becomes stale as expected.
+        cursor.markApplied(event: failedUpdateEvent)
+        XCTAssertTrue(cursor.isStale(event: .init(
+            latestSpeechText: "Now stale",
+            isConnected: true,
+            activityID: nil,
+            eventDate: Date(timeIntervalSince1970: 90)
+        )))
     }
 
     func testConnectionTransitionPolicyKeepsBackgroundDisconnectDuringGrace() {

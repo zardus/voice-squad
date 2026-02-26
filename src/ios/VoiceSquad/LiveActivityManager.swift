@@ -7,12 +7,16 @@ struct LiveActivityUpdateEvent: Equatable {
     let isConnected: Bool
     let activityID: String?
     let eventDate: Date?
+    let sequence: UInt64?
+    let instanceID: String?
 
-    init(latestSpeechText: String, isConnected: Bool, activityID: String?, eventDate: Date? = nil) {
+    init(latestSpeechText: String, isConnected: Bool, activityID: String?, eventDate: Date? = nil, sequence: UInt64? = nil, instanceID: String? = nil) {
         self.latestSpeechText = latestSpeechText
         self.isConnected = isConnected
         self.activityID = activityID
         self.eventDate = eventDate
+        self.sequence = sequence
+        self.instanceID = instanceID
     }
 }
 
@@ -61,6 +65,70 @@ enum LiveActivityUpdateDecodeError: Error, Equatable {
     case missingAPS
     case missingContentState
     case invalidSpeechText
+}
+
+struct LiveActivityOrderingCursor {
+    private(set) var latestAppliedSequence: UInt64?
+    private(set) var latestAppliedEventDate: Date?
+    private(set) var latestAppliedInstanceID: String?
+
+    mutating func isStale(event: LiveActivityUpdateEvent) -> Bool {
+        let eventInstanceID = event.instanceID?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let sameInstance = eventInstanceID == latestAppliedInstanceID
+        if sameInstance,
+           let eventSequence = event.sequence,
+           let latestAppliedSequence {
+            if eventSequence < latestAppliedSequence { return true }
+            if eventSequence > latestAppliedSequence { return false }
+        }
+
+        guard let eventDate = event.eventDate,
+              let latestAppliedEventDate else {
+            return false
+        }
+        if eventDate < latestAppliedEventDate { return true }
+        if eventDate > latestAppliedEventDate { return false }
+
+        // Equal timestamp and no sequence: let the newest arrival apply.
+        if event.sequence == nil && latestAppliedSequence == nil {
+            return false
+        }
+        return false
+    }
+
+    mutating func markApplied(event: LiveActivityUpdateEvent) {
+        if let eventInstanceID = event.instanceID?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !eventInstanceID.isEmpty {
+            if latestAppliedInstanceID != eventInstanceID {
+                latestAppliedInstanceID = eventInstanceID
+                latestAppliedSequence = event.sequence
+            }
+            latestAppliedInstanceID = eventInstanceID
+        }
+        if let eventSequence = event.sequence,
+           latestAppliedInstanceID == eventInstanceIDOrNil(event) {
+            if let currentLatest = latestAppliedSequence {
+                latestAppliedSequence = max(currentLatest, eventSequence)
+            } else {
+                latestAppliedSequence = eventSequence
+            }
+        }
+        if let eventDate = event.eventDate {
+            if let currentLatest = latestAppliedEventDate {
+                latestAppliedEventDate = max(currentLatest, eventDate)
+            } else {
+                latestAppliedEventDate = eventDate
+            }
+        }
+    }
+
+    private func eventInstanceIDOrNil(_ event: LiveActivityUpdateEvent) -> String? {
+        guard let value = event.instanceID?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !value.isEmpty else {
+            return nil
+        }
+        return value
+    }
 }
 
 enum LiveActivityUpdateEventDecoder {
@@ -163,19 +231,34 @@ enum LiveActivityUpdateEventDecoder {
             ?? boolValue(userInfo["is_connected"])
             ?? true
         let eventDate = parseTimestamp([
+            voiceSquad?["timestamp"],
+            contentState?["timestamp"],
             aps["timestamp"],
             userInfo["timestamp"],
             userInfo["ts"],
             userInfo["sentAt"],
             userInfo["sent_at"],
-            contentState?["timestamp"],
-            voiceSquad?["timestamp"],
+        ])
+        let sequence = parseUInt64([
+            voiceSquad?["sequence"],
+            contentState?["sequence"],
+            userInfo["sequence"],
+        ])
+        let instanceID = firstNonEmptyString([
+            voiceSquad?["instanceId"],
+            voiceSquad?["instance_id"],
+            contentState?["instanceId"],
+            contentState?["instance_id"],
+            userInfo["instanceId"],
+            userInfo["instance_id"],
         ])
         return LiveActivityUpdateEvent(
             latestSpeechText: text,
             isConnected: isConnected,
             activityID: activityID,
-            eventDate: eventDate
+            eventDate: eventDate,
+            sequence: sequence,
+            instanceID: instanceID
         )
     }
 
@@ -189,6 +272,15 @@ enum LiveActivityUpdateEventDecoder {
         for candidate in candidates {
             if let text = sanitizeSpeechText(candidate) {
                 return text
+            }
+        }
+        return nil
+    }
+
+    private static func firstNonEmptyString(_ candidates: [Any?]) -> String? {
+        for candidate in candidates {
+            if let value = sanitizeSpeechText(candidate) {
+                return value
             }
         }
         return nil
@@ -255,19 +347,46 @@ enum LiveActivityUpdateEventDecoder {
     private static func parseTimestamp(_ value: Any?) -> Date? {
         if let date = value as? Date { return date }
         if let number = value as? NSNumber {
-            return Date(timeIntervalSince1970: number.doubleValue)
+            let raw = number.doubleValue
+            // Handle both seconds and millisecond precision epochs.
+            let seconds = raw > 1_000_000_000_000 ? (raw / 1000.0) : raw
+            return Date(timeIntervalSince1970: seconds)
         }
         if let string = value as? String {
             let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else { return nil }
             if let seconds = Double(trimmed) {
-                return Date(timeIntervalSince1970: seconds)
+                let normalized = seconds > 1_000_000_000_000 ? (seconds / 1000.0) : seconds
+                return Date(timeIntervalSince1970: normalized)
             }
             let formatter = ISO8601DateFormatter()
             formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
             if let parsed = formatter.date(from: trimmed) { return parsed }
             formatter.formatOptions = [.withInternetDateTime]
             return formatter.date(from: trimmed)
+        }
+        return nil
+    }
+
+    private static func parseUInt64(_ candidates: [Any?]) -> UInt64? {
+        for candidate in candidates {
+            if let parsed = parseUInt64(candidate) {
+                return parsed
+            }
+        }
+        return nil
+    }
+
+    private static func parseUInt64(_ value: Any?) -> UInt64? {
+        if let value = value as? UInt64 { return value }
+        if let value = value as? Int, value >= 0 { return UInt64(value) }
+        if let value = value as? NSNumber {
+            let intValue = value.int64Value
+            return intValue >= 0 ? UInt64(intValue) : nil
+        }
+        if let string = value as? String,
+           let parsed = UInt64(string.trimmingCharacters(in: .whitespacesAndNewlines)) {
+            return parsed
         }
         return nil
     }
@@ -295,7 +414,8 @@ final class LiveActivityManager: ObservableObject {
     private var activityStateTask: Task<Void, Never>?
     private var updateTask: Task<Void, Never>?
     private var updateSequence: UInt64 = 0
-    private var latestAppliedEventDate: Date?
+    private var incomingArrivalOrder: UInt64 = 0
+    private var orderingCursor = LiveActivityOrderingCursor()
     private var registrationEndpoint: URL?
     private var registrationAuthToken: String = ""
     private var lastRegisteredActivityID: String?
@@ -349,7 +469,9 @@ final class LiveActivityManager: ObservableObject {
     }
 
     func updateActivity(with event: LiveActivityUpdateEvent) {
-        if isStale(event: event) {
+        incomingArrivalOrder &+= 1
+        let arrivalOrder = incomingArrivalOrder
+        if orderingCursor.isStale(event: event) {
             logger.debug("Skipping stale live activity update requestedId=\(event.activityID ?? "none", privacy: .public)")
             return
         }
@@ -379,13 +501,22 @@ final class LiveActivityManager: ObservableObject {
                 isConnected: event.isConnected,
                 autoReadEnabled: UserDefaults.autoReadIsEnabled()
             )
-            do {
-                await targetActivity.update(.init(state: state, staleDate: nil))
-            } catch {
-                self.logger.error("Activity.update() failed seq=\(sequence, privacy: .public): \(String(describing: error), privacy: .public)")
+            var updateSucceeded = false
+            for attempt in 1...2 {
+                do {
+                    await targetActivity.update(.init(state: state, staleDate: nil))
+                    updateSucceeded = true
+                    break
+                } catch {
+                    self.logger.error("Activity.update() failed seq=\(sequence, privacy: .public) attempt=\(attempt, privacy: .public): \(String(describing: error), privacy: .public)")
+                    if attempt == 1 {
+                        try? await Task.sleep(nanoseconds: 200_000_000)
+                    }
+                }
             }
+            guard updateSucceeded else { return }
             await MainActor.run {
-                self.markApplied(event: event, sequence: sequence, activityID: targetActivity.id)
+                self.markApplied(event: event, sequence: sequence, activityID: targetActivity.id, arrivalOrder: arrivalOrder)
             }
         }
     }
@@ -423,6 +554,16 @@ final class LiveActivityManager: ObservableObject {
             )
             await activity.update(.init(state: newState, staleDate: nil))
         }
+    }
+
+    func reconcileCurrentState(isConnected: Bool) {
+        let latestText = UserDefaults.shared.string(forKey: SharedKeys.lastSpeechText) ?? Self.waitingText
+        updateActivity(with: .init(
+            latestSpeechText: latestText,
+            isConnected: isConnected,
+            activityID: nil,
+            eventDate: Date()
+        ))
     }
 
     func configureRemotePushSync(serverBaseURL: String, token: String) {
@@ -564,22 +705,8 @@ final class LiveActivityManager: ObservableObject {
         }
     }
 
-    private func isStale(event: LiveActivityUpdateEvent) -> Bool {
-        guard let eventDate = event.eventDate else { return false }
-        guard let latestAppliedEventDate else { return false }
-        // Keep ordering monotonic by event timestamp so delayed notification/websocket payloads
-        // cannot roll the summary backward.
-        return eventDate < latestAppliedEventDate
-    }
-
-    private func markApplied(event: LiveActivityUpdateEvent, sequence: UInt64, activityID: String) {
-        if let eventDate = event.eventDate {
-            if let currentLatest = self.latestAppliedEventDate {
-                self.latestAppliedEventDate = max(currentLatest, eventDate)
-            } else {
-                self.latestAppliedEventDate = eventDate
-            }
-        }
+    private func markApplied(event: LiveActivityUpdateEvent, sequence: UInt64, activityID: String, arrivalOrder _: UInt64) {
+        orderingCursor.markApplied(event: event)
         logger.debug("Applied live activity update seq=\(sequence, privacy: .public) id=\(activityID, privacy: .public) connected=\(event.isConnected, privacy: .public)")
     }
 
@@ -610,6 +737,7 @@ final class LiveActivityManager: ObservableObject {
             "token": registrationAuthToken,
             "activityId": activityID,
             "activityPushToken": pushToken,
+            "autoReadEnabled": UserDefaults.autoReadIsEnabled(),
         ]
         Task { [weak self] in
             guard let self else { return }

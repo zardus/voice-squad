@@ -58,6 +58,28 @@ final class WebSocketClient: ObservableObject {
         logger.info("WebSocket disconnected by caller")
     }
 
+    func sendLiveActivityState(activityID: String, isConnected: Bool, autoReadEnabled: Bool) {
+        let trimmedActivityID = activityID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedActivityID.isEmpty else { return }
+        guard let task else { return }
+        let payload: [String: Any] = [
+            "type": "live_activity_state",
+            "activityId": trimmedActivityID,
+            "isConnected": isConnected,
+            "autoReadEnabled": autoReadEnabled,
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: payload),
+              let message = String(data: data, encoding: .utf8) else {
+            return
+        }
+        task.send(.string(message)) { [weak self] error in
+            guard let self, let error else { return }
+            Task { @MainActor in
+                self.logger.error("Failed to send live activity websocket state: \(String(describing: error), privacy: .public)")
+            }
+        }
+    }
+
     private func openSocket(url: URL, reason: String) {
         onSocketOpenedForTesting?(url, reason)
         guard networkingEnabledForTesting else { return }

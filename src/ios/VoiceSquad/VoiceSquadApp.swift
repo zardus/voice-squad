@@ -13,6 +13,7 @@ struct VoiceSquadApp: App {
     @State private var speechAudio = SpeechAudioPlayer()
     @State private var disconnectStartedAt: Date?
     @State private var disconnectEvaluationTask: Task<Void, Never>?
+    @State private var lastObservedAutoReadEnabled = UserDefaults.autoReadIsEnabled()
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     @Environment(\.scenePhase) private var scenePhase
@@ -40,6 +41,7 @@ struct VoiceSquadApp: App {
                 silentAudio.start()
                 installWebSocketCallbacks()
                 ensureWebSocketConnected(reason: "app_appear")
+                publishLiveActivityClientState(reason: "app_appear")
             }
             .onDisappear {
                 disconnectEvaluationTask?.cancel()
@@ -52,21 +54,31 @@ struct VoiceSquadApp: App {
                 }
             }
             .onReceive(webSocket.$isConnected) { connected in
+                publishLiveActivityClientState(reason: connected ? "ws_connected" : "ws_disconnected")
                 if connected {
                     disconnectStartedAt = nil
                     disconnectEvaluationTask?.cancel()
+                    liveActivity.reconcileCurrentState(isConnected: true)
                     return
                 }
                 disconnectStartedAt = Date()
                 scheduleDisconnectEvaluation(reason: "socket_disconnected")
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification, object: UserDefaults.shared)) { _ in
+                let current = UserDefaults.autoReadIsEnabled()
+                guard current != lastObservedAutoReadEnabled else { return }
+                lastObservedAutoReadEnabled = current
+                publishLiveActivityClientState(reason: "auto_read_changed")
             }
             .onChange(of: scenePhase) { _, newPhase in
                 logger.info("Scene phase changed to \(scenePhaseLabel(newPhase), privacy: .public)")
                 switch newPhase {
                 case .active:
                     liveActivity.startActivityIfNeeded()
+                    liveActivity.reconcileCurrentState(isConnected: webSocket.isConnected)
                     silentAudio.start()
                     ensureWebSocketConnected(reason: "scene_active")
+                    publishLiveActivityClientState(reason: "scene_active")
                     if disconnectStartedAt != nil {
                         scheduleDisconnectEvaluation(reason: "scene_active_recheck")
                     }
@@ -112,6 +124,19 @@ struct VoiceSquadApp: App {
     private func ensureWebSocketConnected(reason: String) {
         guard let url = settings.makeWebSocketURL() else { return }
         webSocket.ensureConnected(url: url, reason: reason)
+    }
+
+    private func publishLiveActivityClientState(reason: String) {
+        guard let activityID = UserDefaults.shared.string(forKey: SharedKeys.liveActivityID),
+              !activityID.isEmpty else {
+            return
+        }
+        webSocket.sendLiveActivityState(
+            activityID: activityID,
+            isConnected: webSocket.isConnected,
+            autoReadEnabled: UserDefaults.autoReadIsEnabled()
+        )
+        logger.debug("Published live activity websocket state reason=\(reason, privacy: .public) id=\(activityID, privacy: .public)")
     }
 
     private func currentRuntimeState() -> AppRuntimeState {
