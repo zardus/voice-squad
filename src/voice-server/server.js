@@ -53,6 +53,7 @@ const IOS_LIVE_ACTIVITY_TEAM_ID = process.env.IOS_LIVE_ACTIVITY_TEAM_ID || "";
 const IOS_LIVE_ACTIVITY_KEY_ID = process.env.IOS_LIVE_ACTIVITY_KEY_ID || "";
 const IOS_LIVE_ACTIVITY_PRIVATE_KEY = (process.env.IOS_LIVE_ACTIVITY_PRIVATE_KEY || "").replace(/\\n/g, "\n");
 const IOS_LIVE_ACTIVITY_ENV = (process.env.IOS_LIVE_ACTIVITY_ENV || "sandbox").toLowerCase();
+const LIVE_ACTIVITY_DEFAULT_AUTOREAD = process.env.LIVE_ACTIVITY_DEFAULT_AUTOREAD !== "false";
 
 const REQUIRED_ENV = { VOICE_TOKEN: TOKEN, OPENAI_API_KEY: process.env.OPENAI_API_KEY };
 const missing = Object.entries(REQUIRED_ENV).filter(([, v]) => !v).map(([k]) => k);
@@ -64,6 +65,9 @@ console.log("[voice] env OK: VOICE_TOKEN, OPENAI_API_KEY all set");
 
 let voiceSummaryHistory = [];
 let liveActivityRegistrations = new Map();
+let liveActivitySessionState = new Map();
+let liveActivitySequence = 0;
+let lastLiveActivityPush = null;
 const apnsJwtState = { token: null, expiresAtMs: 0 };
 const lastSpeakDedup = { text: null, timestampMs: 0 };
 
@@ -242,25 +246,34 @@ async function sendLiveActivityUpdate(registration, state) {
       settled = true;
       resolve(result);
     };
-    const timestampSeconds = Math.floor(Date.parse(state.timestamp) / 1000) || Math.floor(Date.now() / 1000);
+    const timestampMs = Number.isFinite(state.timestampMs)
+      ? Math.floor(state.timestampMs)
+      : (Date.parse(state.timestamp) || Date.now());
     const payload = {
       aps: {
-        timestamp: timestampSeconds,
+        timestamp: timestampMs,
         event: "update",
         "content-state": {
           latestSpeechText: state.text,
-          isConnected: true,
-          autoReadEnabled: true,
+          isConnected: state.isConnected,
+          autoReadEnabled: state.autoReadEnabled,
+          sequence: state.sequence,
+          timestamp: timestampMs,
         },
       },
       voice_squad: {
         activityId: registration.activityId,
         latestSpeechText: state.text,
-        isConnected: true,
-        timestamp: state.timestamp,
+        isConnected: state.isConnected,
+        autoReadEnabled: state.autoReadEnabled,
+        sequence: state.sequence,
+        timestamp: timestampMs,
+        timestampIso: state.timestamp,
       },
       latestSpeechText: state.text,
-      isConnected: true,
+      isConnected: state.isConnected,
+      autoReadEnabled: state.autoReadEnabled,
+      sequence: state.sequence,
       timestamp: state.timestamp,
     };
 
@@ -319,14 +332,123 @@ async function sendLiveActivityUpdate(registration, state) {
   });
 }
 
-async function pushLiveActivitySummaryUpdate(text, timestamp) {
-  if (!isLiveActivityPushConfigured()) return { pushed: 0, attempted: 0, skipped: "not_configured" };
-  const registrations = Array.from(liveActivityRegistrations.values());
-  if (!registrations.length) return { pushed: 0, attempted: 0, skipped: "no_registrations" };
+function normalizeLiveActivityActivityId(value) {
+  const normalized = String(value || "").trim();
+  return normalized || null;
+}
 
-  const state = { text, timestamp };
+function normalizeOptionalBoolean(value) {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (["true", "1", "yes", "on", "enabled", "connected", "online"].includes(normalized)) return true;
+    if (["false", "0", "no", "off", "disabled", "disconnected", "offline"].includes(normalized)) return false;
+  }
+  return null;
+}
+
+function getConnectedClientCountForActivity(activityId) {
+  if (!activityId) return 0;
+  let count = 0;
+  for (const client of wss.clients) {
+    if (client.readyState !== WebSocket.OPEN) continue;
+    if (client.liveActivityActivityId === activityId) count++;
+  }
+  return count;
+}
+
+function resolveLiveActivityStateForRegistration(registration, options = {}) {
+  const activityId = registration.activityId;
+  const sessionState = liveActivitySessionState.get(activityId) || null;
+  const isConnected = normalizeOptionalBoolean(options.isConnected) ?? (
+    sessionState
+      ? Boolean(sessionState.isConnected)
+      : wss.clients.size > 0
+  );
+  const autoReadEnabled = normalizeOptionalBoolean(options.autoReadEnabled) ?? (
+    sessionState && typeof sessionState.autoReadEnabled === "boolean"
+      ? sessionState.autoReadEnabled
+      : LIVE_ACTIVITY_DEFAULT_AUTOREAD
+  );
+  return { isConnected, autoReadEnabled };
+}
+
+function updateLiveActivitySessionState(activityId, patch = {}) {
+  const normalizedActivityId = normalizeLiveActivityActivityId(activityId);
+  if (!normalizedActivityId) return null;
+  const existing = liveActivitySessionState.get(normalizedActivityId) || {};
+  const next = {
+    activityId: normalizedActivityId,
+    isConnected: normalizeOptionalBoolean(patch.isConnected) ?? normalizeOptionalBoolean(existing.isConnected) ?? false,
+    autoReadEnabled: normalizeOptionalBoolean(patch.autoReadEnabled) ?? normalizeOptionalBoolean(existing.autoReadEnabled) ?? LIVE_ACTIVITY_DEFAULT_AUTOREAD,
+    updatedAt: new Date().toISOString(),
+  };
+  liveActivitySessionState.set(normalizedActivityId, next);
+  return next;
+}
+
+async function pushLiveActivityStateUpdate({
+  text,
+  timestamp,
+  reason = "state_change",
+  activityId = null,
+  isConnected = null,
+  autoReadEnabled = null,
+} = {}) {
+  const registrations = Array.from(liveActivityRegistrations.values());
+  if (!registrations.length) {
+    return { pushed: 0, attempted: 0, skipped: "no_registrations", sequence: null, reason, timestamp: null, states: [] };
+  }
+
+  const baseText = typeof text === "string" && text.trim()
+    ? text.trim()
+    : (voiceSummaryHistory[0]?.text || "Waiting for update...");
+  const timestampIso = typeof timestamp === "string" && timestamp.trim()
+    ? timestamp
+    : new Date().toISOString();
+  const timestampMs = Date.parse(timestampIso) || Date.now();
+  liveActivitySequence += 1;
+  const sequence = liveActivitySequence;
+  const normalizedActivityId = normalizeLiveActivityActivityId(activityId);
+  const resolvedStates = registrations.map((registration) => {
+    const overrides = registration.activityId === normalizedActivityId
+      ? { isConnected, autoReadEnabled }
+      : {};
+    const resolved = resolveLiveActivityStateForRegistration(registration, overrides);
+    return {
+      activityId: registration.activityId,
+      isConnected: resolved.isConnected,
+      autoReadEnabled: resolved.autoReadEnabled,
+      text: baseText,
+      timestamp: timestampIso,
+      timestampMs,
+      sequence,
+      reason,
+    };
+  });
+
+  const baseResult = {
+    pushed: 0,
+    attempted: resolvedStates.length,
+    skipped: null,
+    sequence,
+    reason,
+    timestamp: timestampIso,
+    states: resolvedStates.map((state) => ({
+      activityId: state.activityId,
+      isConnected: state.isConnected,
+      autoReadEnabled: state.autoReadEnabled,
+    })),
+  };
+
+  if (!isLiveActivityPushConfigured()) {
+    lastLiveActivityPush = { ...baseResult, skipped: "not_configured" };
+    return lastLiveActivityPush;
+  }
+
   const results = await Promise.allSettled(
-    registrations.map((registration) => sendLiveActivityUpdate(registration, state))
+    registrations.map((registration, index) => sendLiveActivityUpdate(registration, resolvedStates[index]))
   );
   let pushed = 0;
   let attempted = 0;
@@ -352,7 +474,26 @@ async function pushLiveActivitySummaryUpdate(text, timestamp) {
     await persistLiveActivityRegistrations();
   }
 
-  return { pushed, attempted, skipped: null };
+  lastLiveActivityPush = { ...baseResult, pushed, attempted, skipped: null };
+  return lastLiveActivityPush;
+}
+
+async function pushConnectionStateUpdate({
+  reason,
+  activityId,
+  isConnected,
+  autoReadEnabled,
+} = {}) {
+  const timestamp = new Date().toISOString();
+  const latestText = voiceSummaryHistory[0]?.text || "Waiting for update...";
+  return pushLiveActivityStateUpdate({
+    reason,
+    activityId,
+    isConnected,
+    autoReadEnabled,
+    text: latestText,
+    timestamp,
+  });
 }
 
 function checkToken(req) {
@@ -414,7 +555,7 @@ app.get("/api/voice-history", (req, res) => {
 });
 
 app.post("/api/live-activity/register", async (req, res) => {
-  const { token, activityId, activityPushToken } = req.body || {};
+  const { token, activityId, activityPushToken, autoReadEnabled } = req.body || {};
   if (token !== TOKEN) {
     return res.status(401).json({ error: "Unauthorized" });
   }
@@ -428,6 +569,10 @@ app.post("/api/live-activity/register", async (req, res) => {
     activityId: normalizedActivityId,
     activityPushToken: normalizedPushToken,
     updatedAt: new Date().toISOString(),
+  });
+  updateLiveActivitySessionState(normalizedActivityId, {
+    autoReadEnabled,
+    isConnected: getConnectedClientCountForActivity(normalizedActivityId) > 0,
   });
   if (Number.isFinite(LIVE_ACTIVITY_REGISTRATIONS_LIMIT) && LIVE_ACTIVITY_REGISTRATIONS_LIMIT > 0) {
     const trimmed = normalizeLiveActivityRegistrations(Array.from(liveActivityRegistrations.values()));
@@ -455,6 +600,7 @@ app.get("/api/live-activity/registrations", (req, res) => {
       activityId: entry.activityId,
       pushTokenPrefix: entry.activityPushToken.slice(0, 12),
       updatedAt: entry.updatedAt,
+      sessionState: liveActivitySessionState.get(entry.activityId) || null,
     }));
 
   res.json({
@@ -463,6 +609,21 @@ app.get("/api/live-activity/registrations", (req, res) => {
     apnsHost: getApnsHost(),
     topic: IOS_LIVE_ACTIVITY_TOPIC || null,
     registrations,
+  });
+});
+
+app.get("/api/live-activity/debug", (req, res) => {
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  if (url.searchParams.get("token") !== TOKEN) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  res.json({
+    sequence: liveActivitySequence,
+    registrations: Array.from(liveActivityRegistrations.values()).map((entry) => ({
+      activityId: entry.activityId,
+      sessionState: liveActivitySessionState.get(entry.activityId) || null,
+    })),
+    lastPush: lastLiveActivityPush,
   });
 });
 
@@ -785,12 +946,18 @@ async function handleSpeakRequest(body, res) {
     console.log(`[speak] "${trimmed.slice(0, 100)}${trimmed.length > 100 ? "..." : ""}"`);
     if (playbackOnly !== true && isDuplicateSpeak(trimmed)) {
       console.log(`[speak] deduplicated "${trimmed.slice(0, 80)}..." (same text within ${SPEAK_DEDUP_WINDOW_MS}ms)`);
+      const dedupTimestamp = new Date().toISOString();
+      const liveActivityPushResult = await pushLiveActivityStateUpdate({
+        text: trimmed,
+        timestamp: dedupTimestamp,
+        reason: "speak_deduplicated",
+      });
       return res.json({
         ok: true,
         deduplicated: true,
         clients: 0,
         formats: [],
-        live_activity: { pushed: 0, attempted: 0, skipped: "deduplicated" },
+        live_activity: liveActivityPushResult,
       });
     }
     if (playbackOnly === true) {
@@ -842,7 +1009,11 @@ async function handleSpeakRequest(body, res) {
 
     console.log(`[speak] sent to ${sent}/${wss.clients.size} client(s)`);
     const eventTimestamp = entry ? entry.timestamp : new Date().toISOString();
-    const liveActivityPushResult = await pushLiveActivitySummaryUpdate(trimmed, eventTimestamp);
+    const liveActivityPushResult = await pushLiveActivityStateUpdate({
+      text: trimmed,
+      timestamp: eventTimestamp,
+      reason: "speak",
+    });
     if (liveActivityPushResult.skipped) {
       console.log(`[live-activity] push skipped reason=${liveActivityPushResult.skipped}`);
     } else {
@@ -1246,6 +1417,7 @@ server.on("upgrade", (req, socket, head) => {
 
 wss.on("connection", (ws, req) => {
   console.log("[ws] client connected");
+  ws.liveActivityActivityId = null;
 
   try {
     const url = new URL(req.url, `http://${req.headers.host}`);
@@ -1378,6 +1550,33 @@ wss.on("connection", (ws, req) => {
         }
         break;
 
+      case "live_activity_state": {
+        const activityId = normalizeLiveActivityActivityId(msg.activityId);
+        const parsedAutoRead = normalizeOptionalBoolean(msg.autoReadEnabled);
+        const parsedConnected = normalizeOptionalBoolean(msg.isConnected);
+        if (!activityId) break;
+        ws.liveActivityActivityId = activityId;
+        const connectedCount = getConnectedClientCountForActivity(activityId);
+        const isNowConnected = parsedConnected ?? connectedCount > 0;
+        const previous = liveActivitySessionState.get(activityId) || null;
+        const next = updateLiveActivitySessionState(activityId, {
+          autoReadEnabled: parsedAutoRead,
+          isConnected: isNowConnected,
+        });
+        const autoReadChanged = previous
+          && typeof parsedAutoRead === "boolean"
+          && previous.autoReadEnabled !== next.autoReadEnabled;
+        pushConnectionStateUpdate({
+          reason: autoReadChanged ? "auto_read_toggle" : "client_state",
+          activityId,
+          isConnected: next.isConnected,
+          autoReadEnabled: next.autoReadEnabled,
+        }).catch((err) => {
+          console.warn(`[live-activity] state push failed on client_state: ${err.message}`);
+        });
+        break;
+      }
+
       case "pane_send_text":
         if (msg.target && msg.text && msg.text.trim()) {
           try {
@@ -1419,6 +1618,21 @@ wss.on("connection", (ws, req) => {
 
   ws.on("close", () => {
     console.log("[ws] client disconnected");
+    if (ws.liveActivityActivityId) {
+      const activityId = ws.liveActivityActivityId;
+      const connectedCount = getConnectedClientCountForActivity(activityId);
+      const next = updateLiveActivitySessionState(activityId, {
+        isConnected: connectedCount > 0,
+      });
+      pushConnectionStateUpdate({
+        reason: "client_disconnect",
+        activityId,
+        isConnected: next ? next.isConnected : false,
+        autoReadEnabled: next ? next.autoReadEnabled : LIVE_ACTIVITY_DEFAULT_AUTOREAD,
+      }).catch((err) => {
+        console.warn(`[live-activity] state push failed on disconnect: ${err.message}`);
+      });
+    }
     clearInterval(snapshotTimer);
     if (statusClients.delete(ws) && statusClients.size === 0 && statusDaemon.isRunning()) {
       statusDaemon.stop();
