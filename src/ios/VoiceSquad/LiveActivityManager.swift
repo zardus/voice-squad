@@ -515,6 +515,16 @@ final class LiveActivityManager: ObservableObject {
         }
     }
 
+    func reconcileCurrentState(isConnected: Bool) {
+        let latestText = UserDefaults.shared.string(forKey: SharedKeys.lastSpeechText) ?? Self.waitingText
+        updateActivity(with: .init(
+            latestSpeechText: latestText,
+            isConnected: isConnected,
+            activityID: nil,
+            eventDate: Date()
+        ))
+    }
+
     func configureRemotePushSync(serverBaseURL: String, token: String) {
         let trimmedToken = token.trimmingCharacters(in: .whitespacesAndNewlines)
         registrationAuthToken = trimmedToken
@@ -721,12 +731,3 @@ final class LiveActivityManager: ObservableObject {
         }
     }
 }
-    func reconcileCurrentState(isConnected: Bool) {
-        let latestText = UserDefaults.shared.string(forKey: SharedKeys.lastSpeechText) ?? Self.waitingText
-        updateActivity(with: .init(
-            latestSpeechText: latestText,
-            isConnected: isConnected,
-            activityID: nil,
-            eventDate: Date()
-        ))
-    }
