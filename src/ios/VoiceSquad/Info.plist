@@ -58,6 +58,9 @@
   </array>
 
   <!-- MVP: allow http:// (LAN / local dev). Tighten to specific domains for production. -->
+  <key>ITSAppUsesNonExemptEncryption</key>
+  <false/>
+
   <key>NSAppTransportSecurity</key>
   <dict>
     <key>NSAllowsArbitraryLoads</key>
