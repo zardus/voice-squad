@@ -38,7 +38,7 @@ fi
 
 tmux -S "$SOCKET" capture-pane -t "$PANE_ID" -p -S "-${LINE_COUNT}" \
     | perl -pe '
-        s/\d+%\s+context\s+(?:left|remaining)\s*$/'"'"' " x length($&) '"'"'/ige;
+        s/\d+%\s*(?:context(?:\s+(?:left|remaining))?|left|remaining)\b/'"'"' " x length($&) '"'"'/ige;
         s/context\s+(?:left|remaining)\s+until\s+auto-compact:\s*\d+%\s*$/'"'"' " x length($&) '"'"'/ige;
         s/context\s+(?:left|remaining)\s+until\s*$/'"'"' " x length($&) '"'"'/ige;
         s/^\s*auto-compact:\s*\d+%\s*$/'"'"' " x length($&) '"'"'/ige;
