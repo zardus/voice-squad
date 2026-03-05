@@ -15,27 +15,23 @@ Voice Squad is a multi-agent orchestration system with a **captain/workers** mod
 ## Build & Run
 
 ```bash
-# Build all images (workspace must be built before first run)
-docker compose build
-docker compose --profile build build
-
 # Launch a squad (default captain: claude)
-HOST_HOME_PATH=$(pwd)/home docker compose up
+docker compose up --build
 
 # Launch with codex as captain
-SQUAD_CAPTAIN=codex HOST_HOME_PATH=$(pwd)/home docker compose up --build
+SQUAD_CAPTAIN=codex docker compose up --build
 ```
 
-Required host env vars: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `HOST_HOME_PATH`
-Optional: `GH_TOKEN`, `SQUAD_CAPTAIN`, `VOICE_TOKEN`
+Required host env vars: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`
+Optional: `GH_TOKEN`, `HOST_HOME_PATH`, `SQUAD_CAPTAIN`, `VOICE_TOKEN`
 
-`HOST_HOME_PATH` must be the absolute host path to `./home`. It is required because the voice-server creates sibling Docker containers with bind mounts to the host filesystem.
+`HOST_HOME_PATH` is the absolute host path to `./home`, needed for sibling container bind mounts. It is auto-detected from the voice-server's own Docker mounts if not set.
 
 ## Current Runtime Topology (`docker-compose.yml`)
 
-The compose stack has **5 services** (workspace is build-only):
+The compose stack has **5 services** (workspace is build-only, replicas: 0):
 
-- `workspace` — build-only image (profiles: ["build"]) with dev tools (tmux, Claude Code, Codex, nix, python, node). Voice-server starts project containers from this image.
+- `workspace` — build-only image (replicas: 0, never runs) with dev tools (tmux, Claude Code, Codex, nix, python, node). Voice-server starts project containers from this image.
 - `captain` — runs Claude/Codex captain in its own tmux server (`/run/squad-sockets/captain-tmux/default`). No Docker access; interacts with workers via tmux sockets only.
 - `voice-server` — Express/WebSocket server, STT/TTS, status + task APIs, captain control endpoints, project container management (Docker socket). Has the Projects tab UI for humans to create/stop projects.
 - `tunnel` — cloudflared quick tunnel and QR output
@@ -117,8 +113,8 @@ docker compose up -d --build captain
 docker compose up -d --build pane-monitor
 docker compose up -d --build tunnel
 
-# Rebuild workspace image (used by project containers)
-docker compose --profile build build workspace
+# Rebuild just the workspace image (used by project containers)
+docker compose build workspace
 ```
 
 Useful logs:
