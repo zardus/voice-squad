@@ -933,8 +933,8 @@ function connect() {
     if (connSeq !== wsConnectionSeq || ws !== socket) return;
     statusEl.textContent = "connecting...";
     statusEl.className = "disconnected";
-    // Re-send screens tab state on reconnect
-    if (screensTabActive) {
+    // Re-send projects tab state on reconnect
+    if (projectsTabActive) {
       socket.send(JSON.stringify({ type: "status_tab_active" }));
     }
   };
@@ -1836,7 +1836,7 @@ const tabs = document.querySelectorAll("#tab-bar .tab");
 const tabContents = document.querySelectorAll(".tab-content");
 const tabBarEl = document.getElementById("tab-bar");
 
-let screensTabActive = false;
+let projectsTabActive = false;
 
 let activePaneInteract = null; // { key, panel, overlay, input, statusEl, target }
 // activePaneSpeech is declared at top-level (shared with Auto Listen OFF shutdown logic).
@@ -1874,8 +1874,8 @@ function scrollActiveTabIntoView(tab, smooth = false) {
   });
 }
 
-function sendScreensTabState(active) {
-  screensTabActive = active;
+function sendProjectsTabState(active) {
+  projectsTabActive = active;
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ type: active ? "status_tab_active" : "status_tab_inactive" }));
   }
@@ -1886,7 +1886,7 @@ tabs.forEach((tab) => {
     const target = tab.dataset.tab;
     const smoothScroll = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const wasVoice = document.getElementById("voice-view").classList.contains("active");
-    const wasScreens = document.getElementById("screens-view").classList.contains("active");
+    const wasProjects = document.getElementById("projects-view").classList.contains("active");
     const wasSummary = document.getElementById("summary-view").classList.contains("active");
     const wasTasks = document.getElementById("tasks-view").classList.contains("active");
     tabs.forEach((t) => t.classList.toggle("active", t === tab));
@@ -1894,17 +1894,17 @@ tabs.forEach((tab) => {
     tabContents.forEach((c) => {
       c.classList.toggle("active", c.id === target + "-view");
     });
-    // Notify server about screens tab activation/deactivation
-    if (target === "screens" && !wasScreens) sendScreensTabState(true);
-    if (target !== "screens" && wasScreens) { sendScreensTabState(false); closeActivePaneInteract(); }
+    // Notify server about projects tab activation/deactivation
+    if (target === "projects" && !wasProjects) sendProjectsTabState(true);
+    if (target !== "projects" && wasProjects) { sendProjectsTabState(false); closeActivePaneInteract(); }
 
     // Auto-scroll to bottom when switching to Terminal tab
     if (target === "terminal") {
       autoScroll = true;
       terminalEl.scrollTop = terminalEl.scrollHeight;
     }
-    // Auto-scroll all expanded screen panels to bottom when switching to Screens tab
-    if (target === "screens") {
+    // Auto-scroll all expanded panels to bottom when switching to Projects tab
+    if (target === "projects") {
       for (const [, entry] of panelMap) {
         if (!entry.panel.classList.contains("collapsed")) {
           entry.pre.scrollTop = entry.pre.scrollHeight;
@@ -1928,9 +1928,9 @@ tabs.forEach((tab) => {
 
 scrollActiveTabIntoView(document.querySelector("#tab-bar .tab.active"));
 
-// --- Screens tab (live streaming) ---
-const statusTimeEl = document.getElementById("status-time");
-const statusPanesEl = document.getElementById("status-panes");
+// --- Projects tab (live streaming) ---
+const projectsTimeEl = document.getElementById("projects-time");
+const projectsPanesEl = document.getElementById("projects-panes");
 
 const panelMap = new Map();
 
@@ -2145,7 +2145,7 @@ function openPaneInteract(entry, label) {
 }
 
 document.addEventListener("pointerdown", (e) => {
-  if (!document.getElementById("screens-view").classList.contains("active")) return;
+  if (!document.getElementById("projects-view").classList.contains("active")) return;
   if (!activePaneInteract) return;
   const t = e.target;
   if (activePaneInteract.overlay && activePaneInteract.overlay.contains(t)) return;
@@ -2153,35 +2153,109 @@ document.addEventListener("pointerdown", (e) => {
   closeActivePaneInteract();
 });
 
+// Project section management
+const projectSectionMap = new Map(); // projectName -> { section, body }
+
+function ensureProjectSection(projectName, isCaptain) {
+  let entry = projectSectionMap.get(projectName);
+  if (entry) return entry;
+
+  const section = document.createElement("div");
+  section.className = "project-section";
+
+  const header = document.createElement("div");
+  header.className = "project-section-header";
+
+  const nameEl = document.createElement("span");
+  nameEl.className = "project-section-name" + (isCaptain ? " captain-label" : "");
+  nameEl.textContent = projectName;
+  header.appendChild(nameEl);
+
+  if (!isCaptain) {
+    const stopBtn = document.createElement("button");
+    stopBtn.className = "project-stop-btn";
+    stopBtn.title = "Stop project";
+    stopBtn.textContent = "\u2212"; // minus sign
+    stopBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (confirm(`Stop project "${projectName}"? This will kill all its workers.`)) {
+        deleteProject(projectName);
+      }
+    });
+    header.appendChild(stopBtn);
+  }
+
+  header.addEventListener("click", () => {
+    section.classList.toggle("collapsed");
+  });
+
+  const body = document.createElement("div");
+  body.className = "project-section-body";
+
+  section.appendChild(header);
+  section.appendChild(body);
+  projectsPanesEl.appendChild(section);
+
+  entry = { section, body, name: projectName };
+  projectSectionMap.set(projectName, entry);
+  return entry;
+}
+
+async function deleteProject(name) {
+  try {
+    const resp = await fetch(`/api/projects/${encodeURIComponent(name)}?token=${encodeURIComponent(token)}`, {
+      method: "DELETE",
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ error: "Request failed" }));
+      alert("Failed to stop project: " + (err.error || "Unknown error"));
+    }
+  } catch (err) {
+    alert("Failed to stop project: " + err.message);
+  }
+}
+
 function renderStreamUpdate(data) {
   if (!data.sessions || data.sessions.length === 0) {
-    statusTimeEl.textContent = "no sessions";
-    statusTimeEl.className = "";
+    projectsTimeEl.textContent = "no sessions";
+    projectsTimeEl.className = "";
     for (const [, entry] of panelMap) entry.panel.remove();
     panelMap.clear();
+    for (const [, entry] of projectSectionMap) entry.section.remove();
+    projectSectionMap.clear();
     closeActivePaneInteract();
-    if (!statusPanesEl.querySelector(".status-empty")) {
-      statusPanesEl.innerHTML = '<div class="status-empty">No tmux sessions found</div>';
+    if (!projectsPanesEl.querySelector(".status-empty")) {
+      projectsPanesEl.innerHTML = '<div class="status-empty">No active projects</div>';
     }
     return;
   }
 
-  statusTimeEl.textContent = "● LIVE";
-  statusTimeEl.className = "live-indicator";
+  projectsTimeEl.textContent = "\u25CF LIVE";
+  projectsTimeEl.className = "live-indicator";
 
-  const emptyMsg = statusPanesEl.querySelector(".status-empty");
+  const emptyMsg = projectsPanesEl.querySelector(".status-empty");
   if (emptyMsg) emptyMsg.remove();
 
   const currentKeys = new Set();
+  const activeProjects = new Set();
 
+  // Group sessions by project
   for (const session of data.sessions) {
+    const slashIdx = session.name.indexOf("/");
+    const projectName = slashIdx > 0 ? session.name.slice(0, slashIdx) : null;
+    const isCaptain = !projectName;
+    const displayProject = projectName || "Captain";
+
+    activeProjects.add(displayProject);
+    const projectEntry = ensureProjectSection(displayProject, isCaptain);
+
     for (const win of (session.windows || [])) {
       const panes = Array.isArray(win.panes) && win.panes.length
         ? win.panes
         : [{ index: 0, target: `${session.name}:0.0`, content: win.content || "" }];
 
       for (const pane of panes) {
-        const key = `${session.name}	${win.name}	${pane.target || pane.id || pane.index}`;
+        const key = `${session.name}\t${win.name}\t${pane.target || pane.id || pane.index}`;
         currentKeys.add(key);
 
         let entry = panelMap.get(key);
@@ -2191,7 +2265,8 @@ function renderStreamUpdate(data) {
 
           const header = document.createElement("div");
           header.className = "stream-panel-header";
-          header.textContent = `${session.name} / ${win.name} · pane ${pane.index}`;
+          const sessionLabel = slashIdx > 0 ? session.name.slice(slashIdx + 1) : session.name;
+          header.textContent = `${sessionLabel} / ${win.name} \u00B7 pane ${pane.index}`;
           header.title = pane.target || "";
           header.addEventListener("click", () => {
             panel.classList.toggle("collapsed");
@@ -2208,17 +2283,18 @@ function renderStreamUpdate(data) {
             e.stopPropagation();
             const current = panelMap.get(key);
             if (current) {
-              openPaneInteract(current, `${session.name} / ${win.name} · ${current.target || ""}`);
+              openPaneInteract(current, `${session.name} / ${win.name} \u00B7 ${current.target || ""}`);
             }
           });
           panel.appendChild(pre);
 
-          statusPanesEl.appendChild(panel);
+          projectEntry.body.appendChild(panel);
           entry = {
             key,
             panel,
             pre,
             target: pane.target,
+            projectName: displayProject,
             lastContent: "",
             overlay: null,
             input: null,
@@ -2227,6 +2303,10 @@ function renderStreamUpdate(data) {
           panelMap.set(key, entry);
         } else {
           entry.target = pane.target;
+          // Re-parent if needed (shouldn't normally change)
+          if (entry.panel.parentElement !== projectEntry.body) {
+            projectEntry.body.appendChild(entry.panel);
+          }
         }
 
         const content = pane.content || "";
@@ -2243,11 +2323,20 @@ function renderStreamUpdate(data) {
     }
   }
 
+  // Remove stale panes
   for (const [key, entry] of panelMap) {
     if (!currentKeys.has(key)) {
       if (activePaneInteract && activePaneInteract.key === key) closeActivePaneInteract();
       entry.panel.remove();
       panelMap.delete(key);
+    }
+  }
+
+  // Remove stale project sections
+  for (const [name, entry] of projectSectionMap) {
+    if (!activeProjects.has(name)) {
+      entry.section.remove();
+      projectSectionMap.delete(name);
     }
   }
 }
@@ -2608,6 +2697,96 @@ refreshTasksBtn.addEventListener("click", refreshTasks);
 renderMessageHistorySelect();
 connect();
 loadVoiceSummaryHistory();
+
+// --- Create Project Modal ---
+const createProjectModal = document.getElementById("create-project-modal");
+const createProjectBackdrop = document.getElementById("create-project-backdrop");
+const createProjectClose = document.getElementById("create-project-close");
+const createProjectCancel = document.getElementById("create-project-cancel");
+const createProjectSubmit = document.getElementById("create-project-submit");
+const createProjectName = document.getElementById("create-project-name");
+const createProjectGitUrl = document.getElementById("create-project-git-url");
+const createProjectError = document.getElementById("create-project-error");
+const addProjectBtn = document.getElementById("add-project-btn");
+
+function openCreateProjectModal() {
+  if (!createProjectModal) return;
+  createProjectName.value = "";
+  createProjectGitUrl.value = "";
+  createProjectError.classList.add("hidden");
+  createProjectError.textContent = "";
+  createProjectSubmit.disabled = false;
+  createProjectSubmit.textContent = "Create";
+  createProjectModal.classList.remove("hidden");
+  createProjectModal.setAttribute("aria-hidden", "false");
+  setTimeout(() => createProjectName.focus(), 0);
+}
+
+function closeCreateProjectModal() {
+  if (!createProjectModal) return;
+  createProjectModal.classList.add("hidden");
+  createProjectModal.setAttribute("aria-hidden", "true");
+}
+
+async function submitCreateProject() {
+  const name = (createProjectName.value || "").trim();
+  const gitUrl = (createProjectGitUrl.value || "").trim();
+
+  if (!name) {
+    createProjectError.textContent = "Project name is required";
+    createProjectError.classList.remove("hidden");
+    return;
+  }
+
+  createProjectError.classList.add("hidden");
+  createProjectSubmit.disabled = true;
+  createProjectSubmit.textContent = "Creating...";
+
+  try {
+    const resp = await fetch("/api/projects", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token, name, gitUrl: gitUrl || undefined }),
+    });
+    const json = await resp.json();
+    if (!resp.ok) {
+      createProjectError.textContent = json.error || "Failed to create project";
+      createProjectError.classList.remove("hidden");
+      return;
+    }
+    closeCreateProjectModal();
+  } catch (err) {
+    createProjectError.textContent = err.message || "Network error";
+    createProjectError.classList.remove("hidden");
+  } finally {
+    createProjectSubmit.disabled = false;
+    createProjectSubmit.textContent = "Create";
+  }
+}
+
+if (addProjectBtn) addProjectBtn.addEventListener("click", openCreateProjectModal);
+if (createProjectClose) createProjectClose.addEventListener("click", closeCreateProjectModal);
+if (createProjectCancel) createProjectCancel.addEventListener("click", closeCreateProjectModal);
+if (createProjectBackdrop) createProjectBackdrop.addEventListener("click", closeCreateProjectModal);
+if (createProjectSubmit) createProjectSubmit.addEventListener("click", submitCreateProject);
+if (createProjectName) {
+  createProjectName.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); submitCreateProject(); }
+    if (e.key === "Escape") { e.preventDefault(); closeCreateProjectModal(); }
+  });
+}
+if (createProjectGitUrl) {
+  createProjectGitUrl.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); submitCreateProject(); }
+    if (e.key === "Escape") { e.preventDefault(); closeCreateProjectModal(); }
+  });
+}
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && createProjectModal && !createProjectModal.classList.contains("hidden")) {
+    e.preventDefault();
+    closeCreateProjectModal();
+  }
+});
 
 // Fetch build version and display in terminal header
 (function fetchBuildVersion() {

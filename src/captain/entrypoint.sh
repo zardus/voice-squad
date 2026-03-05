@@ -29,11 +29,6 @@ sudo mkdir -p "$CAPTAIN_TMUX_DIR" /run/squad-sockets/projects
 sudo chown ubuntu:ubuntu "$CAPTAIN_TMUX_DIR" /run/squad-sockets/projects
 sudo chmod 755 "$CAPTAIN_TMUX_DIR" /run/squad-sockets/projects
 
-# Ensure Docker socket is accessible (host socket may be owned by root)
-if [ -S /var/run/docker.sock ]; then
-    sudo chmod 666 /var/run/docker.sock 2>/dev/null || true
-fi
-
 # Ensure home directory is writable (volume mounts may be owned by root)
 sudo chown ubuntu:ubuntu /home/ubuntu
 sudo chown -R ubuntu:ubuntu /home/ubuntu/.codex /home/ubuntu/.claude 2>/dev/null || true

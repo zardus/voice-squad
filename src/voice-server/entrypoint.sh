@@ -13,6 +13,11 @@ sudo mkdir -p "$CAPTAIN_TMUX_DIR" "$PROJECTS_SOCKETS_DIR" "$SPEAK_SOCKET_DIR"
 sudo chown ubuntu:ubuntu "$CAPTAIN_TMUX_DIR" "$PROJECTS_SOCKETS_DIR" "$SPEAK_SOCKET_DIR"
 sudo chmod 755 "$CAPTAIN_TMUX_DIR" "$PROJECTS_SOCKETS_DIR" "$SPEAK_SOCKET_DIR"
 
+# Ensure Docker socket is accessible (host socket may be owned by root)
+if [ -S /var/run/docker.sock ]; then
+    sudo chmod 666 /var/run/docker.sock 2>/dev/null || true
+fi
+
 # Source user environment if present
 if [ -f /home/ubuntu/env ]; then
     set -a

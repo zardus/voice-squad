@@ -7,10 +7,21 @@ RUN apt-get update && apt-get install -y \
     tmux \
     ca-certificates \
     gnupg \
+    lsb-release \
     sudo \
     jq \
+    git \
     procps \
     locales \
+    && rm -rf /var/lib/apt/lists/*
+
+# Docker CLI (voice-server manages sibling project containers)
+RUN install -m 0755 -d /etc/apt/keyrings \
+    && curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg \
+    && chmod a+r /etc/apt/keyrings/docker.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" \
+    > /etc/apt/sources.list.d/docker.list \
+    && apt-get update && apt-get install -y docker-ce-cli \
     && rm -rf /var/lib/apt/lists/*
 
 # Generate UTF-8 locale
@@ -37,7 +48,7 @@ ARG GIT_COMMIT=unknown
 RUN date -u +"%Y-%m-%dT%H:%M:%SZ" > /tmp/build-time.txt
 
 # Voice server
-COPY package.json server.js tmux-bridge.js stt.js tts.js status-daemon.js test-stt.js /opt/squad/voice/
+COPY package.json server.js tmux-bridge.js stt.js tts.js status-daemon.js project-manager.js test-stt.js /opt/squad/voice/
 COPY public/ /opt/squad/voice/public/
 RUN cd /opt/squad/voice && npm install --production
 RUN mv /tmp/build-time.txt /opt/squad/voice/build-time.txt \

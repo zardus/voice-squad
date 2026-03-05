@@ -10,7 +10,6 @@ RUN apt-get update && apt-get install -y \
     tmux \
     ca-certificates \
     gnupg \
-    lsb-release \
     sudo \
     jq \
     locales \
@@ -31,15 +30,6 @@ RUN chown -R ubuntu:ubuntu /nix \
 
 ENV NIX_REMOTE="" \
     NIX_PATH="nixpkgs=channel:nixpkgs-unstable"
-
-# Docker CLI (captain manages sibling containers on host dockerd)
-RUN install -m 0755 -d /etc/apt/keyrings \
-    && curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg \
-    && chmod a+r /etc/apt/keyrings/docker.gpg \
-    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" \
-    > /etc/apt/sources.list.d/docker.list \
-    && apt-get update && apt-get install -y docker-ce-cli \
-    && rm -rf /var/lib/apt/lists/*
 
 # Node.js (for claude code and codex)
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
@@ -104,8 +94,6 @@ RUN chmod +x /usr/local/bin/create_pending_task \
     /usr/local/bin/capture-worker-output \
     /usr/local/bin/send-keys-to-worker \
     /usr/local/bin/archive-worker \
-    /usr/local/bin/start-project \
-    /usr/local/bin/stop-project \
     /usr/local/bin/list-projects \
     /usr/local/bin/sleep
 COPY settings.json /opt/squad/captain/.claude/settings.json
