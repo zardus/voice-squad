@@ -10,7 +10,6 @@ RUN apt-get update && apt-get install -y \
     lsb-release \
     sudo \
     jq \
-    git \
     procps \
     locales \
     && rm -rf /var/lib/apt/lists/*

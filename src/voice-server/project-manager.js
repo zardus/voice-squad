@@ -5,7 +5,25 @@ const path = require("path");
 
 const PROJECTS_SOCKETS_DIR =
   process.env.PROJECTS_SOCKETS_DIR || "/run/squad-sockets/projects";
-const HOST_HOME_PATH = process.env.HOST_HOME_PATH || "";
+
+// Auto-detect host path for /home/ubuntu by inspecting our own container's mounts.
+function detectHostHomePath() {
+  try {
+    // Get our container ID from /proc/self/cgroup or hostname
+    const hostname = fs.readFileSync("/etc/hostname", "utf8").trim();
+    const inspect = require("child_process").execFileSync(
+      "docker",
+      ["inspect", hostname, "--format", "{{json .Mounts}}"],
+      { encoding: "utf8", timeout: 5000 }
+    );
+    const mounts = JSON.parse(inspect);
+    const homeMount = mounts.find((m) => m.Destination === "/home/ubuntu");
+    if (homeMount && homeMount.Source) return homeMount.Source;
+  } catch {}
+  return "";
+}
+
+const HOST_HOME_PATH = process.env.HOST_HOME_PATH || detectHostHomePath();
 const SQUAD_WORKSPACE_IMAGE = process.env.SQUAD_WORKSPACE_IMAGE || "";
 const SQUAD_DOCKER_NETWORK = process.env.SQUAD_DOCKER_NETWORK || "";
 const SQUAD_SOCKETS_VOLUME = process.env.SQUAD_SOCKETS_VOLUME || "";
@@ -103,7 +121,7 @@ async function listProjects() {
   return projects;
 }
 
-async function createProject(name, gitUrl) {
+async function createProject(name) {
   name = validateProjectName(name);
 
   if (!HOST_HOME_PATH) throw new Error("HOST_HOME_PATH not configured");
@@ -139,27 +157,6 @@ async function createProject(name, gitUrl) {
 
   // Create project directory
   await fsp.mkdir(projectDir, { recursive: true });
-
-  // Clone repo if URL given and no .git exists
-  if (gitUrl) {
-    const hasGit = fs.existsSync(path.join(projectDir, ".git"));
-    if (!hasGit) {
-      await new Promise((resolve, reject) => {
-        execFile(
-          "git",
-          ["clone", gitUrl, projectDir],
-          { timeout: 120000 },
-          (err, _stdout, stderr) => {
-            if (err)
-              reject(
-                new Error(`Git clone failed: ${(stderr || "").trim() || err.message}`)
-              );
-            else resolve();
-          }
-        );
-      });
-    }
-  }
 
   // Build docker run arguments
   const dockerArgs = [

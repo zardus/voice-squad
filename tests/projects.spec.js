@@ -179,7 +179,6 @@ test.describe("Projects tab UI", () => {
     await page.click("#add-project-btn");
     await expect(page.locator("#create-project-modal")).toBeVisible();
     await expect(page.locator("#create-project-name")).toBeVisible();
-    await expect(page.locator("#create-project-git-url")).toBeVisible();
     await expect(page.locator("#create-project-submit")).toBeVisible();
   });
 

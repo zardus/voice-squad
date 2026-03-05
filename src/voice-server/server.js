@@ -559,12 +559,12 @@ app.get("/api/projects", async (req, res) => {
 });
 
 app.post("/api/projects", async (req, res) => {
-  const { token: reqToken, name, gitUrl } = req.body || {};
+  const { token: reqToken, name } = req.body || {};
   if (reqToken !== TOKEN) {
     return res.status(401).json({ error: "Unauthorized" });
   }
   try {
-    const result = await projectManager.createProject(name, gitUrl || "");
+    const result = await projectManager.createProject(name);
     console.log(`[projects] created: ${result.name}`);
     res.json(result);
   } catch (err) {

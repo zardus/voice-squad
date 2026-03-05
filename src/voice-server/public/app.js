@@ -2705,14 +2705,12 @@ const createProjectClose = document.getElementById("create-project-close");
 const createProjectCancel = document.getElementById("create-project-cancel");
 const createProjectSubmit = document.getElementById("create-project-submit");
 const createProjectName = document.getElementById("create-project-name");
-const createProjectGitUrl = document.getElementById("create-project-git-url");
 const createProjectError = document.getElementById("create-project-error");
 const addProjectBtn = document.getElementById("add-project-btn");
 
 function openCreateProjectModal() {
   if (!createProjectModal) return;
   createProjectName.value = "";
-  createProjectGitUrl.value = "";
   createProjectError.classList.add("hidden");
   createProjectError.textContent = "";
   createProjectSubmit.disabled = false;
@@ -2730,7 +2728,6 @@ function closeCreateProjectModal() {
 
 async function submitCreateProject() {
   const name = (createProjectName.value || "").trim();
-  const gitUrl = (createProjectGitUrl.value || "").trim();
 
   if (!name) {
     createProjectError.textContent = "Project name is required";
@@ -2746,7 +2743,7 @@ async function submitCreateProject() {
     const resp = await fetch("/api/projects", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token, name, gitUrl: gitUrl || undefined }),
+      body: JSON.stringify({ token, name }),
     });
     const json = await resp.json();
     if (!resp.ok) {
@@ -2771,12 +2768,6 @@ if (createProjectBackdrop) createProjectBackdrop.addEventListener("click", close
 if (createProjectSubmit) createProjectSubmit.addEventListener("click", submitCreateProject);
 if (createProjectName) {
   createProjectName.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") { e.preventDefault(); submitCreateProject(); }
-    if (e.key === "Escape") { e.preventDefault(); closeCreateProjectModal(); }
-  });
-}
-if (createProjectGitUrl) {
-  createProjectGitUrl.addEventListener("keydown", (e) => {
     if (e.key === "Enter") { e.preventDefault(); submitCreateProject(); }
     if (e.key === "Escape") { e.preventDefault(); closeCreateProjectModal(); }
   });
