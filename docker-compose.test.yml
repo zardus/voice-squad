@@ -8,19 +8,17 @@
 # The only override is swapping ./home for an ephemeral volume.
 
 services:
-  workspace:
-    volumes:
-      - test-home:/home/ubuntu
-    environment:
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-test-openai-key}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-test-anthropic-key}
-
   captain:
     volumes:
       - test-home:/home/ubuntu
+      - /var/run/docker.sock:/var/run/docker.sock
     environment:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-test-openai-key}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-test-anthropic-key}
+      HOST_HOME_PATH: /test-home-not-available
+      SQUAD_WORKSPACE_IMAGE: ${COMPOSE_PROJECT_NAME:-squad}-workspace
+      SQUAD_DOCKER_NETWORK: ${COMPOSE_PROJECT_NAME:-squad}_default
+      SQUAD_SOCKETS_VOLUME: ${COMPOSE_PROJECT_NAME:-squad}_sockets
 
   voice-server:
     volumes:
@@ -56,7 +54,7 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY:-test-openai-key}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-test-anthropic-key}
       - CAPTAIN_TMUX_SOCKET=/run/squad-sockets/captain-tmux/default
-      - WORKSPACE_TMUX_SOCKET=/run/squad-sockets/workspace-tmux/default
+      - PROJECTS_SOCKETS_DIR=/run/squad-sockets/projects
       - SPEAK_SOCKET_PATH=/run/squad-sockets/speak.sock
 
 volumes:

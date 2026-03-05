@@ -101,7 +101,7 @@ RUN usermod -aG docker ubuntu \
     && echo "ubuntu ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
 # Shared sockets directory for cross-container sharing
-RUN mkdir -p /run/squad-sockets/workspace-tmux \
+RUN mkdir -p /run/squad-sockets/projects \
     && chown -R ubuntu:ubuntu /run/squad-sockets
 
 COPY entrypoint.sh /entrypoint.sh

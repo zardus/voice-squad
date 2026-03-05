@@ -1,18 +1,34 @@
 #!/bin/bash
-# list-workers — List active worker sessions on the workspace tmux server
+# list-workers — List active workers across all project containers
 # Usage: list-workers
+# Output format: PROJECT_NAME/WORKER_NAME (one per line)
 
 set -euo pipefail
 
-SOCKET="${WORKSPACE_TMUX_SOCKET:?WORKSPACE_TMUX_SOCKET not set}"
+PROJECTS_DIR="/run/squad-sockets/projects"
+output=""
 
-WORKERS=$(
-    tmux -S "$SOCKET" list-panes -a -F '#{session_name} #{window_index} #{pane_current_command}' 2>/dev/null \
-    | awk '$2 == "0" && ($3 == "claude" || $3 == "codex" || $3 == "node" || $3 == "npm") { print $1 }'
-)
+if [ -d "$PROJECTS_DIR" ]; then
+    for socket in "$PROJECTS_DIR"/*/default; do
+        [ -S "$socket" ] || continue
+        project_name=$(basename "$(dirname "$socket")")
 
-if [ -n "$WORKERS" ]; then
-    echo "$WORKERS"
+        windows=$(tmux -S "$socket" list-windows -t agents -F '#{window_name} #{window_index}' 2>/dev/null || true)
+        [ -z "$windows" ] && continue
+
+        while read -r window_name window_index; do
+            pane_cmd=$(tmux -S "$socket" list-panes -t "agents:${window_index}" -F '#{pane_current_command}' 2>/dev/null | head -1 || true)
+            case "$pane_cmd" in
+                claude|codex|node|npm)
+                    output="${output}${project_name}/${window_name}"$'\n'
+                    ;;
+            esac
+        done <<< "$windows"
+    done
+fi
+
+if [ -n "$output" ]; then
+    printf '%s' "$output"
 else
     echo "(no workers)"
 fi

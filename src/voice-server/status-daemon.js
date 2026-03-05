@@ -1,9 +1,11 @@
 const { execFile } = require("child_process");
+const fs = require("fs");
+const path = require("path");
 
 const POLL_INTERVAL_MS = 1000;
 
 const CAPTAIN_TMUX_SOCKET = process.env.CAPTAIN_TMUX_SOCKET || "";
-const WORKSPACE_TMUX_SOCKET = process.env.WORKSPACE_TMUX_SOCKET || "";
+const PROJECTS_SOCKETS_DIR = process.env.PROJECTS_SOCKETS_DIR || "/run/squad-sockets/projects";
 
 function tmuxExecAsync(args, socket) {
   const fullArgs = socket ? ["-S", socket, ...args] : args;
@@ -19,7 +21,26 @@ function safeInt(s, fallback) {
   return Number.isFinite(n) ? n : fallback;
 }
 
-async function collectPanesFromSocket(socket) {
+function discoverProjectSockets() {
+  const sockets = [];
+  try {
+    const entries = fs.readdirSync(PROJECTS_SOCKETS_DIR, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        const socketPath = path.join(PROJECTS_SOCKETS_DIR, entry.name, "default");
+        try {
+          const stat = fs.statSync(socketPath);
+          if (stat.isSocket()) {
+            sockets.push({ projectName: entry.name, socketPath });
+          }
+        } catch {}
+      }
+    }
+  } catch {}
+  return sockets;
+}
+
+async function collectPanesFromSocket(socket, sessionPrefix) {
   const sessionsRaw = await tmuxExecAsync(["list-sessions", "-F", "#{session_name}\t#{session_id}"], socket);
   if (!sessionsRaw.trim()) return [];
 
@@ -31,6 +52,8 @@ async function collectPanesFromSocket(socket) {
     const sessionName = sLine.slice(0, tabIdx);
     const sessionId = sLine.slice(tabIdx + 1);
     if (!sessionName) return null;
+
+    const displayName = sessionPrefix ? `${sessionPrefix}/${sessionName}` : sessionName;
 
     const windowsRaw = await tmuxExecAsync([
       "list-windows",
@@ -70,7 +93,9 @@ async function collectPanesFromSocket(socket) {
         const content = raw;
 
         const winIdx = windowIndex === null ? 0 : windowIndex;
-        const target = `${sessionName}:${winIdx}.${paneIndex}`;
+        const target = sessionPrefix
+          ? `${sessionPrefix}/${sessionName}:${winIdx}.${paneIndex}`
+          : `${sessionName}:${winIdx}.${paneIndex}`;
         return { index: paneIndex, id: paneId, target, content };
       }))).filter(Boolean);
 
@@ -78,24 +103,34 @@ async function collectPanesFromSocket(socket) {
       return { name: windowName, index: windowIndex, panes };
     }))).filter(Boolean);
 
-    return { name: sessionName, windows };
+    return { name: displayName, windows };
   }))).filter(Boolean);
 
   return sessions;
 }
 
 async function collectPanes() {
-  // If dual-socket mode is configured, query both servers and merge
-  if (CAPTAIN_TMUX_SOCKET || WORKSPACE_TMUX_SOCKET) {
-    const [captainSessions, workspaceSessions] = await Promise.all([
-      CAPTAIN_TMUX_SOCKET ? collectPanesFromSocket(CAPTAIN_TMUX_SOCKET) : [],
-      WORKSPACE_TMUX_SOCKET ? collectPanesFromSocket(WORKSPACE_TMUX_SOCKET) : [],
-    ]);
-    return { sessions: [...captainSessions, ...workspaceSessions] };
+  const promises = [];
+
+  // Captain socket
+  if (CAPTAIN_TMUX_SOCKET) {
+    promises.push(collectPanesFromSocket(CAPTAIN_TMUX_SOCKET, null));
   }
 
-  // Legacy single-server mode (TMUX_TMPDIR)
-  const sessions = await collectPanesFromSocket(null);
+  // Discover all project sockets
+  const projectSockets = discoverProjectSockets();
+  for (const { projectName, socketPath } of projectSockets) {
+    promises.push(collectPanesFromSocket(socketPath, projectName));
+  }
+
+  if (promises.length === 0) {
+    // Legacy single-server mode (TMUX_TMPDIR)
+    const sessions = await collectPanesFromSocket(null, null);
+    return { sessions };
+  }
+
+  const results = await Promise.all(promises);
+  const sessions = results.flat();
   return { sessions };
 }
 
