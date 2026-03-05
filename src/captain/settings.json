@@ -7,15 +7,15 @@
       "Bash(capture-worker-output *)",
       "Bash(send-keys-to-worker *)",
       "Bash(archive-worker *)",
-      "Bash(start-project *)",
-      "Bash(stop-project *)",
       "Bash(list-projects *)",
       "Bash(speak *)",
       "Bash(sleep *)",
       "Bash(git show *)",
       "Bash(git log *)",
       "Bash(cat *)",
-      "Bash(tail *)"
+      "Bash(tail *)",
+      "Bash(ls *)",
+      "Bash(find *)"
     ],
     "deny": [
       "Write",

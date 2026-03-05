@@ -19,6 +19,7 @@ const {
 const { transcribe } = require("./stt");
 const { synthesize } = require("./tts");
 const statusDaemon = require("./status-daemon");
+const projectManager = require("./project-manager");
 
 const PORT = process.env.VOICE_PORT || 3000;
 const TOKEN = process.env.VOICE_TOKEN;
@@ -539,6 +540,52 @@ const GIT_COMMIT = (() => {
 
 app.get("/api/version", (req, res) => {
   res.json({ build_time: BUILD_TIME, git_commit: GIT_COMMIT });
+});
+
+// --- Project management ---
+
+app.get("/api/projects", async (req, res) => {
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  if (url.searchParams.get("token") !== TOKEN) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  try {
+    const projects = await projectManager.listProjects();
+    res.json({ projects });
+  } catch (err) {
+    console.error("[projects] list error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/projects", async (req, res) => {
+  const { token: reqToken, name, gitUrl } = req.body || {};
+  if (reqToken !== TOKEN) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  try {
+    const result = await projectManager.createProject(name, gitUrl || "");
+    console.log(`[projects] created: ${result.name}`);
+    res.json(result);
+  } catch (err) {
+    console.error("[projects] create error:", err.message);
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.delete("/api/projects/:name", async (req, res) => {
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  if (url.searchParams.get("token") !== TOKEN) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  try {
+    const result = await projectManager.deleteProject(req.params.name);
+    console.log(`[projects] deleted: ${result.name}`);
+    res.json(result);
+  } catch (err) {
+    console.error("[projects] delete error:", err.message);
+    res.status(400).json({ error: err.message });
+  }
 });
 
 app.get("/api/status", (req, res) => {

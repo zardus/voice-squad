@@ -16,7 +16,7 @@
   <div id="app">
     <div id="tab-bar">
       <button class="tab active" data-tab="terminal">Terminal</button>
-      <button class="tab" data-tab="screens">Screens</button>
+      <button class="tab" data-tab="projects">Projects</button>
       <button class="tab" data-tab="summary">Summary</button>
       <button class="tab" data-tab="tasks">Tasks</button>
       <button class="tab" data-tab="voice">Voice</button>
@@ -71,13 +71,35 @@
       </div>
     </div>
 
-    <div id="screens-view" class="tab-content">
-      <div id="status-header">
-        <span id="status-title">screens</span>
-        <span id="status-time">waiting...</span>
+    <div id="projects-view" class="tab-content">
+      <div id="projects-header">
+        <span id="projects-title">projects</span>
+        <span id="projects-time">waiting...</span>
+        <button id="add-project-btn" title="Create a new project">+</button>
       </div>
-      <div id="status-body">
-        <div id="status-panes"></div>
+      <div id="projects-body">
+        <div id="projects-panes"></div>
+      </div>
+    </div>
+
+    <div id="create-project-modal" class="hidden" aria-hidden="true">
+      <div id="create-project-backdrop"></div>
+      <div id="create-project-dialog" role="dialog" aria-modal="true" aria-labelledby="create-project-title">
+        <div id="create-project-header">
+          <span id="create-project-modal-title">Create Project</span>
+          <button id="create-project-close" title="Close" aria-label="Close">&times;</button>
+        </div>
+        <div id="create-project-body">
+          <label for="create-project-name">Project name</label>
+          <input type="text" id="create-project-name" placeholder="my-project" autocomplete="off" spellcheck="false">
+          <label for="create-project-git-url">Git URL <span class="optional-label">(optional)</span></label>
+          <input type="text" id="create-project-git-url" placeholder="https://github.com/org/repo.git" autocomplete="off" spellcheck="false">
+          <div id="create-project-error" class="hidden"></div>
+          <div id="create-project-actions">
+            <button id="create-project-cancel">Cancel</button>
+            <button id="create-project-submit">Create</button>
+          </div>
+        </div>
       </div>
     </div>
 

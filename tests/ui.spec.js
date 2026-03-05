@@ -36,12 +36,12 @@ test.describe("UI", () => {
   // ─── Tab bar ─────────────────────────────────────────────────
 
   test.describe("Tab bar", () => {
-    test("shows five tabs: Terminal, Screens, Summary, Tasks, Voice", async ({ page }) => {
+    test("shows five tabs: Terminal, Projects, Summary, Tasks, Voice", async ({ page }) => {
       await page.goto(pageUrl());
       const tabs = page.locator("#tab-bar .tab");
       await expect(tabs).toHaveCount(5);
       await expect(tabs.nth(0)).toHaveText("Terminal");
-      await expect(tabs.nth(1)).toHaveText("Screens");
+      await expect(tabs.nth(1)).toHaveText("Projects");
       await expect(tabs.nth(2)).toHaveText("Summary");
       await expect(tabs.nth(3)).toHaveText("Tasks");
       await expect(tabs.nth(4)).toHaveText("Voice");
@@ -53,11 +53,11 @@ test.describe("UI", () => {
       await expect(page.locator("#terminal-view")).toHaveClass(/active/);
     });
 
-    test("clicking Screens tab switches to screens view", async ({ page }) => {
+    test("clicking Projects tab switches to projects view", async ({ page }) => {
       await page.goto(pageUrl());
-      await page.click('[data-tab="screens"]');
-      await expect(page.locator('[data-tab="screens"]')).toHaveClass(/active/);
-      await expect(page.locator("#screens-view")).toHaveClass(/active/);
+      await page.click('[data-tab="projects"]');
+      await expect(page.locator('[data-tab="projects"]')).toHaveClass(/active/);
+      await expect(page.locator("#projects-view")).toHaveClass(/active/);
       await expect(page.locator("#terminal-view")).not.toHaveClass(/active/);
     });
 
@@ -81,8 +81,8 @@ test.describe("UI", () => {
       visible = await page.locator(".tab-content.active").count();
       expect(visible).toBe(1);
 
-      // Switch to Screens
-      await page.click('[data-tab="screens"]');
+      // Switch to Projects
+      await page.click('[data-tab="projects"]');
       visible = await page.locator(".tab-content.active").count();
       expect(visible).toBe(1);
     });
@@ -432,27 +432,33 @@ test.describe("UI", () => {
     });
   });
 
-  // ─── Screens tab ─────────────────────────────────────────────
+  // ─── Projects tab ────────────────────────────────────────────
 
-  test.describe("Screens tab", () => {
-    test("screens tab loads with header elements", async ({ page }) => {
+  test.describe("Projects tab", () => {
+    test("projects tab loads with header elements", async ({ page }) => {
       await page.goto(pageUrl());
-      await page.click('[data-tab="screens"]');
+      await page.click('[data-tab="projects"]');
 
-      await expect(page.locator("#status-title")).toHaveText("screens");
-      await expect(page.locator("#status-time")).toBeVisible();
-      // status-panes container exists in DOM (may be empty/hidden until data arrives)
-      await expect(page.locator("#status-panes")).toBeAttached();
+      await expect(page.locator("#projects-title")).toHaveText("projects");
+      await expect(page.locator("#projects-time")).toBeVisible();
+      await expect(page.locator("#projects-panes")).toBeAttached();
     });
 
-    test("screens body is scrollable", async ({ page }) => {
+    test("projects body is scrollable", async ({ page }) => {
       await page.goto(pageUrl());
-      await page.click('[data-tab="screens"]');
+      await page.click('[data-tab="projects"]');
 
-      const overflow = await page.locator("#status-body").evaluate(
+      const overflow = await page.locator("#projects-body").evaluate(
         (el) => getComputedStyle(el).overflowY,
       );
       expect(overflow).toBe("auto");
+    });
+
+    test("add project button exists", async ({ page }) => {
+      await page.goto(pageUrl());
+      await page.click('[data-tab="projects"]');
+
+      await expect(page.locator("#add-project-btn")).toBeVisible();
     });
   });
 

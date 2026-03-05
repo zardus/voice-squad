@@ -194,16 +194,16 @@ test.describe("Screenshots", () => {
       type: "png",
     });
 
-    // ── Screens Tab ──────────────────────────────────────────
-    await page.click('[data-tab="screens"]');
+    // ── Projects Tab ─────────────────────────────────────────
+    await page.click('[data-tab="projects"]');
     await page.waitForTimeout(100);
 
     await page.evaluate(
       ({ panes }) => {
-        document.getElementById("status-time").textContent = "\u25cf LIVE";
-        document.getElementById("status-time").className = "live-indicator";
+        document.getElementById("projects-time").textContent = "\u25cf LIVE";
+        document.getElementById("projects-time").className = "live-indicator";
 
-        const panesEl = document.getElementById("status-panes");
+        const panesEl = document.getElementById("projects-panes");
         panesEl.innerHTML = "";
         for (const pane of panes) {
           const panel = document.createElement("div");
@@ -227,7 +227,7 @@ test.describe("Screenshots", () => {
 
     await page.waitForTimeout(300);
     await page.screenshot({
-      path: `${SCREENSHOT_DIR}/screens-tab.png`,
+      path: `${SCREENSHOT_DIR}/projects-tab.png`,
       type: "png",
     });
 

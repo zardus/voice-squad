@@ -29,19 +29,19 @@ SQUAD_CAPTAIN=codex HOST_HOME_PATH=$(pwd)/home docker compose up --build
 Required host env vars: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `HOST_HOME_PATH`
 Optional: `GH_TOKEN`, `SQUAD_CAPTAIN`, `VOICE_TOKEN`
 
-`HOST_HOME_PATH` must be the absolute host path to `./home`. It is required because the captain creates sibling Docker containers with bind mounts to the host filesystem.
+`HOST_HOME_PATH` must be the absolute host path to `./home`. It is required because the voice-server creates sibling Docker containers with bind mounts to the host filesystem.
 
 ## Current Runtime Topology (`docker-compose.yml`)
 
 The compose stack has **5 services** (workspace is build-only):
 
-- `workspace` — build-only image (profiles: ["build"]) with dev tools (tmux, Claude Code, Codex, nix, python, node). Captain starts project containers from this image.
-- `captain` — runs Claude/Codex captain in its own tmux server (`/run/squad-sockets/captain-tmux/default`). Has Docker socket to manage sibling project containers.
-- `voice-server` — Express/WebSocket server, STT/TTS, status + task APIs, captain control endpoints
+- `workspace` — build-only image (profiles: ["build"]) with dev tools (tmux, Claude Code, Codex, nix, python, node). Voice-server starts project containers from this image.
+- `captain` — runs Claude/Codex captain in its own tmux server (`/run/squad-sockets/captain-tmux/default`). No Docker access; interacts with workers via tmux sockets only.
+- `voice-server` — Express/WebSocket server, STT/TTS, status + task APIs, captain control endpoints, project container management (Docker socket). Has the Projects tab UI for humans to create/stop projects.
 - `tunnel` — cloudflared quick tunnel and QR output
 - `pane-monitor` — idle worker alerts + captain heartbeat nudges
 
-Per-project containers (created at runtime by captain):
+Per-project containers (created at runtime by humans via the web UI):
 
 - `squad-project-{NAME}` — each project gets its own container with socket at `/run/squad-sockets/projects/{NAME}/default`
 
@@ -80,9 +80,10 @@ Each runtime component is isolated under `src/` with its own Dockerfile/build co
 ## Key Architecture Details
 
 - **Per-project containers**:
-  - Captain starts project containers via `start-project` script using the host Docker socket.
+  - Humans create/stop project containers via the web UI Projects tab. Voice-server manages Docker containers via `project-manager.js`.
   - Each project gets a `squad-project-{NAME}` container running the workspace image.
   - Workers are tmux windows in the project's `agents` session.
+  - Captain interacts with workers via tmux sockets only (no Docker access). Captain can read project files at `/home/ubuntu/projects/{NAME}/`.
   - Socket convention: `/run/squad-sockets/projects/{PROJECT_NAME}/default`
 - **Captain tmux server**:
   - Captain server socket: `/run/squad-sockets/captain-tmux/default`
@@ -97,7 +98,7 @@ Each runtime component is isolated under `src/` with its own Dockerfile/build co
 - **Status and summaries**:
   - `status-daemon.js` polls captain tmux + all project sockets every second only while status clients are active.
   - `/api/summary` and pending-task worker status enrichment call Anthropic Haiku (with secret scrubbing).
-- **PWA tabs** currently: `Terminal`, `Screens`, `Summary`, `Tasks`, `Voice`
+- **PWA tabs** currently: `Terminal`, `Projects`, `Summary`, `Tasks`, `Voice`
 - **Accounts/login**:
   - Voice UI supports `claude login` / `codex auth login` via `/api/login` + `/api/login-status`
   - Captain-side account switching helper: `src/captain/switch-account.sh`

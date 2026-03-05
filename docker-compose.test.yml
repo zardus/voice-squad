@@ -11,6 +11,13 @@ services:
   captain:
     volumes:
       - test-home:/home/ubuntu
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-test-openai-key}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-test-anthropic-key}
+
+  voice-server:
+    volumes:
+      - test-home:/home/ubuntu
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-test-openai-key}
@@ -19,13 +26,6 @@ services:
       SQUAD_WORKSPACE_IMAGE: ${COMPOSE_PROJECT_NAME:-squad}-workspace
       SQUAD_DOCKER_NETWORK: ${COMPOSE_PROJECT_NAME:-squad}_default
       SQUAD_SOCKETS_VOLUME: ${COMPOSE_PROJECT_NAME:-squad}_sockets
-
-  voice-server:
-    volumes:
-      - test-home:/home/ubuntu
-    environment:
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-test-openai-key}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-test-anthropic-key}
 
   pane-monitor:
     environment:

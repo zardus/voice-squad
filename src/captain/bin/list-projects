@@ -1,14 +1,25 @@
 #!/bin/bash
-# list-projects — List running per-project Docker containers
+# list-projects — List active projects by checking tmux sockets
 # Usage: list-projects
 
 set -euo pipefail
 
-PROJECTS=$(docker ps --filter "name=squad-project-" --format '{{.Names}} ({{.Status}})' 2>/dev/null \
-    | sed 's/^squad-project-//')
+PROJECTS_DIR="/run/squad-sockets/projects"
+output=""
 
-if [ -n "$PROJECTS" ]; then
-    echo "$PROJECTS"
+if [ -d "$PROJECTS_DIR" ]; then
+    for dir in "$PROJECTS_DIR"/*/; do
+        [ -d "$dir" ] || continue
+        [ -S "${dir}default" ] || continue
+        name=$(basename "$dir")
+        if tmux -S "${dir}default" has-session -t agents 2>/dev/null; then
+            output="${output}${name}"$'\n'
+        fi
+    done
+fi
+
+if [ -n "$output" ]; then
+    printf '%s' "$output"
 else
     echo "(no projects)"
 fi
