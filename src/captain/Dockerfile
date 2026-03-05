@@ -32,6 +32,15 @@ RUN chown -R ubuntu:ubuntu /nix \
 ENV NIX_REMOTE="" \
     NIX_PATH="nixpkgs=channel:nixpkgs-unstable"
 
+# Docker CLI (captain manages sibling containers on host dockerd)
+RUN install -m 0755 -d /etc/apt/keyrings \
+    && curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg \
+    && chmod a+r /etc/apt/keyrings/docker.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" \
+    > /etc/apt/sources.list.d/docker.list \
+    && apt-get update && apt-get install -y docker-ce-cli \
+    && rm -rf /var/lib/apt/lists/*
+
 # Node.js (for claude code and codex)
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y nodejs \
@@ -80,7 +89,7 @@ RUN npm install -g @anthropic-ai/claude-code @openai/codex@0.98.0
 RUN echo "ubuntu ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
 # Shared sockets directory for cross-container sharing
-RUN mkdir -p /run/squad-sockets/captain-tmux /run/squad-sockets/workspace-tmux \
+RUN mkdir -p /run/squad-sockets/captain-tmux /run/squad-sockets/projects \
     && chown -R ubuntu:ubuntu /run/squad-sockets
 
 COPY entrypoint.sh /opt/squad/entrypoint-captain.sh
@@ -91,11 +100,13 @@ COPY captain-CLAUDE.md /opt/squad/captain/CLAUDE.md
 COPY bin/ /usr/local/bin/
 RUN chmod +x /usr/local/bin/create_pending_task \
     /usr/local/bin/list-workers \
-    /usr/local/bin/launch-worker \
+    /usr/local/bin/create-worker \
     /usr/local/bin/capture-worker-output \
     /usr/local/bin/send-keys-to-worker \
     /usr/local/bin/archive-worker \
-    /usr/local/bin/setup-project \
+    /usr/local/bin/start-project \
+    /usr/local/bin/stop-project \
+    /usr/local/bin/list-projects \
     /usr/local/bin/sleep
 COPY settings.json /opt/squad/captain/.claude/settings.json
 RUN git init /opt/squad/captain \

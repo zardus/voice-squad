@@ -1,32 +1,42 @@
 #!/bin/bash
 # capture-worker-output — Capture recent output from a worker pane
-# Usage: capture-worker-output TASK_NAME [LINE_COUNT]
+# Usage: capture-worker-output PROJECT_NAME WORKER_NAME [LINE_COUNT]
 
 set -euo pipefail
 
-TASK_NAME="${1:?Usage: capture-worker-output TASK_NAME [LINE_COUNT]}"
-LINE_COUNT="${2:-50}"
+PROJECT_NAME="${1:?Usage: capture-worker-output PROJECT_NAME WORKER_NAME [LINE_COUNT]}"
+WORKER_NAME="${2:?Usage: capture-worker-output PROJECT_NAME WORKER_NAME [LINE_COUNT]}"
+LINE_COUNT="${3:-50}"
 
-SOCKET="${WORKSPACE_TMUX_SOCKET:?WORKSPACE_TMUX_SOCKET not set}"
+SOCKET="/run/squad-sockets/projects/${PROJECT_NAME}/default"
 
-if ! tmux -S "$SOCKET" has-session -t "$TASK_NAME" 2>/dev/null; then
-    echo "ERROR: No worker session found with name '$TASK_NAME'" >&2
+if ! tmux -S "$SOCKET" has-session -t agents 2>/dev/null; then
+    echo "ERROR: No agents session found for project '${PROJECT_NAME}'" >&2
     exit 1
 fi
 
-PANE_INFO=$(tmux -S "$SOCKET" list-panes -t "${TASK_NAME}:0" -F '#{pane_id} #{pane_current_command}' 2>/dev/null | head -1 || true)
+# Find the window by name
+WINDOW_INDEX=$(tmux -S "$SOCKET" list-windows -t agents -F '#{window_name} #{window_index}' 2>/dev/null \
+    | awk -v name="$WORKER_NAME" '$1 == name { print $2; exit }')
+
+if [ -z "$WINDOW_INDEX" ]; then
+    echo "ERROR: No worker window '${WORKER_NAME}' found in project '${PROJECT_NAME}'" >&2
+    exit 1
+fi
+
+PANE_INFO=$(tmux -S "$SOCKET" list-panes -t "agents:${WINDOW_INDEX}" -F '#{pane_id} #{pane_current_command}' 2>/dev/null | head -1 || true)
 PANE_ID=$(printf '%s\n' "$PANE_INFO" | awk '{print $1}')
 CURRENT_CMD=$(printf '%s\n' "$PANE_INFO" | awk '{print $2}')
 
 if [ -z "$PANE_ID" ]; then
-    echo "ERROR: Worker '$TASK_NAME' has no pane at window 0" >&2
+    echo "ERROR: Worker '${WORKER_NAME}' in project '${PROJECT_NAME}' has no pane" >&2
     exit 1
 fi
 
 case "$CURRENT_CMD" in
     claude|codex|node|npm) ;;
     *)
-        echo "ERROR: Worker '$TASK_NAME' pane is running '$CURRENT_CMD', not an agent process." >&2
+        echo "ERROR: Worker '${PROJECT_NAME}/${WORKER_NAME}' pane is running '$CURRENT_CMD', not an agent process." >&2
         exit 1
         ;;
 esac

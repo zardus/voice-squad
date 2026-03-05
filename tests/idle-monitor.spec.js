@@ -1,29 +1,30 @@
 // @ts-check
 /**
  * Idle monitor tests — verify pane-monitor.sh detects idle worker panes.
+ *
+ * In the per-project architecture, worker panes live in project sockets.
+ * This test creates a temporary project socket directory and tmux session
+ * to simulate a project container.
  */
 const { test, expect } = require("@playwright/test");
 const fs = require("fs");
 const { execSync, spawn } = require("child_process");
+const path = require("path");
 const { TOKEN } = require("./helpers/config");
 
-const WORKER_SESSION = "idle-test-worker";
-const ACTIVE_SESSION = "active-test-worker";
 const MONITOR_LOG = "/tmp/pane-monitor.log";
 const CAPTAIN_SOCKET = "/run/squad-sockets/captain-tmux/default";
-const WORKSPACE_SOCKET = "/run/squad-sockets/workspace-tmux/default";
+const PROJECTS_DIR = "/run/squad-sockets/projects";
+const TEST_PROJECT = "idle-test-project";
+const TEST_PROJECT_SOCKET_DIR = path.join(PROJECTS_DIR, TEST_PROJECT);
+const TEST_PROJECT_SOCKET = path.join(TEST_PROJECT_SOCKET_DIR, "default");
+const ACTIVE_PROJECT = "active-test-project";
+const ACTIVE_PROJECT_SOCKET_DIR = path.join(PROJECTS_DIR, ACTIVE_PROJECT);
+const ACTIVE_PROJECT_SOCKET = path.join(ACTIVE_PROJECT_SOCKET_DIR, "default");
 let monitorPid = null;
 
 function captainExec(args, opts = {}) {
   return execSync(`tmux -S ${CAPTAIN_SOCKET} ${args}`, {
-    encoding: "utf8",
-    timeout: 5000,
-    ...opts,
-  });
-}
-
-function workspaceExec(args, opts = {}) {
-  return execSync(`tmux -S ${WORKSPACE_SOCKET} ${args}`, {
     encoding: "utf8",
     timeout: 5000,
     ...opts,
@@ -36,12 +37,10 @@ test.describe("Idle monitor", () => {
 
     // Ensure tmux sockets are usable from the test-runner container.
     execSync(`tmux -S ${CAPTAIN_SOCKET} has-session -t captain`, { encoding: "utf8", timeout: 5000 });
-    execSync(`tmux -S ${WORKSPACE_SOCKET} has-session -t workspace`, { encoding: "utf8", timeout: 5000 });
 
-    // Keep detached worker sessions alive during tests.
-    workspaceExec("set-option -g destroy-unattached off");
-    workspaceExec("set-option -g exit-empty off");
-    workspaceExec("set-option -g exit-unattached off");
+    // Create test project socket directory and tmux session
+    execSync(`mkdir -p ${TEST_PROJECT_SOCKET_DIR}`, { encoding: "utf8" });
+    execSync(`tmux -S ${TEST_PROJECT_SOCKET} new-session -d -s agents -c /home/ubuntu`, { encoding: "utf8", timeout: 5000 });
 
     // Keep captain pane in shell mode for predictable monitoring behavior.
     try {
@@ -56,7 +55,7 @@ test.describe("Idle monitor", () => {
       env: {
         ...process.env,
         CAPTAIN_TMUX_SOCKET: CAPTAIN_SOCKET,
-        WORKSPACE_TMUX_SOCKET: WORKSPACE_SOCKET,
+        PROJECTS_SOCKETS_DIR: PROJECTS_DIR,
         HEARTBEAT_INTERVAL_SECONDS: "900",
       },
     });
@@ -80,14 +79,16 @@ test.describe("Idle monitor", () => {
   });
 
   test.afterAll(() => {
+    // Clean up tmux sessions
     try {
-      workspaceExec(`kill-session -t ${WORKER_SESSION}`);
+      execSync(`tmux -S ${TEST_PROJECT_SOCKET} kill-server`, { encoding: "utf8", timeout: 5000 });
     } catch {}
     try {
-      workspaceExec(`kill-session -t ${ACTIVE_SESSION}`);
+      execSync(`tmux -S ${ACTIVE_PROJECT_SOCKET} kill-server`, { encoding: "utf8", timeout: 5000 });
     } catch {}
+    // Clean up socket dirs
     try {
-      execSync("pkill -f 'pane-monitor-test'", { encoding: "utf8", timeout: 5000 });
+      execSync(`rm -rf ${TEST_PROJECT_SOCKET_DIR} ${ACTIVE_PROJECT_SOCKET_DIR}`, { encoding: "utf8", timeout: 5000 });
     } catch {}
     if (monitorPid) {
       try {
@@ -99,10 +100,11 @@ test.describe("Idle monitor", () => {
   test("detects idle worker pane and logs IDLE ALERT", async () => {
     test.setTimeout(120000);
 
-    workspaceExec(`new-session -d -s ${WORKER_SESSION} -c /home/ubuntu`);
-    await new Promise((r) => setTimeout(r, 3000));
-
-    workspaceExec(`send-keys -t ${WORKER_SESSION} 'echo worker starting' Enter`);
+    // Create a window in the agents session simulating a worker
+    execSync(`tmux -S ${TEST_PROJECT_SOCKET} send-keys -t agents:0 'echo worker starting' Enter`, {
+      encoding: "utf8",
+      timeout: 5000,
+    });
 
     const deadline = Date.now() + 100000;
     let logText = "";
@@ -113,7 +115,7 @@ test.describe("Idle monitor", () => {
         logText = "";
       }
 
-      if (logText.includes("IDLE ALERT") && logText.includes(`${WORKER_SESSION}:0`)) {
+      if (logText.includes("IDLE ALERT") && logText.includes(`${TEST_PROJECT}/agents:0`)) {
         break;
       }
 
@@ -121,19 +123,21 @@ test.describe("Idle monitor", () => {
     }
 
     expect(logText).toContain("IDLE ALERT");
-    expect(logText).toContain(`${WORKER_SESSION}:0`);
+    expect(logText).toContain(`${TEST_PROJECT}/agents:0`);
   });
 
   test("does NOT alert for a pane with continuously changing content", async () => {
     test.setTimeout(90000);
 
-    workspaceExec(`new-session -d -s ${ACTIVE_SESSION} -c /home/ubuntu`);
-    await new Promise((r) => setTimeout(r, 3000));
+    // Create the active project session fresh so it hasn't been idle
+    execSync(`mkdir -p ${ACTIVE_PROJECT_SOCKET_DIR}`, { encoding: "utf8" });
+    execSync(`tmux -S ${ACTIVE_PROJECT_SOCKET} new-session -d -s agents -c /home/ubuntu`, { encoding: "utf8", timeout: 5000 });
 
-    workspaceExec(`send-keys -t ${ACTIVE_SESSION} 'echo active worker' Enter`);
-    await new Promise((r) => setTimeout(r, 2000));
-
-    workspaceExec(`send-keys -t ${ACTIVE_SESSION} 'while true; do date; sleep 1; done' Enter`);
+    // Start continuously changing content immediately
+    execSync(`tmux -S ${ACTIVE_PROJECT_SOCKET} send-keys -t agents:0 'while true; do date; sleep 1; done' Enter`, {
+      encoding: "utf8",
+      timeout: 5000,
+    });
 
     await new Promise((r) => setTimeout(r, 50000));
 
@@ -144,7 +148,7 @@ test.describe("Idle monitor", () => {
 
     const activeAlerts = logText
       .split("\n")
-      .filter((l) => l.includes("IDLE ALERT") && l.includes(`${ACTIVE_SESSION}:0`));
+      .filter((l) => l.includes("IDLE ALERT") && l.includes(`${ACTIVE_PROJECT}/agents:0`));
     expect(activeAlerts).toHaveLength(0);
   });
 });

@@ -1,0 +1,14 @@
+#!/bin/bash
+# list-projects — List running per-project Docker containers
+# Usage: list-projects
+
+set -euo pipefail
+
+PROJECTS=$(docker ps --filter "name=squad-project-" --format '{{.Names}} ({{.Status}})' 2>/dev/null \
+    | sed 's/^squad-project-//')
+
+if [ -n "$PROJECTS" ]; then
+    echo "$PROJECTS"
+else
+    echo "(no projects)"
+fi

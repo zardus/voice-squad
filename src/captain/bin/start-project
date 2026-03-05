@@ -1,0 +1,76 @@
+#!/bin/bash
+# start-project — Start a per-project Docker container with its own tmux server
+# Usage: start-project PROJECT_NAME [GIT_REPO_URL]
+
+set -euo pipefail
+
+PROJECT_NAME="${1:?Usage: start-project PROJECT_NAME [GIT_REPO_URL]}"
+GIT_URL="${2:-}"
+
+CONTAINER_NAME="squad-project-${PROJECT_NAME}"
+PROJECT_DIR="/home/ubuntu/projects/${PROJECT_NAME}"
+SOCKET_DIR="/run/squad-sockets/projects/${PROJECT_NAME}"
+SOCKET_PATH="${SOCKET_DIR}/default"
+
+HOST_HOME_PATH="${HOST_HOME_PATH:?HOST_HOME_PATH env var is required (absolute host path to ./home)}"
+SQUAD_WORKSPACE_IMAGE="${SQUAD_WORKSPACE_IMAGE:?SQUAD_WORKSPACE_IMAGE env var is required}"
+SQUAD_DOCKER_NETWORK="${SQUAD_DOCKER_NETWORK:?SQUAD_DOCKER_NETWORK env var is required}"
+SQUAD_SOCKETS_VOLUME="${SQUAD_SOCKETS_VOLUME:?SQUAD_SOCKETS_VOLUME env var is required}"
+
+# Check if container is already running
+if docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+    echo "Project '${PROJECT_NAME}' is already running."
+    exit 0
+fi
+
+# Remove any stopped container with the same name
+docker rm -f "$CONTAINER_NAME" 2>/dev/null || true
+
+# Create project directory if it doesn't exist
+mkdir -p "$PROJECT_DIR"
+
+# Clone repo if URL given and no .git exists
+if [ -n "$GIT_URL" ] && [ ! -d "${PROJECT_DIR}/.git" ]; then
+    git clone "$GIT_URL" "$PROJECT_DIR"
+fi
+
+# Build docker run arguments
+DOCKER_ARGS=(
+    run -d
+    --name "$CONTAINER_NAME"
+    --network "$SQUAD_DOCKER_NETWORK"
+    -e "PROJECT_NAME=${PROJECT_NAME}"
+    -e "ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}"
+    -e "OPENAI_API_KEY=${OPENAI_API_KEY:-}"
+    -e "GH_TOKEN=${GH_TOKEN:-}"
+    -v "${HOST_HOME_PATH}/projects/${PROJECT_NAME}:/home/ubuntu"
+    -v "${HOST_HOME_PATH}/.claude:/home/ubuntu/.claude:ro"
+    -v "${HOST_HOME_PATH}/.claude.json:/home/ubuntu/.claude.json:ro"
+    -v "${HOST_HOME_PATH}/.codex:/home/ubuntu/.codex:ro"
+    -v "${HOST_HOME_PATH}/captain:/home/ubuntu/captain:ro"
+    -v "${SQUAD_SOCKETS_VOLUME}:/run/squad-sockets"
+)
+
+# Mount env file if it exists
+if [ -f /home/ubuntu/env ]; then
+    DOCKER_ARGS+=(-v "${HOST_HOME_PATH}/env:/home/ubuntu/env:ro")
+fi
+
+DOCKER_ARGS+=("$SQUAD_WORKSPACE_IMAGE")
+
+docker "${DOCKER_ARGS[@]}"
+
+# Wait up to 60s for the agents tmux session on the project socket
+echo "Waiting for project '${PROJECT_NAME}' tmux session..."
+timeout=60
+while ! tmux -S "$SOCKET_PATH" has-session -t agents 2>/dev/null && [ $timeout -gt 0 ]; do
+    sleep 1
+    timeout=$((timeout - 1))
+done
+
+if ! tmux -S "$SOCKET_PATH" has-session -t agents 2>/dev/null; then
+    echo "ERROR: Project '${PROJECT_NAME}' tmux session not available after 60s" >&2
+    exit 1
+fi
+
+echo "Project '${PROJECT_NAME}' started (container: ${CONTAINER_NAME})."

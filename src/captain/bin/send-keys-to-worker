@@ -1,31 +1,41 @@
 #!/bin/bash
 # send-keys-to-worker — Send keystrokes to a worker pane
-# Usage: send-keys-to-worker TASK_NAME KEYS...
+# Usage: send-keys-to-worker PROJECT_NAME WORKER_NAME KEYS...
 # Safety-checks that the pane is running a known agent process before sending.
 
 set -euo pipefail
 
-TASK_NAME="${1:?Usage: send-keys-to-worker TASK_NAME KEYS...}"
-shift
+PROJECT_NAME="${1:?Usage: send-keys-to-worker PROJECT_NAME WORKER_NAME KEYS...}"
+WORKER_NAME="${2:?Usage: send-keys-to-worker PROJECT_NAME WORKER_NAME KEYS...}"
+shift 2
 
 if [ $# -eq 0 ]; then
     echo "ERROR: No keys specified" >&2
     exit 1
 fi
 
-SOCKET="${WORKSPACE_TMUX_SOCKET:?WORKSPACE_TMUX_SOCKET not set}"
+SOCKET="/run/squad-sockets/projects/${PROJECT_NAME}/default"
 
-if ! tmux -S "$SOCKET" has-session -t "$TASK_NAME" 2>/dev/null; then
-    echo "ERROR: No worker session found with name '$TASK_NAME'" >&2
+if ! tmux -S "$SOCKET" has-session -t agents 2>/dev/null; then
+    echo "ERROR: No agents session found for project '${PROJECT_NAME}'" >&2
     exit 1
 fi
 
-PANE_INFO=$(tmux -S "$SOCKET" list-panes -t "${TASK_NAME}:0" -F '#{pane_id} #{pane_current_command}' 2>/dev/null | head -1 || true)
+# Find the window by name
+WINDOW_INDEX=$(tmux -S "$SOCKET" list-windows -t agents -F '#{window_name} #{window_index}' 2>/dev/null \
+    | awk -v name="$WORKER_NAME" '$1 == name { print $2; exit }')
+
+if [ -z "$WINDOW_INDEX" ]; then
+    echo "ERROR: No worker window '${WORKER_NAME}' found in project '${PROJECT_NAME}'" >&2
+    exit 1
+fi
+
+PANE_INFO=$(tmux -S "$SOCKET" list-panes -t "agents:${WINDOW_INDEX}" -F '#{pane_id} #{pane_current_command}' 2>/dev/null | head -1 || true)
 PANE_ID=$(printf '%s\n' "$PANE_INFO" | awk '{print $1}')
 CURRENT_CMD=$(printf '%s\n' "$PANE_INFO" | awk '{print $2}')
 
 if [ -z "$PANE_ID" ]; then
-    echo "ERROR: Worker '$TASK_NAME' has no pane at window 0" >&2
+    echo "ERROR: Worker '${PROJECT_NAME}/${WORKER_NAME}' has no pane" >&2
     exit 1
 fi
 
@@ -33,7 +43,7 @@ fi
 case "$CURRENT_CMD" in
     claude|codex|node|npm) ;;
     *)
-        echo "ERROR: Worker '$TASK_NAME' is running '$CURRENT_CMD', not an agent process. Refusing to send keys." >&2
+        echo "ERROR: Worker '${PROJECT_NAME}/${WORKER_NAME}' is running '$CURRENT_CMD', not an agent process. Refusing to send keys." >&2
         exit 1
         ;;
 esac

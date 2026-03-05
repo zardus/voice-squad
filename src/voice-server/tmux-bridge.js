@@ -1,4 +1,5 @@
 const { execSync, execFile, execFileSync } = require("child_process");
+const path = require("path");
 
 const TARGET = "captain:0";
 const ENTER_RETRY_COUNT = 2;
@@ -6,22 +7,40 @@ const ENTER_RETRY_DELAY_MS = 400;
 const TERMINAL_TRIM_BOTTOM_LINES = Number(process.env.TMUX_TERMINAL_TRIM_BOTTOM_LINES || 5);
 
 const CAPTAIN_TMUX_SOCKET = process.env.CAPTAIN_TMUX_SOCKET || "";
-const WORKSPACE_TMUX_SOCKET = process.env.WORKSPACE_TMUX_SOCKET || "";
+const PROJECTS_SOCKETS_DIR = process.env.PROJECTS_SOCKETS_DIR || "/run/squad-sockets/projects";
 
 function captainTmuxArgs(args) {
   if (CAPTAIN_TMUX_SOCKET) return ["-S", CAPTAIN_TMUX_SOCKET, ...args];
   return args;
 }
 
-function workspaceTmuxArgs(args) {
-  if (WORKSPACE_TMUX_SOCKET) return ["-S", WORKSPACE_TMUX_SOCKET, ...args];
+/**
+ * Resolve target socket from a pane target string.
+ * Captain targets: "captain:N.M" → captain socket
+ * Project targets: "projectName/session:N.M" → project socket
+ */
+function resolveTargetSocket(target) {
+  const t = String(target || "").trim();
+  const slashIdx = t.indexOf("/");
+  if (slashIdx > 0) {
+    const projectName = t.slice(0, slashIdx);
+    const remainder = t.slice(slashIdx + 1);
+    const socketPath = path.join(PROJECTS_SOCKETS_DIR, projectName, "default");
+    return { socketPath, target: remainder };
+  }
+  // No slash — assume captain socket
+  return { socketPath: CAPTAIN_TMUX_SOCKET, target: t };
+}
+
+function targetTmuxArgs(socketPath, args) {
+  if (socketPath) return ["-S", socketPath, ...args];
   return args;
 }
 
 function validatePaneTarget(target) {
   const t = String(target || "").trim();
-  // Expected: session:window.pane (we use numeric window/pane indexes)
-  if (!/^[-a-zA-Z0-9._]+:\d+\.\d+$/.test(t)) {
+  // Accept: project/session:window.pane or session:window.pane
+  if (!/^(?:[-a-zA-Z0-9._]+\/)?[-a-zA-Z0-9._]+:\d+\.\d+$/.test(t)) {
     throw new Error("Invalid tmux pane target: " + t);
   }
   return t;
@@ -90,23 +109,26 @@ function sendTextToPaneTarget(target, text) {
   if (!line) return;
   if (line.length > 4000) throw new Error("Text too long");
 
-  const sendArgs = workspaceTmuxArgs(["send-keys", "-t", t, "-l", line]);
+  const resolved = resolveTargetSocket(t);
+  const sendArgs = targetTmuxArgs(resolved.socketPath, ["send-keys", "-t", resolved.target, "-l", line]);
   execFileSync("tmux", sendArgs, { timeout: 5000 });
-  execFileSync("tmux", workspaceTmuxArgs(["send-keys", "-t", t, "Enter"]), { timeout: 5000 });
-  execFileSync("tmux", workspaceTmuxArgs(["send-keys", "-t", t, "Enter"]), { timeout: 5000 });
+  execFileSync("tmux", targetTmuxArgs(resolved.socketPath, ["send-keys", "-t", resolved.target, "Enter"]), { timeout: 5000 });
+  execFileSync("tmux", targetTmuxArgs(resolved.socketPath, ["send-keys", "-t", resolved.target, "Enter"]), { timeout: 5000 });
 }
 
 function sendCtrlCToPaneTarget(target) {
   const t = validatePaneTarget(target);
-  execFileSync("tmux", workspaceTmuxArgs(["send-keys", "-t", t, "C-c"]), { timeout: 5000 });
+  const resolved = resolveTargetSocket(t);
+  execFileSync("tmux", targetTmuxArgs(resolved.socketPath, ["send-keys", "-t", resolved.target, "C-c"]), { timeout: 5000 });
 }
 
 async function sendCtrlCSequenceToPaneTarget(target, options = {}) {
   const t = validatePaneTarget(target);
+  const resolved = resolveTargetSocket(t);
   const times = Math.max(1, Math.min(5, Number(options.times) || 3));
   const intervalMs = Math.max(0, Math.min(3000, Number(options.intervalMs) || 700));
   for (let i = 0; i < times; i++) {
-    execFileSync("tmux", workspaceTmuxArgs(["send-keys", "-t", t, "C-c"]), { timeout: 5000 });
+    execFileSync("tmux", targetTmuxArgs(resolved.socketPath, ["send-keys", "-t", resolved.target, "C-c"]), { timeout: 5000 });
     if (i < times - 1 && intervalMs > 0) await sleep(intervalMs);
   }
 }

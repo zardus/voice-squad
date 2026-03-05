@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Voice Squad is a multi-agent orchestration system with a **captain/workers** model:
 
 - The **captain** agent (Claude or Codex) runs in a dedicated tmux session and dispatches work.
-- **Workers** run in tmux panes on a separate tmux server.
+- **Workers** run as tmux windows inside per-project Docker containers.
 - A phone-friendly **voice/web UI** controls the captain over WebSocket + HTTP.
 
 `AGENTS.md` is a symlink to this file, so these instructions apply for both Claude and Codex agent tooling in this repo.
@@ -15,25 +15,35 @@ Voice Squad is a multi-agent orchestration system with a **captain/workers** mod
 ## Build & Run
 
 ```bash
-# Build and launch a squad (default captain: claude)
-docker compose up --build
+# Build all images (workspace must be built before first run)
+docker compose build
+docker compose --profile build build
+
+# Launch a squad (default captain: claude)
+HOST_HOME_PATH=$(pwd)/home docker compose up
 
 # Launch with codex as captain
-SQUAD_CAPTAIN=codex docker compose up --build
+SQUAD_CAPTAIN=codex HOST_HOME_PATH=$(pwd)/home docker compose up --build
 ```
 
-Required host env vars: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`  
+Required host env vars: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `HOST_HOME_PATH`
 Optional: `GH_TOKEN`, `SQUAD_CAPTAIN`, `VOICE_TOKEN`
+
+`HOST_HOME_PATH` must be the absolute host path to `./home`. It is required because the captain creates sibling Docker containers with bind mounts to the host filesystem.
 
 ## Current Runtime Topology (`docker-compose.yml`)
 
-The compose stack has **5 services**:
+The compose stack has **5 services** (workspace is build-only):
 
-- `workspace` — privileged Docker-in-Docker + tmux server for worker panes (`/run/squad-sockets/workspace-tmux/default`)
-- `captain` — runs Claude/Codex captain in its own tmux server (`/run/squad-sockets/captain-tmux/default`)
+- `workspace` — build-only image (profiles: ["build"]) with dev tools (tmux, Claude Code, Codex, nix, python, node). Captain starts project containers from this image.
+- `captain` — runs Claude/Codex captain in its own tmux server (`/run/squad-sockets/captain-tmux/default`). Has Docker socket to manage sibling project containers.
 - `voice-server` — Express/WebSocket server, STT/TTS, status + task APIs, captain control endpoints
 - `tunnel` — cloudflared quick tunnel and QR output
 - `pane-monitor` — idle worker alerts + captain heartbeat nudges
+
+Per-project containers (created at runtime by captain):
+
+- `squad-project-{NAME}` — each project gets its own container with socket at `/run/squad-sockets/projects/{NAME}/default`
 
 Shared volumes:
 
@@ -46,7 +56,7 @@ By default, compose does **not** publish port `3000` to the host; external acces
 
 Each runtime component is isolated under `src/` with its own Dockerfile/build context:
 
-- `src/workspace/` — Docker-in-Docker workspace with dev tools (dockerd, tmux, Claude Code, Codex, nix, python, node)
+- `src/workspace/` — Per-project workspace image with dev tools (tmux, Claude Code, Codex, nix, python, node). Creates `agents` tmux session on startup.
 - `src/captain/` — Captain container entrypoint + captain instructions/skills + helper scripts (`restart-captain.sh`, `switch-account.sh`, `speak`)
 - `src/voice-server/` — Voice server (Express + ws), STT/TTS integrations, tmux bridge, status daemon, PWA in `public/`
 - `src/tunnel/` — Cloudflared quick tunnel for external access
@@ -61,6 +71,7 @@ Each runtime component is isolated under `src/` with its own Dockerfile/build co
 - Captain task files live at:
   - `/home/ubuntu/captain/tasks/pending/*.task`
   - `/home/ubuntu/captain/tasks/archived/*.{task,summary,results,title,log}`
+- Per-project directories: `/home/ubuntu/projects/{PROJECT_NAME}/`
 - Image-installed code paths:
   - Captain working tree: `/opt/squad/captain`
   - Voice server code: `/opt/squad/voice`
@@ -68,10 +79,14 @@ Each runtime component is isolated under `src/` with its own Dockerfile/build co
 
 ## Key Architecture Details
 
-- **Dual tmux servers**:
+- **Per-project containers**:
+  - Captain starts project containers via `start-project` script using the host Docker socket.
+  - Each project gets a `squad-project-{NAME}` container running the workspace image.
+  - Workers are tmux windows in the project's `agents` session.
+  - Socket convention: `/run/squad-sockets/projects/{PROJECT_NAME}/default`
+- **Captain tmux server**:
   - Captain server socket: `/run/squad-sockets/captain-tmux/default`
-  - Worker/server socket: `/run/squad-sockets/workspace-tmux/default`
-  - Voice server and pane monitor read from both via `CAPTAIN_TMUX_SOCKET` and `WORKSPACE_TMUX_SOCKET`.
+  - Voice server and pane monitor discover project sockets dynamically via `PROJECTS_SOCKETS_DIR`.
 - **Captain lifecycle**:
   - Captain entrypoint creates the `captain` tmux session and starts tool via `/opt/squad/restart-captain.sh`.
   - `restart-captain.sh` launches Claude with `--dangerously-skip-permissions` and Codex with `--dangerously-bypass-approvals-and-sandbox`.
@@ -80,30 +95,29 @@ Each runtime component is isolated under `src/` with its own Dockerfile/build co
   - Browser audio -> WebSocket -> OpenAI Whisper (`stt.js`) -> tmux send-keys to `captain:0`
   - Captain uses `speak` script -> Unix socket (`/run/squad-sockets/speak.sock`) -> OpenAI TTS (`tts.js`) -> audio streamed back to connected clients
 - **Status and summaries**:
-  - `status-daemon.js` polls tmux panes every second only while status clients are active.
+  - `status-daemon.js` polls captain tmux + all project sockets every second only while status clients are active.
   - `/api/summary` and pending-task worker status enrichment call Anthropic Haiku (with secret scrubbing).
 - **PWA tabs** currently: `Terminal`, `Screens`, `Summary`, `Tasks`, `Voice`
 - **Accounts/login**:
   - Voice UI supports `claude login` / `codex auth login` via `/api/login` + `/api/login-status`
   - Captain-side account switching helper: `src/captain/switch-account.sh`
-- Only the `workspace` service is privileged (for Docker-in-Docker).
 
 ## Updating a Running Stack
-
-`utils/update.sh` no longer exists in this repo.
 
 After editing source files, rebuild/restart via compose:
 
 ```bash
 # Rebuild and restart everything
-docker compose up -d --build
+HOST_HOME_PATH=$(pwd)/home docker compose up -d --build
 
 # Or rebuild only one service you changed
 docker compose up -d --build voice-server
 docker compose up -d --build captain
 docker compose up -d --build pane-monitor
 docker compose up -d --build tunnel
-docker compose up -d --build workspace
+
+# Rebuild workspace image (used by project containers)
+docker compose --profile build build workspace
 ```
 
 Useful logs:

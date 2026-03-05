@@ -3,15 +3,14 @@
 set -euo pipefail
 
 CAPTAIN_TMUX_SOCKET="${CAPTAIN_TMUX_SOCKET:-/run/squad-sockets/captain-tmux/default}"
-WORKSPACE_TMUX_SOCKET="${WORKSPACE_TMUX_SOCKET:-/run/squad-sockets/workspace-tmux/default}"
+PROJECTS_SOCKETS_DIR="${PROJECTS_SOCKETS_DIR:-/run/squad-sockets/projects}"
 CAPTAIN_TMUX_DIR="$(dirname "$CAPTAIN_TMUX_SOCKET")"
-WORKSPACE_TMUX_DIR="$(dirname "$WORKSPACE_TMUX_SOCKET")"
-export CAPTAIN_TMUX_SOCKET WORKSPACE_TMUX_SOCKET
+export CAPTAIN_TMUX_SOCKET PROJECTS_SOCKETS_DIR
 
 # Ensure tmux socket dirs are accessible
-sudo mkdir -p "$CAPTAIN_TMUX_DIR" "$WORKSPACE_TMUX_DIR" 2>/dev/null || true
-sudo chown ubuntu:ubuntu "$CAPTAIN_TMUX_DIR" "$WORKSPACE_TMUX_DIR" 2>/dev/null || true
-sudo chmod 755 "$CAPTAIN_TMUX_DIR" "$WORKSPACE_TMUX_DIR" 2>/dev/null || true
+sudo mkdir -p "$CAPTAIN_TMUX_DIR" "$PROJECTS_SOCKETS_DIR" 2>/dev/null || true
+sudo chown ubuntu:ubuntu "$CAPTAIN_TMUX_DIR" "$PROJECTS_SOCKETS_DIR" 2>/dev/null || true
+sudo chmod 755 "$CAPTAIN_TMUX_DIR" "$PROJECTS_SOCKETS_DIR" 2>/dev/null || true
 
 # Wait for captain tmux session (started by captain container)
 echo "Waiting for captain tmux session..."
@@ -26,20 +25,6 @@ if ! tmux -S "$CAPTAIN_TMUX_SOCKET" has-session -t captain 2>/dev/null; then
     exit 1
 fi
 echo "[ok] captain tmux session found"
-
-# Wait for workspace tmux session (started by workspace container)
-echo "Waiting for workspace tmux session..."
-timeout=30
-while ! tmux -S "$WORKSPACE_TMUX_SOCKET" has-session -t workspace 2>/dev/null && [ $timeout -gt 0 ]; do
-    sleep 1
-    timeout=$((timeout - 1))
-done
-
-if ! tmux -S "$WORKSPACE_TMUX_SOCKET" has-session -t workspace 2>/dev/null; then
-    echo "WARNING: workspace tmux session not available after 30s (some tests may fail)"
-else
-    echo "[ok] workspace tmux session found"
-fi
 
 # Discover VOICE_TOKEN from shared volume if not set in environment
 if [ -z "${VOICE_TOKEN:-}" ] && [ -f /home/ubuntu/.voice-token ]; then

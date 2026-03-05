@@ -2,17 +2,16 @@
 set -e
 
 CAPTAIN_TMUX_SOCKET="${CAPTAIN_TMUX_SOCKET:-/run/squad-sockets/captain-tmux/default}"
-WORKSPACE_TMUX_SOCKET="${WORKSPACE_TMUX_SOCKET:-/run/squad-sockets/workspace-tmux/default}"
+PROJECTS_SOCKETS_DIR="${PROJECTS_SOCKETS_DIR:-/run/squad-sockets/projects}"
 SPEAK_SOCKET_PATH="${SPEAK_SOCKET_PATH:-/run/squad-sockets/speak.sock}"
 CAPTAIN_TMUX_DIR="$(dirname "$CAPTAIN_TMUX_SOCKET")"
-WORKSPACE_TMUX_DIR="$(dirname "$WORKSPACE_TMUX_SOCKET")"
 SPEAK_SOCKET_DIR="$(dirname "$SPEAK_SOCKET_PATH")"
-export CAPTAIN_TMUX_SOCKET WORKSPACE_TMUX_SOCKET SPEAK_SOCKET_PATH
+export CAPTAIN_TMUX_SOCKET PROJECTS_SOCKETS_DIR SPEAK_SOCKET_PATH
 
 # Ensure tmux socket directories are accessible
-sudo mkdir -p "$CAPTAIN_TMUX_DIR" "$WORKSPACE_TMUX_DIR" "$SPEAK_SOCKET_DIR"
-sudo chown ubuntu:ubuntu "$CAPTAIN_TMUX_DIR" "$WORKSPACE_TMUX_DIR" "$SPEAK_SOCKET_DIR"
-sudo chmod 755 "$CAPTAIN_TMUX_DIR" "$WORKSPACE_TMUX_DIR" "$SPEAK_SOCKET_DIR"
+sudo mkdir -p "$CAPTAIN_TMUX_DIR" "$PROJECTS_SOCKETS_DIR" "$SPEAK_SOCKET_DIR"
+sudo chown ubuntu:ubuntu "$CAPTAIN_TMUX_DIR" "$PROJECTS_SOCKETS_DIR" "$SPEAK_SOCKET_DIR"
+sudo chmod 755 "$CAPTAIN_TMUX_DIR" "$PROJECTS_SOCKETS_DIR" "$SPEAK_SOCKET_DIR"
 
 # Source user environment if present
 if [ -f /home/ubuntu/env ]; then

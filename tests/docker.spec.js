@@ -5,7 +5,7 @@
  */
 const { test, expect } = require("@playwright/test");
 const { BASE_URL, TOKEN } = require("./helpers/config");
-const { captainExec, workspaceExec } = require("./helpers/tmux");
+const { captainExec } = require("./helpers/tmux");
 const http = require("http");
 
 test.describe("Docker infrastructure", () => {
@@ -38,12 +38,6 @@ test.describe("Docker infrastructure", () => {
     expect(resp.status).toBe(200);
     const json = JSON.parse(resp.data);
     expect(json).toHaveProperty("sessions");
-  });
-
-  test("workspace tmux server is running", () => {
-    const out = workspaceExec("list-sessions 2>&1 || true");
-    expect(out).not.toContain("no server running");
-    expect(out).not.toContain("error connecting");
   });
 
   test("captain tmux session exists", () => {
