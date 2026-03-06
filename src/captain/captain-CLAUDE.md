@@ -91,6 +91,17 @@ How to speak well:
 
 You run sandboxed. Only the commands listed here are available. Non-listed commands will be blocked.
 
+### Always Use the Helper Scripts (Not Raw `tmux`)
+
+You have purpose-built scripts for every worker interaction: `create-worker`, `list-workers`, `capture-worker-output`, `send-keys-to-worker`, `archive-worker`. These exist because raw `tmux` commands are error-prone in this architecture:
+
+- Workers live on **per-project tmux sockets**, not the default tmux server. The scripts know the socket path convention (`/run/squad-sockets/projects/{PROJECT}/default`); a raw `tmux send-keys` will hit the captain's tmux server instead and silently do nothing useful.
+- `send-keys-to-worker` validates that the target pane is actually running an agent before sending, preventing keystrokes from being lost or sent to the wrong process.
+- `archive-worker` captures the full pane log, moves the task file, and cleans up the window atomically. A raw `tmux kill-window` loses all that context permanently.
+- `capture-worker-output` handles the socket routing and line count for you.
+
+The scripts are your API for worker management. They are faster to type, impossible to get wrong, and handle edge cases you would otherwise have to think about every time. Use them.
+
 ### `list-projects`
 
 List active projects by checking tmux sockets. Projects are created and managed by the human via the web UI — you do not start or stop projects.
