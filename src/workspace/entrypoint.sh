@@ -28,7 +28,9 @@ export OPENAI_API_KEY="${OPENAI_API_KEY:-${_OPENAI_API_KEY:-}}"
 export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-${_ANTHROPIC_API_KEY:-}}"
 
 # Create the agents tmux session at a fixed socket path (workers run as windows here)
-tmux -S "$SOCKET_PATH" new-session -d -s agents -c /home/ubuntu
+# The initial window is named PLACEHOLDER and is hidden from the UI;
+# actual workers are added as new windows by create-worker.
+tmux -S "$SOCKET_PATH" new-session -d -s agents -n PLACEHOLDER -c /home/ubuntu
 
 # Keep the container alive
 exec sleep infinity

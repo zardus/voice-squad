@@ -82,8 +82,11 @@ do
         for socket in "$PROJECTS_SOCKETS_DIR"/*/default; do
             [ -S "$socket" ] || continue
             project_name=$(basename "$(dirname "$socket")")
-            tmux -S "$socket" list-panes -a -F '#{session_name}:#{window_index}' 2>/dev/null \
-                | while read -r pane; do echo "$socket $pane ${project_name}/${pane}"; done
+            tmux -S "$socket" list-panes -a -F '#{session_name}:#{window_index} #{window_name}' 2>/dev/null \
+                | while read -r pane wname; do
+                    [ "$wname" = "PLACEHOLDER" ] && continue
+                    echo "$socket $pane ${project_name}/${pane}"
+                done
         done
     )
 

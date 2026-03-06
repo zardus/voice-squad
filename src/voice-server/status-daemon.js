@@ -71,7 +71,7 @@ async function collectPanesFromSocket(socket, sessionPrefix) {
       const windowName = parts[0];
       const windowId = parts[1];
       const windowIndex = safeInt(parts[2], null);
-      if (!windowName) return null;
+      if (!windowName || windowName === "PLACEHOLDER") return null;
 
       const panesRaw = await tmuxExecAsync([
         "list-panes",
