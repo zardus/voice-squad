@@ -137,7 +137,7 @@ It layers `docker-compose.test.yml` on top of `docker-compose.yml`, builds image
 ./test.sh api.spec.js
 
 # Run overseer E2E tests (requires real API keys in env or home/env)
-TEST_OVERSEER=1 ./test.sh captain.spec.js
+TEST_OVERSEER=1 ./test.sh overseer.spec.js
 ```
 
 Notes:

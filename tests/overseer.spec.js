@@ -3,7 +3,7 @@
  * Overseer E2E tests — start a real overseer agent and exercise the full pipeline.
  *
  * These tests require real API keys and are opt-in:
- *   TEST_OVERSEER=1 ./test.sh captain.spec.js
+ *   TEST_OVERSEER=1 ./test.sh overseer.spec.js
  *
  * API keys should be set as env vars (OPENAI_API_KEY, ANTHROPIC_API_KEY) or
  * written to home/env (sourced automatically by test.sh).
