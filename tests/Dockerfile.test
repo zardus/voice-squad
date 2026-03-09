@@ -37,8 +37,8 @@ COPY src/overseer/restart-overseer.sh /opt/squad/restart-overseer.sh
 COPY src/pane-monitor/pane-monitor.sh /opt/squad/pane-monitor.sh
 COPY src/overseer/switch-account.sh /opt/tests/src/overseer/switch-account.sh
 COPY src/overseer/speak /opt/squad/overseer/speak
-COPY src/overseer/bin/create-worker /opt/squad/overseer/create-worker
-RUN chmod +x /opt/squad/restart-overseer.sh /opt/squad/pane-monitor.sh /opt/squad/overseer/speak /opt/squad/overseer/create-worker
+COPY src/hub/worker-manager.js /opt/squad/hub/worker-manager.js
+RUN chmod +x /opt/squad/restart-overseer.sh /opt/squad/pane-monitor.sh /opt/squad/overseer/speak
 
 # ── Switch to ubuntu for npm/playwright install ─────────────
 # Avoids a slow chown -R over hundreds of MB of Chromium binaries.

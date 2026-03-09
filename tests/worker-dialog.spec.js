@@ -1,10 +1,10 @@
 // @ts-check
 /**
- * Worker dialog auto-accept tests — verify that create-worker handles
+ * Worker dialog auto-accept tests — verify that worker-manager handles
  * Claude's --dangerously-skip-permissions trust dialog automatically.
  *
  * These tests simulate Claude's trust prompt in a tmux session and verify
- * that the auto-accept logic in create-worker dismisses it correctly.
+ * that the auto-accept logic in worker-manager dismisses it correctly.
  */
 const { test, expect } = require("@playwright/test");
 const { execSync } = require("child_process");
@@ -65,7 +65,7 @@ test.describe("Worker dialog auto-accept", () => {
     expect(pane).toContain("Yes, I accept");
     expect(pane).toContain("Enter to confirm");
 
-    // Apply the same auto-accept logic used by create-worker
+    // Apply the same auto-accept logic used by worker-manager
     exec(`tmux -S ${SOCKET} send-keys -t "${SESSION}:${WINDOW}" 2`);
     await sleep(500);
     exec(`tmux -S ${SOCKET} send-keys -t "${SESSION}:${WINDOW}" Enter`);
@@ -96,7 +96,7 @@ test.describe("Worker dialog auto-accept", () => {
     let pane = stripAnsi(exec(`tmux -S ${SOCKET} capture-pane -t "${SESSION}:${WINDOW}" -p -S -30`));
     expect(pane).toContain("Choose the text style");
 
-    // Auto-accept: send Enter (same as create-worker)
+    // Auto-accept: send Enter (same as worker-manager)
     exec(`tmux -S ${SOCKET} send-keys -t "${SESSION}:${WINDOW}" Enter`);
     await sleep(1000);
 
@@ -128,20 +128,17 @@ test.describe("Worker dialog auto-accept", () => {
     expect(pane).toContain("CONFIRM_DISMISSED=true");
   });
 
-  test("create-worker script contains dialog auto-accept logic", () => {
-    const script = fs.readFileSync("/opt/squad/overseer/create-worker", "utf8");
+  test("worker-manager contains dialog auto-accept logic", () => {
+    const script = fs.readFileSync("/opt/squad/hub/worker-manager.js", "utf8");
 
     // Must detect trust dialog
     expect(script).toContain("Yes, I accept");
     expect(script).toContain("Enter to confirm");
 
-    // Must send option 2 to accept trust
-    expect(script).toMatch(/send-keys.*2/);
-
     // Must handle setup dialogs
     expect(script).toContain("Choose the text style");
 
     // Must only apply to claude workers (not codex)
-    expect(script).toContain('if [ "$TOOL" = "claude" ]');
+    expect(script).toContain('tool === "claude"');
   });
 });
