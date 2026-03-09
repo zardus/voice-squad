@@ -14,7 +14,7 @@ RUN apt-get update && apt-get install -y \
     locales \
     && rm -rf /var/lib/apt/lists/*
 
-# Docker CLI (voice-server manages sibling project containers)
+# Docker CLI (hub manages sibling project containers)
 RUN install -m 0755 -d /etc/apt/keyrings \
     && curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg \
     && chmod a+r /etc/apt/keyrings/docker.gpg \
@@ -39,23 +39,23 @@ RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
 RUN echo "ubuntu ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
 # Shared sockets directory for cross-container sharing
-RUN mkdir -p /run/squad-sockets/captain-tmux /run/squad-sockets/projects \
+RUN mkdir -p /run/squad-sockets/overseer-tmux /run/squad-sockets/projects \
     && chown -R ubuntu:ubuntu /run/squad-sockets
 
 # Build metadata
 ARG GIT_COMMIT=unknown
 RUN date -u +"%Y-%m-%dT%H:%M:%SZ" > /tmp/build-time.txt
 
-# Voice server
-COPY package.json server.js tmux-bridge.js stt.js tts.js status-daemon.js project-manager.js test-stt.js /opt/squad/voice/
-COPY public/ /opt/squad/voice/public/
-RUN cd /opt/squad/voice && npm install --production
-RUN mv /tmp/build-time.txt /opt/squad/voice/build-time.txt \
-    && echo "$GIT_COMMIT" > /opt/squad/voice/git-commit.txt
+# Hub server
+COPY package.json server.js tmux-bridge.js stt.js tts.js status-daemon.js project-manager.js worker-manager.js test-stt.js /opt/squad/hub/
+COPY public/ /opt/squad/hub/public/
+RUN cd /opt/squad/hub && npm install --production
+RUN mv /tmp/build-time.txt /opt/squad/hub/build-time.txt \
+    && echo "$GIT_COMMIT" > /opt/squad/hub/git-commit.txt
 
 # Entrypoint
-COPY entrypoint.sh /entrypoint-voice.sh
-RUN chmod +x /entrypoint-voice.sh
+COPY entrypoint.sh /entrypoint-hub.sh
+RUN chmod +x /entrypoint-hub.sh
 
 EXPOSE 3000
 
@@ -63,4 +63,4 @@ USER ubuntu
 
 WORKDIR /home/ubuntu
 
-ENTRYPOINT ["/entrypoint-voice.sh"]
+ENTRYPOINT ["/entrypoint-hub.sh"]

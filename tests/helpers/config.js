@@ -22,7 +22,7 @@ function discoverToken() {
     if (match) return match[1];
   } catch {}
 
-  // Try reading from shared volume (voice-server writes .voice-token on boot)
+  // Try reading from shared volume (hub writes .voice-token on boot)
   try {
     const token = fs.readFileSync("/home/ubuntu/.voice-token", "utf8").trim();
     if (token) return token;
@@ -31,7 +31,7 @@ function discoverToken() {
   return null;
 }
 
-const BASE_URL = process.env.TEST_BASE_URL || "http://voice-server:3000";
+const BASE_URL = process.env.TEST_BASE_URL || "http://hub:3000";
 const TOKEN = discoverToken();
 
 function pageUrl(token) {

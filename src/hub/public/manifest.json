@@ -1,7 +1,7 @@
 {
   "name": "Squad Voice",
   "short_name": "Squad",
-  "description": "Voice interface for Squad captain",
+  "description": "Voice interface for Squad hub",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#1a1a2e",

@@ -71,7 +71,7 @@ test.describe("TTS end-to-end pipeline", () => {
     await page.evaluate((wavSrc) => {
       const ws = window.__testWs;
       ws.onmessage({ data: JSON.stringify({ type: "tts_config", format: "wav", mime: "audio/wav" }) });
-      ws.onmessage({ data: JSON.stringify({ type: "speak_text", text: "Hello from captain" }) });
+      ws.onmessage({ data: JSON.stringify({ type: "speak_text", text: "Hello from overseer" }) });
       ws.onmessage({ data: eval(wavSrc) });
     }, generateSilenceWavSource());
 
@@ -108,7 +108,7 @@ test.describe("TTS end-to-end pipeline", () => {
     await page.waitForFunction(() => !!window.__testWs);
 
     const checked = await page.evaluate(() => {
-      const cb = document.getElementById("autoread-cb");
+      const cb = document.getElementById("voice-autoread-cb");
       return cb ? cb.checked : null;
     });
     expect(checked).toBe(true);
@@ -205,7 +205,7 @@ test.describe("TTS end-to-end pipeline", () => {
       ws.onmessage({ data: JSON.stringify({ type: "speak_text", text: "Status update: all tasks complete" }) });
     });
 
-    await expect(page.locator("#summary")).toHaveText("Status update: all tasks complete");
+    await expect(page.locator("#voice-summary")).toHaveText("Status update: all tasks complete");
   });
 
   // ── Multiple speak messages queue correctly (FIFO) ─────────────
@@ -528,12 +528,12 @@ test.describe("TTS end-to-end pipeline", () => {
       ws.onmessage({
         data: JSON.stringify({
           type: "connected",
-          captain: "claude",
+          overseer: "claude",
           lastSpeakText: "Previous status: all workers idle",
         }),
       });
     });
 
-    await expect(page.locator("#summary")).toHaveText("Previous status: all workers idle");
+    await expect(page.locator("#voice-summary")).toHaveText("Previous status: all workers idle");
   });
 });

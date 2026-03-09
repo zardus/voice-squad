@@ -1,22 +1,22 @@
 const { execSync, execFile, execFileSync } = require("child_process");
 const path = require("path");
 
-const TARGET = "captain:0";
+const TARGET = "overseer:0";
 const ENTER_RETRY_COUNT = 2;
 const ENTER_RETRY_DELAY_MS = 400;
 const TERMINAL_TRIM_BOTTOM_LINES = Number(process.env.TMUX_TERMINAL_TRIM_BOTTOM_LINES || 5);
 
-const CAPTAIN_TMUX_SOCKET = process.env.CAPTAIN_TMUX_SOCKET || "";
+const OVERSEER_TMUX_SOCKET = process.env.OVERSEER_TMUX_SOCKET || "";
 const PROJECTS_SOCKETS_DIR = process.env.PROJECTS_SOCKETS_DIR || "/run/squad-sockets/projects";
 
-function captainTmuxArgs(args) {
-  if (CAPTAIN_TMUX_SOCKET) return ["-S", CAPTAIN_TMUX_SOCKET, ...args];
+function overseerTmuxArgs(args) {
+  if (OVERSEER_TMUX_SOCKET) return ["-S", OVERSEER_TMUX_SOCKET, ...args];
   return args;
 }
 
 /**
  * Resolve target socket from a pane target string.
- * Captain targets: "captain:N.M" → captain socket
+ * Overseer targets: "overseer:N.M" → overseer socket
  * Project targets: "projectName/session:N.M" → project socket
  */
 function resolveTargetSocket(target) {
@@ -28,8 +28,8 @@ function resolveTargetSocket(target) {
     const socketPath = path.join(PROJECTS_SOCKETS_DIR, projectName, "default");
     return { socketPath, target: remainder };
   }
-  // No slash — assume captain socket
-  return { socketPath: CAPTAIN_TMUX_SOCKET, target: t };
+  // No slash — assume overseer socket
+  return { socketPath: OVERSEER_TMUX_SOCKET, target: t };
 }
 
 function targetTmuxArgs(socketPath, args) {
@@ -60,7 +60,7 @@ function trimBottomLines(output, n) {
 
 function capturePaneOutput() {
   try {
-    const args = captainTmuxArgs(["capture-pane", "-t", TARGET, "-p", "-S", "-500"]);
+    const args = overseerTmuxArgs(["capture-pane", "-t", TARGET, "-p", "-S", "-500"]);
     const raw = execFileSync("tmux", args, {
       encoding: "utf-8",
       timeout: 5000,
@@ -73,7 +73,7 @@ function capturePaneOutput() {
 
 function capturePaneOutputAsync() {
   return new Promise((resolve) => {
-    const args = captainTmuxArgs(["capture-pane", "-t", TARGET, "-p", "-S", "-500"]);
+    const args = overseerTmuxArgs(["capture-pane", "-t", TARGET, "-p", "-S", "-500"]);
     execFile("tmux", args, {
       encoding: "utf-8",
       timeout: 5000,
@@ -87,13 +87,13 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function sendToCaptain(text) {
-  const sendKeysArgs = captainTmuxArgs(["send-keys", "-t", TARGET, "-l", text]);
+async function sendToOverseer(text) {
+  const sendKeysArgs = overseerTmuxArgs(["send-keys", "-t", TARGET, "-l", text]);
   execFileSync("tmux", sendKeysArgs, { timeout: 5000 });
   // Delay + repeated Enter reduces "typed but not submitted" failures caused by prompt UI/autocomplete.
   await sleep(ENTER_RETRY_DELAY_MS);
   for (let i = 0; i < ENTER_RETRY_COUNT; i++) {
-    const enterArgs = captainTmuxArgs(["send-keys", "-t", TARGET, "Enter"]);
+    const enterArgs = overseerTmuxArgs(["send-keys", "-t", TARGET, "Enter"]);
     execFileSync("tmux", enterArgs, { timeout: 5000 });
     if (i < ENTER_RETRY_COUNT - 1) await sleep(ENTER_RETRY_DELAY_MS);
   }
@@ -134,7 +134,7 @@ async function sendCtrlCSequenceToPaneTarget(target, options = {}) {
 }
 
 module.exports = {
-  sendToCaptain,
+  sendToOverseer,
   capturePaneOutput,
   capturePaneOutputAsync,
   sendTextToPaneTarget,

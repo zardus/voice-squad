@@ -1,9 +1,7 @@
 {
   "permissions": {
     "allow": [
-      "Bash(create_pending_task *)",
       "Bash(list-workers *)",
-      "Bash(create-worker *)",
       "Bash(capture-worker-output *)",
       "Bash(send-keys-to-worker *)",
       "Bash(archive-worker *)",

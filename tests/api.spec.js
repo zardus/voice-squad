@@ -8,8 +8,8 @@ const fs = require("fs/promises");
 const path = require("path");
 const WebSocketCtor = globalThis.WebSocket;
 
-const CAPTAIN_DIR = process.env.SQUAD_CAPTAIN_DIR || "/home/ubuntu/captain";
-const TASK_DEFS_DIR = process.env.SQUAD_TASK_DEFS_DIR || path.join(CAPTAIN_DIR, "tasks");
+const TASKS_DIR = process.env.SQUAD_TASKS_DIR || "/home/ubuntu/tasks";
+const TASK_DEFS_DIR = process.env.SQUAD_TASK_DEFS_DIR || TASKS_DIR;
 const TASK_DEFS_PENDING_DIR = path.join(TASK_DEFS_DIR, "pending");
 const TASK_DEFS_ARCHIVED_DIR = path.join(TASK_DEFS_DIR, "archived");
 const TEST_PREFIX = `playwright-completed-${Date.now()}`;
@@ -256,10 +256,10 @@ test.describe("API endpoints", () => {
     expect(resp.status).toBe(401);
   });
 
-  // --- POST /api/restart-captain ---
+  // --- POST /api/restart-overseer ---
 
-  test("POST /api/restart-captain without token returns 401", async () => {
-    const resp = await fetch(`${BASE_URL}/api/restart-captain`, {
+  test("POST /api/restart-overseer without token returns 401", async () => {
+    const resp = await fetch(`${BASE_URL}/api/restart-overseer`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ tool: "claude" }),
@@ -267,8 +267,8 @@ test.describe("API endpoints", () => {
     expect(resp.status).toBe(401);
   });
 
-  test("POST /api/restart-captain with bad token returns 401", async () => {
-    const resp = await fetch(`${BASE_URL}/api/restart-captain`, {
+  test("POST /api/restart-overseer with bad token returns 401", async () => {
+    const resp = await fetch(`${BASE_URL}/api/restart-overseer`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ token: "bad-token", tool: "claude" }),
@@ -276,8 +276,8 @@ test.describe("API endpoints", () => {
     expect(resp.status).toBe(401);
   });
 
-  test("POST /api/restart-captain with invalid tool returns 400", async () => {
-    const resp = await fetch(`${BASE_URL}/api/restart-captain`, {
+  test("POST /api/restart-overseer with invalid tool returns 400", async () => {
+    const resp = await fetch(`${BASE_URL}/api/restart-overseer`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ token: TOKEN, tool: "invalid-tool" }),
@@ -287,8 +287,8 @@ test.describe("API endpoints", () => {
     expect(json.error).toContain("tool must be");
   });
 
-  test("POST /api/restart-captain with empty body returns 401", async () => {
-    const resp = await fetch(`${BASE_URL}/api/restart-captain`, {
+  test("POST /api/restart-overseer with empty body returns 401", async () => {
+    const resp = await fetch(`${BASE_URL}/api/restart-overseer`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({}),
@@ -296,8 +296,8 @@ test.describe("API endpoints", () => {
     expect(resp.status).toBe(401);
   });
 
-  test("POST /api/restart-captain with missing tool returns 400", async () => {
-    const resp = await fetch(`${BASE_URL}/api/restart-captain`, {
+  test("POST /api/restart-overseer with missing tool returns 400", async () => {
+    const resp = await fetch(`${BASE_URL}/api/restart-overseer`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ token: TOKEN }),
@@ -307,8 +307,8 @@ test.describe("API endpoints", () => {
     expect(json.error).toContain("tool must be");
   });
 
-  test("POST /api/restart-captain with valid params succeeds", async () => {
-    const resp = await fetch(`${BASE_URL}/api/restart-captain`, {
+  test("POST /api/restart-overseer with valid params succeeds", async () => {
+    const resp = await fetch(`${BASE_URL}/api/restart-overseer`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ token: TOKEN, tool: "claude" }),
@@ -323,7 +323,7 @@ test.describe("API endpoints", () => {
     }
   });
 
-  test("POST /api/restart-captain concurrent request returns 409", async () => {
+  test("POST /api/restart-overseer concurrent request returns 409", async () => {
     // Fire two restarts simultaneously — the second should be rejected
     const body = JSON.stringify({ token: TOKEN, tool: "claude" });
     const opts = {
@@ -332,10 +332,10 @@ test.describe("API endpoints", () => {
       body,
     };
     const [resp1, resp2] = await Promise.all([
-      fetch(`${BASE_URL}/api/restart-captain`, opts),
+      fetch(`${BASE_URL}/api/restart-overseer`, opts),
       // Small delay so the first request is accepted before the second arrives
       new Promise((r) => setTimeout(r, 100)).then(() =>
-        fetch(`${BASE_URL}/api/restart-captain`, opts)
+        fetch(`${BASE_URL}/api/restart-overseer`, opts)
       ),
     ]);
 
@@ -366,7 +366,7 @@ test.describe("API endpoints", () => {
     expect(resp.status).toBe(200);
     const json = await resp.json();
     expect(json).toHaveProperty("restartInProgress");
-    expect(json).toHaveProperty("captain");
+    expect(json).toHaveProperty("overseer");
     expect(typeof json.restartInProgress).toBe("boolean");
   });
 

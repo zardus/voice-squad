@@ -13,8 +13,8 @@ const { TOKEN, pageUrl } = require("./helpers/config");
 const fs = require("fs/promises");
 const path = require("path");
 
-const CAPTAIN_DIR = process.env.SQUAD_CAPTAIN_DIR || "/home/ubuntu/captain";
-const TASK_DEFS_DIR = process.env.SQUAD_TASK_DEFS_DIR || path.join(CAPTAIN_DIR, "tasks");
+const TASKS_DIR = process.env.SQUAD_TASKS_DIR || "/home/ubuntu/tasks";
+const TASK_DEFS_DIR = process.env.SQUAD_TASK_DEFS_DIR || TASKS_DIR;
 const TASK_DEFS_PENDING_DIR = path.join(TASK_DEFS_DIR, "pending");
 const TASK_DEFS_ARCHIVED_DIR = path.join(TASK_DEFS_DIR, "archived");
 const TEST_TASK_NAME = `e2e-completed-test-${Date.now()}`;

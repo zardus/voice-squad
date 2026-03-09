@@ -1,21 +1,27 @@
 #!/bin/bash
-# pane-monitor.sh — Monitor all tmux panes (captain heartbeat + worker idle detection).
+# pane-monitor.sh — Monitor all tmux panes (overseer heartbeat + worker idle detection).
 #
-# Captain pane (captain:0): configurable idle threshold → injects HEARTBEAT nudge
-# Worker panes (on project tmux servers): 30-second idle threshold → sends IDLE ALERT to captain
+# Overseer pane (overseer:0): configurable idle threshold → injects HEARTBEAT nudge
+# Worker panes (on project tmux servers):
+#   30-second idle threshold → sends alert to overseer for nudging
+#   60-second idle threshold → alerts human via speak
 #
 # Checks every 1 second, tracks per-pane state via content hashing.
 # One-shot notification per idle period; resets when activity resumes.
 # Dynamically discovers new/killed project containers.
 #
 # Environment:
-#   CAPTAIN_TMUX_SOCKET       — socket path for captain tmux server (for sending alerts + monitoring captain)
-#   PROJECTS_SOCKETS_DIR      — directory containing per-project socket dirs (default: /run/squad-sockets/projects)
-#   HEARTBEAT_INTERVAL_SECONDS — captain heartbeat threshold in seconds (default: 900 = 15 minutes)
+#   OVERSEER_TMUX_SOCKET       — socket path for overseer tmux server
+#   PROJECTS_SOCKETS_DIR       — directory containing per-project socket dirs (default: /run/squad-sockets/projects)
+#   HEARTBEAT_INTERVAL_SECONDS — overseer heartbeat threshold in seconds (default: 900 = 15 minutes)
+#   SPEAK_SOCKET_PATH          — unix socket for speak/TTS (default: /run/squad-sockets/speak.sock)
 
-WORKER_THRESHOLD=30     # 30 seconds
+WORKER_OVERSEER_THRESHOLD=30   # 30 seconds — notify overseer
+WORKER_HUMAN_THRESHOLD=60      # 60 seconds — notify human via speak
 HEARTBEAT_THRESHOLD="${HEARTBEAT_INTERVAL_SECONDS:-900}"
 PROJECTS_SOCKETS_DIR="${PROJECTS_SOCKETS_DIR:-/run/squad-sockets/projects}"
+OVERSEER_TMUX_SOCKET="${OVERSEER_TMUX_SOCKET:-/run/squad-sockets/overseer-tmux/default}"
+SPEAK_SOCKET_PATH="${SPEAK_SOCKET_PATH:-/run/squad-sockets/speak.sock}"
 LOGFILE="/tmp/pane-monitor.log"
 
 set -o pipefail
@@ -24,15 +30,19 @@ log() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') $1" >> "$LOGFILE"
 }
 
-log "Pane monitor started (pid=$$, worker_threshold=${WORKER_THRESHOLD}s, heartbeat_threshold=${HEARTBEAT_THRESHOLD}s)"
+speak_to_human() {
+    if [ -S "$SPEAK_SOCKET_PATH" ]; then
+        curl -s --unix-socket "$SPEAK_SOCKET_PATH" -X POST -H "Content-Type: application/json" \
+            -d "{\"text\": \"$1\"}" http://localhost/speak > /dev/null 2>&1 || true
+    fi
+}
+
+log "Pane monitor started (pid=$$, overseer_threshold=${WORKER_OVERSEER_THRESHOLD}s, human_threshold=${WORKER_HUMAN_THRESHOLD}s, heartbeat_threshold=${HEARTBEAT_THRESHOLD}s)"
 
 declare -A last_hash=( )
 declare -A last_change_epoch=( )
-declare -A notified_idle=( )
-
-# Each line from the pane enumeration has 3 fields: socket tmux_target display_name
-# For captain: CAPTAIN_SOCKET captain:0 captain:0
-# For projects: /path/to/socket agents:0 projectName/agents:0
+declare -A notified_overseer=( )
+declare -A notified_human=( )
 
 while true
 do
@@ -41,44 +51,52 @@ do
         key="${socket}|${display_name}"
         now_epoch=$(date +%s)
 
-        if [ "$display_name" == "captain:0" ]; then
-            threshold="$HEARTBEAT_THRESHOLD"
-        else
-            threshold="$WORKER_THRESHOLD"
-        fi
-
         pane_hash=$(tmux -S "$socket" capture-pane -t "$tmux_target" -p 2>/dev/null | md5sum) || continue
         if [ "${last_hash[$key]:-}" != "$pane_hash" ]
         then
             last_hash[$key]="$pane_hash"
             last_change_epoch[$key]="$now_epoch"
-            notified_idle[$key]=0
+            notified_overseer[$key]=0
+            notified_human[$key]=0
             continue
         fi
 
         unchanged_for=$(( now_epoch - ${last_change_epoch[$key]:-$now_epoch} ))
-        if [ "$unchanged_for" -lt "$threshold" ] || [ "${notified_idle[$key]:-0}" -eq 1 ]
-        then
-            continue
-        fi
 
-        if [ "$display_name" == "captain:0" ]
+        if [ "$display_name" == "overseer:0" ]
         then
-            log "HEARTBEAT: Captain pane idle for ${HEARTBEAT_THRESHOLD}s — injecting nudge"
-            tmux -S "$CAPTAIN_TMUX_SOCKET" send-keys -t captain:0 \
-                'HEARTBEAT MESSAGE: please do a check of the current tasks and nudge them along or clean them up if reasonable. Use list-workers to see all workers, capture-worker-output to check their status, send-keys-to-worker to nudge stuck ones, and archive-worker to clean up completed tasks. If there are any concrete developments worth reporting, use the speak command to give the human a voice update via text-to-speech.' 2>/dev/null
+            # Overseer heartbeat (same as before)
+            if [ "$unchanged_for" -ge "$HEARTBEAT_THRESHOLD" ] && [ "${notified_overseer[$key]:-0}" -eq 0 ]; then
+                log "HEARTBEAT: Overseer pane idle for ${HEARTBEAT_THRESHOLD}s — injecting nudge"
+                tmux -S "$OVERSEER_TMUX_SOCKET" send-keys -t overseer:0 \
+                    'HEARTBEAT MESSAGE: please check on all active workers. Use list-workers to see all workers, capture-worker-output to check their status. If any workers are idle or stuck, nudge them with send-keys-to-worker. If workers are finished, verify and archive them. If there are concrete developments worth reporting, use speak to give the human a voice update.' 2>/dev/null
+                sleep 0.5
+                tmux -S "$OVERSEER_TMUX_SOCKET" send-keys -t overseer:0 Enter 2>/dev/null
+                notified_overseer[$key]=1
+            fi
         else
-            log "IDLE ALERT: Worker $display_name idle for ${WORKER_THRESHOLD}s — notifying captain"
-            tmux -S "$CAPTAIN_TMUX_SOCKET" send-keys -t captain:0 \
-                "IDLE ALERT: Worker $display_name has been idle for ${WORKER_THRESHOLD} seconds. Please check on this worker using capture-worker-output to see its status. If it is finished, verify its work and use archive-worker to clean it up. If it is stuck, use send-keys-to-worker to nudge it. Don't forget to report any concrete developments via text-to-speech." 2>/dev/null
+            # Worker pane — two-tier notification
+
+            # Tier 1: 30s idle → notify overseer for nudging
+            if [ "$unchanged_for" -ge "$WORKER_OVERSEER_THRESHOLD" ] && [ "${notified_overseer[$key]:-0}" -eq 0 ]; then
+                log "IDLE ALERT (overseer): Worker $display_name idle for ${WORKER_OVERSEER_THRESHOLD}s — notifying overseer"
+                tmux -S "$OVERSEER_TMUX_SOCKET" send-keys -t overseer:0 \
+                    "IDLE ALERT: Worker $display_name has been idle for ${WORKER_OVERSEER_THRESHOLD} seconds. Check on it using capture-worker-output. If it is finished, verify and archive it. If it is being lazy or just stopped, nudge it with send-keys-to-worker. Do NOT make decisions for it — only nudge if it seems to have stopped working without reason." 2>/dev/null
+                sleep 0.5
+                tmux -S "$OVERSEER_TMUX_SOCKET" send-keys -t overseer:0 Enter 2>/dev/null
+                notified_overseer[$key]=1
+            fi
+
+            # Tier 2: 60s idle → notify human via speak
+            if [ "$unchanged_for" -ge "$WORKER_HUMAN_THRESHOLD" ] && [ "${notified_human[$key]:-0}" -eq 0 ]; then
+                log "IDLE ALERT (human): Worker $display_name idle for ${WORKER_HUMAN_THRESHOLD}s — alerting human via speak"
+                speak_to_human "Worker $display_name has been idle for over a minute. It may need your attention."
+                notified_human[$key]=1
+            fi
         fi
 
-        sleep 0.5
-        tmux -S "$CAPTAIN_TMUX_SOCKET" send-keys -t captain:0 Enter 2>/dev/null
-
-        notified_idle[$key]=1
     done < <(
-        echo "$CAPTAIN_TMUX_SOCKET captain:0 captain:0"
+        echo "$OVERSEER_TMUX_SOCKET overseer:0 overseer:0"
         for socket in "$PROJECTS_SOCKETS_DIR"/*/default; do
             [ -S "$socket" ] || continue
             project_name=$(basename "$(dirname "$socket")")

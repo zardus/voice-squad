@@ -198,15 +198,16 @@ test.describe("Auto Listen", () => {
     // No mic acquired yet
     await expect.poll(async () => page.evaluate(() => window.__gumCalls)).toBe(0);
 
-    // Simulate push-to-talk: mousedown on #mic-btn
-    const micBtn = page.locator("#mic-btn");
+    // Simulate push-to-talk: mousedown on #voice-mic-btn
+    await page.click('[data-tab="voice"]');
+    const micBtn = page.locator("#voice-mic-btn");
     await micBtn.dispatchEvent("mousedown");
     await page.waitForTimeout(200);
 
     // getUserMedia should now have been called
     await expect.poll(async () => page.evaluate(() => window.__gumCalls)).toBe(1);
 
-    // Simulate release: mouseup on #mic-btn
+    // Simulate release: mouseup on #voice-mic-btn
     await micBtn.dispatchEvent("mouseup");
 
     // After release + delay, mic tracks should be stopped
@@ -226,7 +227,8 @@ test.describe("Auto Listen", () => {
     await page.goto(pageUrl("test-token"));
     await page.waitForFunction(() => !!window.__testWs);
 
-    const micBtn = page.locator("#mic-btn");
+    await page.click('[data-tab="voice"]');
+    const micBtn = page.locator("#voice-mic-btn");
 
     // First hold: acquire mic stream #1.
     await micBtn.dispatchEvent("mousedown");

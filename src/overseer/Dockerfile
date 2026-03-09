@@ -79,26 +79,25 @@ RUN npm install -g @anthropic-ai/claude-code @openai/codex@0.98.0
 RUN echo "ubuntu ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
 # Shared sockets directory for cross-container sharing
-RUN mkdir -p /run/squad-sockets/captain-tmux /run/squad-sockets/projects \
+RUN mkdir -p /run/squad-sockets/overseer-tmux /run/squad-sockets/projects \
     && chown -R ubuntu:ubuntu /run/squad-sockets
 
-COPY entrypoint.sh /opt/squad/entrypoint-captain.sh
-COPY restart-captain.sh /opt/squad/restart-captain.sh
-RUN chmod +x /opt/squad/entrypoint-captain.sh /opt/squad/restart-captain.sh
+COPY entrypoint.sh /opt/squad/entrypoint-overseer.sh
+COPY restart-overseer.sh /opt/squad/restart-overseer.sh
+RUN chmod +x /opt/squad/entrypoint-overseer.sh /opt/squad/restart-overseer.sh
 
-COPY captain-CLAUDE.md /opt/squad/captain/CLAUDE.md
+COPY overseer-CLAUDE.md /opt/squad/overseer/CLAUDE.md
 COPY bin/ /usr/local/bin/
-RUN chmod +x /usr/local/bin/create_pending_task \
+RUN chmod +x \
     /usr/local/bin/list-workers \
-    /usr/local/bin/create-worker \
     /usr/local/bin/capture-worker-output \
     /usr/local/bin/send-keys-to-worker \
     /usr/local/bin/archive-worker \
     /usr/local/bin/list-projects \
     /usr/local/bin/sleep
-COPY settings.json /opt/squad/captain/.claude/settings.json
-RUN git init /opt/squad/captain \
-    && chown -R ubuntu:ubuntu /opt/squad/captain
+COPY settings.json /opt/squad/overseer/.claude/settings.json
+RUN git init /opt/squad/overseer \
+    && chown -R ubuntu:ubuntu /opt/squad/overseer
 
 COPY speak /usr/local/bin/speak
 COPY switch-account.sh /usr/local/bin/switch-account.sh
@@ -108,4 +107,4 @@ USER ubuntu
 
 WORKDIR /home/ubuntu
 
-ENTRYPOINT ["/opt/squad/entrypoint-captain.sh"]
+ENTRYPOINT ["/opt/squad/entrypoint-overseer.sh"]

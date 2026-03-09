@@ -3,14 +3,14 @@
  * Project container restart resilience — verify the voice server recovers
  * and lists all tmux terminals after a project container is restarted.
  *
- * In the per-project architecture, captain runs on its own tmux server
+ * In the per-project architecture, overseer runs on its own tmux server
  * and project containers have their own tmux servers under PROJECTS_SOCKETS_DIR.
  */
 const { test, expect } = require("@playwright/test");
 const { execSync } = require("child_process");
 const path = require("path");
 const { BASE_URL, TOKEN, pageUrl } = require("./helpers/config");
-const { captainExec, PROJECTS_SOCKETS_DIR } = require("./helpers/tmux");
+const { overseerExec, PROJECTS_SOCKETS_DIR } = require("./helpers/tmux");
 
 const TEST_PROJECT = "restart-test";
 const PROJECT_SOCKET_DIR = path.join(PROJECTS_SOCKETS_DIR, TEST_PROJECT);
@@ -59,7 +59,7 @@ function activateStatusDaemon(page) {
   return page.evaluate(async (params) => {
     return new Promise((resolve, reject) => {
       const ws = new WebSocket(
-        `ws://voice-server:3000?token=${encodeURIComponent(params.token)}`
+        `ws://hub:3000?token=${encodeURIComponent(params.token)}`
       );
       ws.onopen = () => {
         ws.send(JSON.stringify({ type: "status_tab_active" }));
@@ -116,12 +116,12 @@ test.describe("Project container restart", () => {
     // Activate the status daemon via WebSocket
     await activateStatusDaemon(page);
 
-    // 1. Verify voice server is up and /api/status returns the captain session
+    // 1. Verify hub is up and /api/status returns the overseer session
     const initial = await waitForStatus(
-      (s) => sessionNames(s).includes("captain"),
+      (s) => sessionNames(s).includes("overseer"),
       { timeoutMs: 15000 }
     );
-    expect(sessionNames(initial)).toContain("captain");
+    expect(sessionNames(initial)).toContain("overseer");
 
     // 2. Create a tmux session simulating a project container
     execSync(`tmux -S ${PROJECT_SOCKET} new-session -d -s agents -c /home/ubuntu`, {
@@ -131,10 +131,10 @@ test.describe("Project container restart", () => {
 
     // 3. Wait for /api/status to include the project session
     const withProject = await waitForStatus(
-      (s) => sessionNames(s).includes(`${TEST_PROJECT}/agents`) && sessionNames(s).includes("captain"),
+      (s) => sessionNames(s).includes(`${TEST_PROJECT}/agents`) && sessionNames(s).includes("overseer"),
       { timeoutMs: 10000 }
     );
-    expect(sessionNames(withProject)).toContain("captain");
+    expect(sessionNames(withProject)).toContain("overseer");
     expect(sessionNames(withProject)).toContain(`${TEST_PROJECT}/agents`);
 
     // 4. Simulate a project container restart: kill its tmux server
@@ -153,17 +153,17 @@ test.describe("Project container restart", () => {
     const recovered = await waitForStatus(
       (s) => {
         const names = sessionNames(s);
-        return names.includes("captain") && names.includes(`${TEST_PROJECT}/agents`);
+        return names.includes("overseer") && names.includes(`${TEST_PROJECT}/agents`);
       },
       { timeoutMs: 15000 }
     );
-    expect(sessionNames(recovered)).toContain("captain");
+    expect(sessionNames(recovered)).toContain("overseer");
     expect(sessionNames(recovered)).toContain(`${TEST_PROJECT}/agents`);
 
-    // Verify captain session has windows and panes
-    const captainSession = recovered.sessions.find((s) => s.name === "captain");
-    expect(captainSession.windows.length).toBeGreaterThanOrEqual(1);
-    expect(captainSession.windows[0].panes.length).toBeGreaterThanOrEqual(1);
+    // Verify overseer session has windows and panes
+    const overseerSession = recovered.sessions.find((s) => s.name === "overseer");
+    expect(overseerSession.windows.length).toBeGreaterThanOrEqual(1);
+    expect(overseerSession.windows[0].panes.length).toBeGreaterThanOrEqual(1);
 
     const projectSession = recovered.sessions.find(
       (s) => s.name === `${TEST_PROJECT}/agents`

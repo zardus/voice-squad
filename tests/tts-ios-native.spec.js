@@ -84,7 +84,7 @@ test.describe("iOS native app TTS playback", () => {
     await page.evaluate((wavSrc) => {
       const ws = window.__testWs;
       ws.onmessage({ data: JSON.stringify({ type: "tts_config", format: "wav", mime: "audio/wav" }) });
-      ws.onmessage({ data: JSON.stringify({ type: "speak_text", text: "Hello from captain" }) });
+      ws.onmessage({ data: JSON.stringify({ type: "speak_text", text: "Hello from overseer" }) });
       ws.onmessage({ data: eval(wavSrc) });
     }, generateSilenceWavSource());
 
@@ -144,7 +144,7 @@ test.describe("iOS native app TTS playback", () => {
     await page.evaluate((wavSrc) => {
       const ws = window.__testWs;
       ws.onmessage({ data: JSON.stringify({ type: "tts_config", format: "wav", mime: "audio/wav" }) });
-      ws.onmessage({ data: JSON.stringify({ type: "speak_text", text: "Hello from captain" }) });
+      ws.onmessage({ data: JSON.stringify({ type: "speak_text", text: "Hello from overseer" }) });
       ws.onmessage({ data: eval(wavSrc) });
     }, generateSilenceWavSource());
 
@@ -187,7 +187,7 @@ test.describe("iOS native app TTS playback", () => {
     });
 
     // Text IS displayed (Live Activity would show this)
-    await expect(page.locator("#summary")).toHaveText("Status: all workers idle");
+    await expect(page.locator("#voice-summary")).toHaveText("Status: all workers idle");
   });
 
   // ── Replay button works with nativeApp=1 ──────────────────────────

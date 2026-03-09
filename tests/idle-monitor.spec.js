@@ -13,7 +13,7 @@ const path = require("path");
 const { TOKEN } = require("./helpers/config");
 
 const MONITOR_LOG = "/tmp/pane-monitor.log";
-const CAPTAIN_SOCKET = "/run/squad-sockets/captain-tmux/default";
+const OVERSEER_SOCKET = "/run/squad-sockets/overseer-tmux/default";
 const PROJECTS_DIR = "/run/squad-sockets/projects";
 const TEST_PROJECT = "idle-test-project";
 const TEST_PROJECT_SOCKET_DIR = path.join(PROJECTS_DIR, TEST_PROJECT);
@@ -23,8 +23,8 @@ const ACTIVE_PROJECT_SOCKET_DIR = path.join(PROJECTS_DIR, ACTIVE_PROJECT);
 const ACTIVE_PROJECT_SOCKET = path.join(ACTIVE_PROJECT_SOCKET_DIR, "default");
 let monitorPid = null;
 
-function captainExec(args, opts = {}) {
-  return execSync(`tmux -S ${CAPTAIN_SOCKET} ${args}`, {
+function overseerExec(args, opts = {}) {
+  return execSync(`tmux -S ${OVERSEER_SOCKET} ${args}`, {
     encoding: "utf8",
     timeout: 5000,
     ...opts,
@@ -36,15 +36,15 @@ test.describe("Idle monitor", () => {
     if (!TOKEN) throw new Error("Cannot discover VOICE_TOKEN — set it or ensure /tmp/voice-url.txt exists");
 
     // Ensure tmux sockets are usable from the test-runner container.
-    execSync(`tmux -S ${CAPTAIN_SOCKET} has-session -t captain`, { encoding: "utf8", timeout: 5000 });
+    execSync(`tmux -S ${OVERSEER_SOCKET} has-session -t overseer`, { encoding: "utf8", timeout: 5000 });
 
     // Create test project socket directory and tmux session
     execSync(`mkdir -p ${TEST_PROJECT_SOCKET_DIR}`, { encoding: "utf8" });
     execSync(`tmux -S ${TEST_PROJECT_SOCKET} new-session -d -s agents -c /home/ubuntu`, { encoding: "utf8", timeout: 5000 });
 
-    // Keep captain pane in shell mode for predictable monitoring behavior.
+    // Keep overseer pane in shell mode for predictable monitoring behavior.
     try {
-      captainExec("respawn-pane -k -t captain:0 bash");
+      overseerExec("respawn-pane -k -t overseer:0 bash");
     } catch {}
 
     // Start a dedicated monitor process for this spec with long heartbeat interval.
@@ -54,7 +54,7 @@ test.describe("Idle monitor", () => {
       stdio: ["ignore", "ignore", "ignore"],
       env: {
         ...process.env,
-        CAPTAIN_TMUX_SOCKET: CAPTAIN_SOCKET,
+        OVERSEER_TMUX_SOCKET: OVERSEER_SOCKET,
         PROJECTS_SOCKETS_DIR: PROJECTS_DIR,
         HEARTBEAT_INTERVAL_SECONDS: "900",
       },

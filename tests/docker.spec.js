@@ -5,7 +5,7 @@
  */
 const { test, expect } = require("@playwright/test");
 const { BASE_URL, TOKEN } = require("./helpers/config");
-const { captainExec } = require("./helpers/tmux");
+const { overseerExec } = require("./helpers/tmux");
 const http = require("http");
 
 test.describe("Docker infrastructure", () => {
@@ -13,7 +13,7 @@ test.describe("Docker infrastructure", () => {
     if (!TOKEN) throw new Error("Cannot discover VOICE_TOKEN — set it or ensure /tmp/voice-url.txt exists");
   });
 
-  test("voice server responds on port 3000", async () => {
+  test("hub responds on port 3000", async () => {
     const resp = await new Promise((resolve, reject) => {
       const req = http.get(`${BASE_URL}?token=${TOKEN}`, (res) => {
         res.resume();
@@ -25,7 +25,7 @@ test.describe("Docker infrastructure", () => {
     expect(resp.statusCode).toBe(200);
   });
 
-  test("voice server /api/status responds", async () => {
+  test("hub /api/status responds", async () => {
     const resp = await new Promise((resolve, reject) => {
       const req = http.get(`${BASE_URL}/api/status?token=${TOKEN}`, (res) => {
         let data = "";
@@ -40,19 +40,19 @@ test.describe("Docker infrastructure", () => {
     expect(json).toHaveProperty("sessions");
   });
 
-  test("captain tmux session exists", () => {
-    const out = captainExec("list-sessions -F '#{session_name}'");
-    expect(out).toContain("captain");
+  test("overseer tmux session exists", () => {
+    const out = overseerExec("list-sessions -F '#{session_name}'");
+    expect(out).toContain("overseer");
   });
 
-  test("captain tmux session has expected windows", () => {
-    const out = captainExec("list-windows -t captain -F '#{window_name}'");
+  test("overseer tmux session has expected windows", () => {
+    const out = overseerExec("list-windows -t overseer -F '#{window_name}'");
     const windows = out.trim().split("\n");
     expect(windows.length).toBeGreaterThanOrEqual(1);
   });
 
-  test("captain pane has content", () => {
-    const out = captainExec("capture-pane -t captain:0 -p -S -50");
+  test("overseer pane has content", () => {
+    const out = overseerExec("capture-pane -t overseer:0 -p -S -50");
     // Should have some content (even if just a shell prompt)
     expect(out.trim().length).toBeGreaterThan(0);
   });

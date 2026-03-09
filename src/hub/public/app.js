@@ -1,11 +1,8 @@
-const terminalEl = document.getElementById("terminal");
-const summaryEl = document.getElementById("summary");
-const transcriptionEl = document.getElementById("transcription");
-const statusEl = document.getElementById("status");
-const micBtn = document.getElementById("mic-btn");
-const textInput = document.getElementById("text-input");
-const textPopoutBtn = document.getElementById("text-popout-btn");
-const sendBtn = document.getElementById("send-btn");
+// Stub removed elements so downstream references don't crash
+const terminalEl = { textContent: "", scrollTop: 0, scrollHeight: 0, clientHeight: 0, addEventListener() {}, className: "" };
+const summaryEl = document.getElementById("voice-summary"); // still used for voice summary display
+const transcriptionEl = { textContent: "", className: "", addEventListener() {} };
+const statusEl = document.getElementById("overseer-status") || { textContent: "", className: "" };
 const textPopoutModal = document.getElementById("text-popout-modal");
 const textPopoutBackdrop = document.getElementById("text-popout-backdrop");
 const textPopoutTextarea = document.getElementById("text-popout-textarea");
@@ -17,8 +14,7 @@ const voiceHistoryBackdrop = document.getElementById("voice-history-backdrop");
 const voiceHistoryCloseBtn = document.getElementById("voice-history-close-btn");
 const voiceHistoryList = document.getElementById("voice-history-list");
 const voiceHistoryModalBtn = document.getElementById("voice-history-modal-btn");
-const updateBtn = document.getElementById("update-btn");
-const autoreadCb = document.getElementById("autoread-cb");
+const autoreadCb = document.getElementById("voice-autoread-cb"); // single source now
 const voiceAutoreadCb = document.getElementById("voice-autoread-cb");
 const voiceMicBtn = document.getElementById("voice-mic-btn");
 const voiceReplayBtn = document.getElementById("voice-replay-btn");
@@ -27,17 +23,10 @@ const voiceSummaryEl = document.getElementById("voice-summary");
 const voiceTranscriptionEl = document.getElementById("voice-transcription");
 const voiceInterruptBtn = document.getElementById("voice-interrupt-btn");
 const voiceHistorySelect = document.getElementById("voice-history-select");
-const interruptBtn = document.getElementById("interrupt-btn");
-const controlsEl = document.getElementById("controls");
-const captainToolSelect = document.getElementById("captain-tool-select");
-const restartCaptainBtn = document.getElementById("restart-captain-btn");
-const voiceCaptainToolSelect = document.getElementById("voice-captain-tool-select");
-const voiceRestartCaptainBtn = document.getElementById("voice-restart-captain-btn");
+const voicePaneTargetEl = document.getElementById("voice-pane-target");
 const pendingTasksContentEl = document.getElementById("pending-tasks-content");
 const completedTasksContentEl = document.getElementById("completed-tasks-content");
 const refreshTasksBtn = document.getElementById("refresh-tasks-btn");
-const loginBtn = document.getElementById("login-btn");
-const voiceLoginBtn = document.getElementById("voice-login-btn");
 const loginModal = document.getElementById("login-modal");
 const loginBackdrop = document.getElementById("login-backdrop");
 const loginCloseBtn = document.getElementById("login-close-btn");
@@ -47,6 +36,9 @@ const loginStartBtn = document.getElementById("login-start-btn");
 const loginUrlContainer = document.getElementById("login-url-container");
 const loginUrlLink = document.getElementById("login-url-link");
 const loginCancelBtn = document.getElementById("login-cancel-btn");
+// Focused pane for voice input routing
+let focusedPaneTarget = null;
+let focusedPaneLabel = "";
 let lastTtsAudioData = null;
 let speakAudioQueue = []; // TTS audio received while mic is held down
 let ttsFormat = "mp3";
@@ -75,8 +67,8 @@ let recordingStartTime = 0;
 let micStream = null;
 let autoScroll = true;
 let disconnectedFlashTimer = null;
-let lastCaptainUpdateAt = 0;
-let captainName = "";
+let lastOverseerUpdateAt = 0;
+let overseerName = "";
 let statusUpdateTimer = null;
 let reconnectTimer = null;
 let wsConnectionSeq = 0;
@@ -622,20 +614,8 @@ function playAudio(data, { text = "" } = {}) {
   enqueueTtsPlayback(data, { reason: "playAudio", text });
 }
 
-// Decouple snapshot rendering from WebSocket to keep main thread free
+// Snapshot rendering removed (terminal tab removed); keep variable for compat
 let pendingSnapshot = null;
-
-function renderLoop() {
-  if (pendingSnapshot !== null) {
-    terminalEl.textContent = pendingSnapshot;
-    pendingSnapshot = null;
-    if (autoScroll) {
-      terminalEl.scrollTop = terminalEl.scrollHeight;
-    }
-  }
-  requestAnimationFrame(renderLoop);
-}
-requestAnimationFrame(renderLoop);
 
 const urlParams = new URLSearchParams(location.search);
 const token = urlParams.get("token") || "";
@@ -875,10 +855,7 @@ async function loadVoiceSummaryHistory() {
   } catch {}
 }
 
-terminalEl.addEventListener("scroll", () => {
-  const { scrollTop, scrollHeight, clientHeight } = terminalEl;
-  autoScroll = scrollHeight - scrollTop - clientHeight < 40;
-});
+// Terminal scroll handler removed (terminal tab removed)
 
 function formatElapsed(ms) {
   const s = Math.floor(ms / 1000);
@@ -891,10 +868,10 @@ function formatElapsed(ms) {
 
 function updateStatusTimer() {
   if (!statusEl || statusEl.className !== "connected") return;
-  if (!lastCaptainUpdateAt) {
-    statusEl.textContent = captainName + " (waiting\u2026)";
+  if (!lastOverseerUpdateAt) {
+    statusEl.textContent = overseerName + " (waiting\u2026)";
   } else {
-    statusEl.textContent = captainName + " (" + formatElapsed(Date.now() - lastCaptainUpdateAt) + ")";
+    statusEl.textContent = overseerName + " (" + formatElapsed(Date.now() - lastOverseerUpdateAt) + ")";
   }
 }
 
@@ -964,16 +941,11 @@ function connect() {
 
     switch (msg.type) {
       case "connected":
-        captainName = msg.captain || "connected";
-        lastCaptainUpdateAt = Date.now();
+        overseerName = msg.overseer || "connected";
+        lastOverseerUpdateAt = Date.now();
         statusEl.className = "connected";
         updateStatusTimer();
         startStatusTimer();
-        if (msg.captain === "claude" || msg.captain === "codex") {
-          captainToolSelect.value = msg.captain;
-          voiceCaptainToolSelect.value = msg.captain;
-          updateSelectColors();
-        }
         if (msg.lastSpeakText) setLatestVoiceSummary(msg.lastSpeakText);
         break;
 
@@ -983,12 +955,12 @@ function connect() {
         break;
 
       case "tmux_snapshot":
-        lastCaptainUpdateAt = Date.now();
-        pendingSnapshot = msg.content;
+        // Terminal tab removed; just update timestamp
+        lastOverseerUpdateAt = Date.now();
         break;
 
       case "speak_text":
-        lastCaptainUpdateAt = Date.now();
+        lastOverseerUpdateAt = Date.now();
         if (msg.text) {
           setLatestVoiceSummary(msg.text);
           prependVoiceSummaryEntry({
@@ -1004,11 +976,11 @@ function connect() {
         break;
 
       case "transcription":
-        lastCaptainUpdateAt = Date.now();
+        lastOverseerUpdateAt = Date.now();
         clearSttTimers();
         transcriptionEl.textContent = msg.text;
         transcriptionEl.className = "";
-        voiceTranscriptionEl.textContent = "Sent";
+        voiceTranscriptionEl.textContent = msg.text;
         voiceTranscriptionEl.className = "voice-transcription";
         addMessageToHistory(msg.text);
         break;
@@ -1029,13 +1001,13 @@ function connect() {
         clearSttTimers();
         transcriptionEl.textContent = msg.message;
         transcriptionEl.className = "error";
-        voiceTranscriptionEl.textContent = "Error";
+        voiceTranscriptionEl.textContent = msg.message;
         voiceTranscriptionEl.className = "voice-transcription error";
         playDing(false);
         break;
 
       case "status_stream_update":
-        lastCaptainUpdateAt = Date.now();
+        lastOverseerUpdateAt = Date.now();
         renderStreamUpdate(msg);
         break;
 
@@ -1049,8 +1021,8 @@ function connect() {
     if (connSeq !== wsConnectionSeq || ws !== socket) return;
     clearSttTimers();
     stopStatusTimer();
-    lastCaptainUpdateAt = 0;
-    captainName = "";
+    lastOverseerUpdateAt = 0;
+    overseerName = "";
     statusEl.textContent = "disconnected";
     statusEl.className = "disconnected";
     // Reset audio unlock so next user gesture re-primes the Audio element
@@ -1086,13 +1058,9 @@ async function ensureMicStream() {
   return true;
 }
 
-// Text command
+// Text command (bottom bar removed; sendTextCommand still used by voice status/history)
 function sendText() {
-  unlockAudio();
-  const text = textInput.value.trim();
-  if (!text) return;
-  if (!sendTextCommand(text)) return;
-  textInput.value = "";
+  // No-op: bottom controls removed
 }
 
 function isTextPopoutOpen() {
@@ -1101,11 +1069,6 @@ function isTextPopoutOpen() {
 
 function closeTextPopout({ sent = false } = {}) {
   if (!textPopoutModal || !textPopoutTextarea) return;
-  if (!sent) {
-    textInput.value = textPopoutTextarea.value;
-  } else {
-    textInput.value = "";
-  }
   textPopoutModal.classList.add("hidden");
   textPopoutModal.setAttribute("aria-hidden", "true");
   document.body.classList.remove("text-popout-open");
@@ -1113,14 +1076,12 @@ function closeTextPopout({ sent = false } = {}) {
 
 function openTextPopout() {
   if (!textPopoutModal || !textPopoutTextarea) return;
-  textPopoutTextarea.value = textInput.value;
+  textPopoutTextarea.value = "";
   textPopoutModal.classList.remove("hidden");
   textPopoutModal.setAttribute("aria-hidden", "false");
   document.body.classList.add("text-popout-open");
   setTimeout(() => {
     textPopoutTextarea.focus();
-    textPopoutTextarea.selectionStart = textPopoutTextarea.value.length;
-    textPopoutTextarea.selectionEnd = textPopoutTextarea.value.length;
   }, 0);
 }
 
@@ -1129,7 +1090,12 @@ function sendTextFromPopout() {
   unlockAudio();
   const text = textPopoutTextarea.value.trim();
   if (!text) return;
-  if (!sendTextCommand(text)) return;
+  // Route to focused pane if available, otherwise use legacy text_command
+  if (focusedPaneTarget) {
+    sendPaneText(focusedPaneTarget, text);
+  } else {
+    sendTextCommand(text);
+  }
   closeTextPopout({ sent: true });
 }
 
@@ -1171,7 +1137,7 @@ function showSttError(message) {
   clearSttTimers();
   transcriptionEl.textContent = message;
   transcriptionEl.className = "error";
-  voiceTranscriptionEl.textContent = "Error";
+  voiceTranscriptionEl.textContent = message;
   voiceTranscriptionEl.className = "voice-transcription error";
   playDing(false);
 }
@@ -1181,13 +1147,7 @@ function clearSttTimers() {
   if (sttTranscriptionTimer) { clearTimeout(sttTranscriptionTimer); sttTranscriptionTimer = null; }
 }
 
-sendBtn.addEventListener("click", sendText);
-textInput.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") sendText();
-});
-if (textPopoutBtn) {
-  textPopoutBtn.addEventListener("click", openTextPopout);
-}
+// Bottom bar sendBtn/textInput removed; text popout still available for pane use
 if (textPopoutSendBtn) {
   textPopoutSendBtn.addEventListener("click", sendTextFromPopout);
 }
@@ -1460,7 +1420,6 @@ function startRecording() {
   maxRecordingTimer = setTimeout(() => {
     if (recording || wantRecording) stopRecording();
   }, MAX_RECORDING_MS);
-  micBtn.classList.add("recording");
   voiceMicBtn.classList.add("recording");
   renderMicCaptureState();
 }
@@ -1475,7 +1434,6 @@ function stopRecording() {
     maxRecordingTimer = null;
   }
   recording = false;
-  micBtn.classList.remove("recording");
   voiceMicBtn.classList.remove("recording");
   renderMicCaptureState();
 
@@ -1505,36 +1463,9 @@ function stopRecording() {
 // Track last touch time to ignore synthesized mouse events on mobile
 let lastTouchTime = 0;
 
-micBtn.addEventListener("touchstart", (e) => {
-  e.preventDefault();
-  lastTouchTime = Date.now();
-  wantRecording = true;
-  startRecording();
-});
-micBtn.addEventListener("touchend", (e) => {
-  e.preventDefault();
-  stopRecording();
-});
-micBtn.addEventListener("touchcancel", () => {
-  if (recording || wantRecording) stopRecording();
-});
+// Bottom bar mic button removed; voice tab mic button still active below
 
-micBtn.addEventListener("mousedown", (e) => {
-  e.preventDefault();
-  if (Date.now() - lastTouchTime < 1000) return; // ignore synthesized mouse event
-  wantRecording = true;
-  startRecording();
-});
-micBtn.addEventListener("mouseup", () => {
-  if (Date.now() - lastTouchTime < 1000) return;
-  stopRecording();
-});
-micBtn.addEventListener("mouseleave", () => {
-  if (Date.now() - lastTouchTime < 1000) return;
-  if (recording || wantRecording) stopRecording();
-});
-
-// Voice tab mic button — mirrors main mic button behavior
+// Voice tab mic button
 voiceMicBtn.addEventListener("touchstart", (e) => {
   e.preventDefault();
   lastTouchTime = Date.now();
@@ -1593,11 +1524,15 @@ voiceReplayBtn.addEventListener("click", () => {
   if (lastTtsAudioData) playAudio(lastTtsAudioData);
 });
 
-// Voice status button — ask captain for a task status update
+// Voice status button — ask focused pane for a status update
 voiceStatusBtn.addEventListener("click", () => {
-  audioUnlocked = true; // prevent document click handler from overwriting src
+  audioUnlocked = true;
   playDing(true);
-  sendTextCommand("Give me a status update on all the tasks");
+  if (focusedPaneTarget) {
+    sendPaneText(focusedPaneTarget, "Give me a status update");
+  } else {
+    sendTextCommand("Give me a status update on all the tasks");
+  }
 });
 
 // Unlock audio + start silent keep-alive on user interaction.
@@ -1612,12 +1547,7 @@ document.addEventListener("touchstart", onUserGesture, { passive: true });
 document.addEventListener("pointerdown", onUserGesture, { passive: true });
 document.addEventListener("click", onUserGesture);
 
-// Status button — ask captain for a task status update
-updateBtn.addEventListener("click", () => {
-  sendTextCommand("Give me a status update on all the tasks");
-});
-
-// Interrupt — send Ctrl+C to captain
+// Interrupt — send Ctrl+C to focused pane (or overseer fallback)
 async function sendInterrupt() {
   try {
     const resp = await fetch("/api/interrupt", {
@@ -1635,29 +1565,12 @@ async function sendInterrupt() {
   }
 }
 
-interruptBtn.addEventListener("click", sendInterrupt);
 voiceInterruptBtn.addEventListener("click", sendInterrupt);
 
-// Restart captain — switch between Claude and Codex
-function syncCaptainSelects(source) {
-  const val = source.value;
-  captainToolSelect.value = val;
-  voiceCaptainToolSelect.value = val;
-  updateSelectColors();
-}
-
-function updateSelectColors() {
-  [captainToolSelect, voiceCaptainToolSelect].forEach((sel) => {
-    sel.classList.toggle("claude-selected", sel.value === "claude");
-    sel.classList.toggle("codex-selected", sel.value === "codex");
-  });
-}
-
-captainToolSelect.addEventListener("change", () => syncCaptainSelects(captainToolSelect));
-voiceCaptainToolSelect.addEventListener("change", () => syncCaptainSelects(voiceCaptainToolSelect));
-updateSelectColors();
+// Captain restart/switch UI removed (terminal tab removed)
 
 function setButtonLabel(btn, text) {
+  if (!btn) return;
   const label = btn.querySelector('.btn-label');
   if (label) {
     label.textContent = text;
@@ -1665,52 +1578,6 @@ function setButtonLabel(btn, text) {
     btn.textContent = text;
   }
 }
-
-async function restartCaptain() {
-  const tool = captainToolSelect.value;
-  const btns = [restartCaptainBtn, voiceRestartCaptainBtn];
-  btns.forEach((b) => { b.disabled = true; setButtonLabel(b, "Restarting..."); });
-
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 90000);
-
-  try {
-    const resp = await fetch("/api/restart-captain", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token, tool }),
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
-    if (resp.ok) {
-      playDing(true);
-      captainName = tool;
-      lastCaptainUpdateAt = Date.now();
-      updateStatusTimer();
-      summaryEl.textContent = "Captain restarted (" + tool + ")";
-    } else {
-      const data = await resp.json().catch(() => ({}));
-      const errMsg = data.error || "Restart failed (HTTP " + resp.status + ")";
-      playDing(false);
-      summaryEl.textContent = "Restart error: " + errMsg;
-    }
-  } catch (err) {
-    clearTimeout(timeout);
-    playDing(false);
-    if (err.name === "AbortError") {
-      summaryEl.textContent = "Restart timed out — captain may still be restarting";
-    } else {
-      summaryEl.textContent = "Restart failed: " + (err.message || "network error");
-    }
-  } finally {
-    setButtonLabel(restartCaptainBtn, "Restart");
-    setButtonLabel(voiceRestartCaptainBtn, "Restart Captain");
-    btns.forEach((b) => { b.disabled = false; });
-  }
-}
-
-restartCaptainBtn.addEventListener("click", restartCaptain);
-voiceRestartCaptainBtn.addEventListener("click", restartCaptain);
 
 // --- Login flow ---
 let loginPollTimer = null;
@@ -1721,8 +1588,6 @@ function isLoginModalOpen() {
 
 function openLoginModal() {
   if (!loginModal) return;
-  // Sync tool select with current captain
-  if (loginToolSelect) loginToolSelect.value = captainToolSelect.value;
   loginStatusText.textContent = "Select a tool and start the login flow.";
   loginUrlContainer.classList.add("hidden");
   loginCancelBtn.classList.add("hidden");
@@ -1824,8 +1689,6 @@ function pollLoginStatus() {
   }, 1000);
 }
 
-if (loginBtn) loginBtn.addEventListener("click", openLoginModal);
-if (voiceLoginBtn) voiceLoginBtn.addEventListener("click", openLoginModal);
 if (loginStartBtn) loginStartBtn.addEventListener("click", startLogin);
 if (loginCloseBtn) loginCloseBtn.addEventListener("click", closeLoginModal);
 if (loginBackdrop) loginBackdrop.addEventListener("click", closeLoginModal);
@@ -1862,6 +1725,8 @@ function closeActivePaneInteract() {
     activePaneInteract.panel.classList.remove("pane-interact-active");
   } catch {}
   activePaneInteract = null;
+  // Clear focused pane unless a pane is zoomed
+  if (!zoomedPaneKey) setFocusedPane(null, "");
 }
 
 
@@ -1885,9 +1750,8 @@ tabs.forEach((tab) => {
   tab.addEventListener("click", () => {
     const target = tab.dataset.tab;
     const smoothScroll = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const wasVoice = document.getElementById("voice-view").classList.contains("active");
     const wasProjects = document.getElementById("projects-view").classList.contains("active");
-    const wasSummary = document.getElementById("summary-view").classList.contains("active");
+    const wasOverseer = document.getElementById("overseer-view").classList.contains("active");
     const wasTasks = document.getElementById("tasks-view").classList.contains("active");
     tabs.forEach((t) => t.classList.toggle("active", t === tab));
     scrollActiveTabIntoView(tab, smoothScroll);
@@ -1898,11 +1762,6 @@ tabs.forEach((tab) => {
     if (target === "projects" && !wasProjects) sendProjectsTabState(true);
     if (target !== "projects" && wasProjects) { sendProjectsTabState(false); closeActivePaneInteract(); }
 
-    // Auto-scroll to bottom when switching to Terminal tab
-    if (target === "terminal") {
-      autoScroll = true;
-      terminalEl.scrollTop = terminalEl.scrollHeight;
-    }
     // Auto-scroll all expanded panels to bottom when switching to Projects tab
     if (target === "projects") {
       for (const [, entry] of panelMap) {
@@ -1912,16 +1771,13 @@ tabs.forEach((tab) => {
       }
     }
 
-    // Voice tab: hide bottom controls (Auto-read and Auto Listen toggles are duplicated inside Voice tab).
+    // Voice tab
     if (target === "voice") {
       if (isTextPopoutOpen()) closeTextPopout();
-      controlsEl.classList.add("hidden");
-    } else {
-      controlsEl.classList.remove("hidden");
     }
 
-    // Summary tab: auto-refresh once on tab switch so the user sees fresh data.
-    if (target === "summary" && !wasSummary) refreshSummary();
+    // Overseer tab: auto-refresh voice history on tab switch
+    if (target === "overseer" && !wasOverseer) refreshOverseer();
     if (target === "tasks" && !wasTasks) refreshTasks();
   });
 });
@@ -2136,6 +1992,9 @@ function openPaneInteract(entry, label) {
     target: entry.target,
   };
 
+  // Set focused pane for voice routing
+  setFocusedPane(entry.target, label);
+
   // Autofocus on open (mobile-friendly)
   setTimeout(() => {
     try {
@@ -2156,7 +2015,7 @@ document.addEventListener("pointerdown", (e) => {
 // Project section management
 const projectSectionMap = new Map(); // projectName -> { section, body }
 
-function ensureProjectSection(projectName, isCaptain) {
+function ensureProjectSection(projectName, isOverseer) {
   let entry = projectSectionMap.get(projectName);
   if (entry) return entry;
 
@@ -2167,11 +2026,21 @@ function ensureProjectSection(projectName, isCaptain) {
   header.className = "project-section-header";
 
   const nameEl = document.createElement("span");
-  nameEl.className = "project-section-name" + (isCaptain ? " captain-label" : "");
+  nameEl.className = "project-section-name" + (isOverseer ? " overseer-label" : "");
   nameEl.textContent = projectName;
   header.appendChild(nameEl);
 
-  if (!isCaptain) {
+  if (!isOverseer) {
+    const addWorkerBtn = document.createElement("button");
+    addWorkerBtn.className = "project-add-worker-btn";
+    addWorkerBtn.title = "Add worker";
+    addWorkerBtn.textContent = "+";
+    addWorkerBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openCreateWorkerModal(projectName);
+    });
+    header.appendChild(addWorkerBtn);
+
     const stopBtn = document.createElement("button");
     stopBtn.className = "project-stop-btn";
     stopBtn.title = "Stop project";
@@ -2243,11 +2112,11 @@ function renderStreamUpdate(data) {
   for (const session of data.sessions) {
     const slashIdx = session.name.indexOf("/");
     const projectName = slashIdx > 0 ? session.name.slice(0, slashIdx) : null;
-    const isCaptain = !projectName;
+    const isOverseer = !projectName;
     const displayProject = projectName || "Captain";
 
     activeProjects.add(displayProject);
-    const projectEntry = ensureProjectSection(displayProject, isCaptain);
+    const projectEntry = ensureProjectSection(displayProject, isOverseer);
 
     for (const win of (session.windows || [])) {
       const panes = Array.isArray(win.panes) && win.panes.length
@@ -2261,7 +2130,7 @@ function renderStreamUpdate(data) {
         let entry = panelMap.get(key);
         if (!entry) {
           const panel = document.createElement("div");
-          panel.className = "stream-panel collapsed";
+          panel.className = "stream-panel";
 
           const header = document.createElement("div");
           header.className = "stream-panel-header";
@@ -2269,10 +2138,19 @@ function renderStreamUpdate(data) {
           header.textContent = `${sessionLabel} / ${win.name} \u00B7 pane ${pane.index}`;
           header.title = pane.target || "";
           header.addEventListener("click", () => {
+            if (zoomedPaneKey === key) {
+              unzoomPane();
+              return;
+            }
             panel.classList.toggle("collapsed");
             if (!panel.classList.contains("collapsed")) {
               pre.scrollTop = pre.scrollHeight;
             }
+          });
+          header.addEventListener("dblclick", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            zoomPane(key);
           });
           panel.appendChild(header);
 
@@ -2311,9 +2189,16 @@ function renderStreamUpdate(data) {
 
         const content = pane.content || "";
         if (content !== entry.lastContent) {
+          updatePaneActivity(key);
           const wasAtBottom =
             entry.pre.scrollHeight - entry.pre.scrollTop - entry.pre.clientHeight < 40;
-          entry.pre.textContent = content;
+          // Show last ~20 lines by default; full content when zoomed
+          const lines = content.split("\n");
+          const isZoomed = zoomedPaneKey === key;
+          const displayContent = (!isZoomed && lines.length > 20)
+            ? lines.slice(-20).join("\n")
+            : content;
+          entry.pre.textContent = displayContent;
           entry.lastContent = content;
           if (wasAtBottom) {
             entry.pre.scrollTop = entry.pre.scrollHeight;
@@ -2327,8 +2212,10 @@ function renderStreamUpdate(data) {
   for (const [key, entry] of panelMap) {
     if (!currentKeys.has(key)) {
       if (activePaneInteract && activePaneInteract.key === key) closeActivePaneInteract();
+      if (zoomedPaneKey === key) unzoomPane();
       entry.panel.remove();
       panelMap.delete(key);
+      paneLastChangeAt.delete(key);
     }
   }
 
@@ -2340,38 +2227,52 @@ function renderStreamUpdate(data) {
     }
   }
 }
-// --- Summary tab ---
-const summaryTabContentEl = document.getElementById("summary-tab-content");
-const refreshSummaryBtn = document.getElementById("refresh-summary-btn");
+// --- Overseer tab (voice history view) ---
+const overseerTabContentEl = document.getElementById("overseer-tab-content");
+const refreshOverseerBtn = document.getElementById("refresh-overseer-btn");
 
-async function refreshSummary() {
-  // Prevent overlapping fetches (auto-refresh on tab switch + manual clicks).
-  if (refreshSummaryBtn.disabled) return;
+function renderOverseerHistory() {
+  if (!overseerTabContentEl) return;
+  if (!voiceSummaryHistory || voiceSummaryHistory.length === 0) {
+    overseerTabContentEl.innerHTML = '<div class="overseer-empty">No voice history entries yet.</div>';
+    return;
+  }
+  // Show entries in reverse chronological order (newest first — already sorted)
+  const container = document.createElement("div");
+  container.className = "overseer-history-list";
+  for (const entry of voiceSummaryHistory) {
+    const item = document.createElement("div");
+    item.className = "overseer-history-entry";
 
-  refreshSummaryBtn.disabled = true;
-  refreshSummaryBtn.textContent = "Loading...";
-  summaryTabContentEl.innerHTML = '<div class="summary-loading">Generating summary...</div>';
+    const ts = document.createElement("div");
+    ts.className = "overseer-history-time";
+    ts.textContent = formatVoiceHistoryTimestamp(entry.timestamp);
+
+    const txt = document.createElement("div");
+    txt.className = "overseer-history-text";
+    txt.textContent = entry.text;
+
+    item.appendChild(ts);
+    item.appendChild(txt);
+    container.appendChild(item);
+  }
+  overseerTabContentEl.innerHTML = "";
+  overseerTabContentEl.appendChild(container);
+}
+
+async function refreshOverseer() {
+  if (!refreshOverseerBtn) return;
+  if (refreshOverseerBtn.disabled) return;
+
+  refreshOverseerBtn.disabled = true;
+  refreshOverseerBtn.textContent = "Loading...";
 
   try {
-    const resp = await fetch("/api/summary", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token }),
-    });
-    if (!resp.ok) {
-      const err = await resp.json().catch(() => ({ error: "Request failed" }));
-      summaryTabContentEl.innerHTML = '<div class="summary-error">Error: ' +
-        (err.error || "Request failed").replace(/&/g, "&amp;").replace(/</g, "&lt;") + '</div>';
-      return;
-    }
-    const data = await resp.json();
-    summaryTabContentEl.innerHTML = mdToHtml(data.summary);
-  } catch (err) {
-    summaryTabContentEl.innerHTML = '<div class="summary-error">Error: ' +
-      err.message.replace(/&/g, "&amp;").replace(/</g, "&lt;") + '</div>';
+    await loadVoiceSummaryHistory();
+    renderOverseerHistory();
   } finally {
-    refreshSummaryBtn.disabled = false;
-    refreshSummaryBtn.textContent = "Refresh";
+    refreshOverseerBtn.disabled = false;
+    refreshOverseerBtn.textContent = "Refresh";
   }
 }
 
@@ -2691,7 +2592,7 @@ async function refreshTasks() {
   }
 }
 
-refreshSummaryBtn.addEventListener("click", refreshSummary);
+if (refreshOverseerBtn) refreshOverseerBtn.addEventListener("click", refreshOverseer);
 refreshTasksBtn.addEventListener("click", refreshTasks);
 
 renderMessageHistorySelect();
@@ -2705,12 +2606,14 @@ const createProjectClose = document.getElementById("create-project-close");
 const createProjectCancel = document.getElementById("create-project-cancel");
 const createProjectSubmit = document.getElementById("create-project-submit");
 const createProjectName = document.getElementById("create-project-name");
+const createProjectRepo = document.getElementById("create-project-repo");
 const createProjectError = document.getElementById("create-project-error");
 const addProjectBtn = document.getElementById("add-project-btn");
 
 function openCreateProjectModal() {
   if (!createProjectModal) return;
   createProjectName.value = "";
+  if (createProjectRepo) createProjectRepo.value = "";
   createProjectError.classList.add("hidden");
   createProjectError.textContent = "";
   createProjectSubmit.disabled = false;
@@ -2728,6 +2631,7 @@ function closeCreateProjectModal() {
 
 async function submitCreateProject() {
   const name = (createProjectName.value || "").trim();
+  const repo = createProjectRepo ? (createProjectRepo.value || "").trim() : "";
 
   if (!name) {
     createProjectError.textContent = "Project name is required";
@@ -2740,10 +2644,12 @@ async function submitCreateProject() {
   createProjectSubmit.textContent = "Creating...";
 
   try {
+    const body = { token, name };
+    if (repo) body.repo = repo;
     const resp = await fetch("/api/projects", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token, name }),
+      body: JSON.stringify(body),
     });
     const json = await resp.json();
     if (!resp.ok) {
@@ -2779,8 +2685,9 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
-// Fetch build version and display in terminal header
+// Fetch build version and display in projects header
 (function fetchBuildVersion() {
+  // build-version element was in the removed terminal header; skip if missing
   var versionEl = document.getElementById("build-version");
   if (!versionEl) return;
   fetch("/api/version")
@@ -2804,3 +2711,175 @@ document.addEventListener("keydown", (e) => {
     })
     .catch(function () { /* ignore */ });
 })();
+
+// --- Create Worker Modal ---
+const createWorkerModal = document.getElementById("create-worker-modal");
+const createWorkerBackdrop = document.getElementById("create-worker-backdrop");
+const createWorkerClose = document.getElementById("create-worker-close");
+const createWorkerCancel = document.getElementById("create-worker-cancel");
+const createWorkerSubmit = document.getElementById("create-worker-submit");
+const createWorkerProject = document.getElementById("create-worker-project");
+const createWorkerName = document.getElementById("create-worker-name");
+const createWorkerTool = document.getElementById("create-worker-tool");
+const createWorkerPrompt = document.getElementById("create-worker-prompt");
+const createWorkerError = document.getElementById("create-worker-error");
+
+function openCreateWorkerModal(projectName) {
+  if (!createWorkerModal) return;
+  if (createWorkerProject) createWorkerProject.value = projectName || "";
+  if (createWorkerName) createWorkerName.value = "";
+  if (createWorkerPrompt) createWorkerPrompt.value = "";
+  if (createWorkerError) { createWorkerError.classList.add("hidden"); createWorkerError.textContent = ""; }
+  if (createWorkerSubmit) { createWorkerSubmit.disabled = false; createWorkerSubmit.textContent = "Create"; }
+  createWorkerModal.classList.remove("hidden");
+  createWorkerModal.setAttribute("aria-hidden", "false");
+  setTimeout(() => { if (createWorkerName) createWorkerName.focus(); }, 0);
+}
+
+function closeCreateWorkerModal() {
+  if (!createWorkerModal) return;
+  createWorkerModal.classList.add("hidden");
+  createWorkerModal.setAttribute("aria-hidden", "true");
+}
+
+async function submitCreateWorker() {
+  const project = createWorkerProject ? createWorkerProject.value.trim() : "";
+  const name = createWorkerName ? createWorkerName.value.trim() : "";
+  const tool = createWorkerTool ? createWorkerTool.value : "codex";
+  const prompt = createWorkerPrompt ? createWorkerPrompt.value.trim() : "";
+
+  if (!name) {
+    if (createWorkerError) {
+      createWorkerError.textContent = "Worker name is required";
+      createWorkerError.classList.remove("hidden");
+    }
+    return;
+  }
+
+  if (createWorkerError) createWorkerError.classList.add("hidden");
+  if (createWorkerSubmit) { createWorkerSubmit.disabled = true; createWorkerSubmit.textContent = "Creating..."; }
+
+  try {
+    const resp = await fetch("/api/workers", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token, project, name, tool, prompt }),
+    });
+    const json = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      if (createWorkerError) {
+        createWorkerError.textContent = json.error || "Failed to create worker";
+        createWorkerError.classList.remove("hidden");
+      }
+      return;
+    }
+    closeCreateWorkerModal();
+    playDing(true);
+  } catch (err) {
+    if (createWorkerError) {
+      createWorkerError.textContent = err.message || "Network error";
+      createWorkerError.classList.remove("hidden");
+    }
+  } finally {
+    if (createWorkerSubmit) { createWorkerSubmit.disabled = false; createWorkerSubmit.textContent = "Create"; }
+  }
+}
+
+if (createWorkerClose) createWorkerClose.addEventListener("click", closeCreateWorkerModal);
+if (createWorkerCancel) createWorkerCancel.addEventListener("click", closeCreateWorkerModal);
+if (createWorkerBackdrop) createWorkerBackdrop.addEventListener("click", closeCreateWorkerModal);
+if (createWorkerSubmit) createWorkerSubmit.addEventListener("click", submitCreateWorker);
+if (createWorkerName) {
+  createWorkerName.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") { e.preventDefault(); closeCreateWorkerModal(); }
+  });
+}
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && createWorkerModal && !createWorkerModal.classList.contains("hidden")) {
+    e.preventDefault();
+    closeCreateWorkerModal();
+  }
+});
+
+// --- Pane zoom/focus functionality ---
+let zoomedPaneKey = null;
+let zoomedPaneOverlayEl = null;
+
+function setFocusedPane(target, label) {
+  focusedPaneTarget = target || null;
+  focusedPaneLabel = label || "";
+  if (voicePaneTargetEl) {
+    voicePaneTargetEl.textContent = target ? ("Focused: " + label) : "No pane focused";
+    voicePaneTargetEl.classList.toggle("has-target", !!target);
+  }
+}
+
+function zoomPane(key) {
+  const entry = panelMap.get(key);
+  if (!entry) return;
+
+  // Unzoom any previously zoomed pane
+  unzoomPane();
+
+  zoomedPaneKey = key;
+  entry.panel.classList.add("pane-zoomed");
+  entry.panel.classList.remove("collapsed");
+
+  // Create a close/minimize button overlay
+  const closeBtn = document.createElement("button");
+  closeBtn.className = "pane-zoom-close";
+  closeBtn.textContent = "Minimize";
+  closeBtn.title = "Return to tiled view";
+  closeBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    unzoomPane();
+  });
+  entry.panel.appendChild(closeBtn);
+  zoomedPaneOverlayEl = closeBtn;
+
+  // Set as focused pane for voice input
+  setFocusedPane(entry.target, entry.projectName + " / " + key.split("\t")[1]);
+
+  // Open the interact overlay automatically
+  openPaneInteract(entry, entry.projectName + " / " + (entry.target || ""));
+
+  // Scroll content to bottom
+  entry.pre.scrollTop = entry.pre.scrollHeight;
+}
+
+function unzoomPane() {
+  if (!zoomedPaneKey) return;
+  const entry = panelMap.get(zoomedPaneKey);
+  if (entry) {
+    entry.panel.classList.remove("pane-zoomed");
+  }
+  if (zoomedPaneOverlayEl) {
+    zoomedPaneOverlayEl.remove();
+    zoomedPaneOverlayEl = null;
+  }
+  zoomedPaneKey = null;
+  setFocusedPane(null, "");
+}
+
+// --- Pane idle/activity detection ---
+const paneLastChangeAt = new Map(); // key -> timestamp
+
+function updatePaneActivity(key) {
+  paneLastChangeAt.set(key, Date.now());
+}
+
+function renderPaneActivityStates() {
+  const now = Date.now();
+  const IDLE_THRESHOLD_MS = 30000; // 30 seconds
+  for (const [key, entry] of panelMap) {
+    const lastChange = paneLastChangeAt.get(key) || 0;
+    const idle = (now - lastChange) > IDLE_THRESHOLD_MS;
+    entry.panel.classList.toggle("pane-idle", idle);
+  }
+}
+
+// Periodically update idle indicators
+setInterval(renderPaneActivityStates, 5000);
+
+// Activate projects tab on load
+sendProjectsTabState(true);

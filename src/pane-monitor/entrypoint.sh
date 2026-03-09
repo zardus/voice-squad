@@ -1,29 +1,29 @@
 #!/bin/bash
 set -e
 
-CAPTAIN_TMUX_SOCKET="${CAPTAIN_TMUX_SOCKET:-/run/squad-sockets/captain-tmux/default}"
+OVERSEER_TMUX_SOCKET="${OVERSEER_TMUX_SOCKET:-/run/squad-sockets/overseer-tmux/default}"
 PROJECTS_SOCKETS_DIR="${PROJECTS_SOCKETS_DIR:-/run/squad-sockets/projects}"
-CAPTAIN_TMUX_DIR="$(dirname "$CAPTAIN_TMUX_SOCKET")"
-export CAPTAIN_TMUX_SOCKET PROJECTS_SOCKETS_DIR
+OVERSEER_TMUX_DIR="$(dirname "$OVERSEER_TMUX_SOCKET")"
+export OVERSEER_TMUX_SOCKET PROJECTS_SOCKETS_DIR
 
 # Ensure tmux socket directories are accessible
-sudo mkdir -p "$CAPTAIN_TMUX_DIR" "$PROJECTS_SOCKETS_DIR"
-sudo chown ubuntu:ubuntu "$CAPTAIN_TMUX_DIR" "$PROJECTS_SOCKETS_DIR"
-sudo chmod 755 "$CAPTAIN_TMUX_DIR" "$PROJECTS_SOCKETS_DIR"
+sudo mkdir -p "$OVERSEER_TMUX_DIR" "$PROJECTS_SOCKETS_DIR"
+sudo chown ubuntu:ubuntu "$OVERSEER_TMUX_DIR" "$PROJECTS_SOCKETS_DIR"
+sudo chmod 755 "$OVERSEER_TMUX_DIR" "$PROJECTS_SOCKETS_DIR"
 
-# Wait for captain tmux session to be available
-echo "[pane-monitor-entrypoint] Waiting for captain tmux session..."
+# Wait for overseer tmux session to be available
+echo "[pane-monitor-entrypoint] Waiting for overseer tmux session..."
 timeout=120
-while ! tmux -S "$CAPTAIN_TMUX_SOCKET" has-session -t captain 2>/dev/null && [ $timeout -gt 0 ]; do
+while ! tmux -S "$OVERSEER_TMUX_SOCKET" has-session -t overseer 2>/dev/null && [ $timeout -gt 0 ]; do
     sleep 1
     timeout=$((timeout - 1))
 done
 
-if ! tmux -S "$CAPTAIN_TMUX_SOCKET" has-session -t captain 2>/dev/null; then
-    echo "[pane-monitor-entrypoint] ERROR: captain tmux session not available after 120s"
+if ! tmux -S "$OVERSEER_TMUX_SOCKET" has-session -t overseer 2>/dev/null; then
+    echo "[pane-monitor-entrypoint] ERROR: overseer tmux session not available after 120s"
     exit 1
 fi
-echo "[pane-monitor-entrypoint] captain tmux session found"
+echo "[pane-monitor-entrypoint] overseer tmux session found"
 
 # Run pane monitor (replaces this process)
 echo "[pane-monitor-entrypoint] Starting pane monitor..."

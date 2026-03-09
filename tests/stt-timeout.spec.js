@@ -90,7 +90,7 @@ function addStubs(page, opts = {}) {
         setTimeout(() => {
           if (this.onopen) this.onopen();
           // Send initial "connected" message.
-          this._deliver({ type: "connected", captain: "claude", lastSpeakText: null });
+          this._deliver({ type: "connected", overseer: "claude", lastSpeakText: null });
           this._deliver({ type: "tts_config", format: "mp3", mime: "audio/mpeg" });
           this._deliver({ type: "voice_history", entries: [] });
         }, 0);
@@ -130,7 +130,9 @@ function addStubs(page, opts = {}) {
  * The ensureMicStream() async call takes a few microtasks before recording starts.
  */
 async function simulateRecording(page) {
-  const micBtn = page.locator("#mic-btn");
+  // Switch to voice tab where the mic button lives
+  await page.click('[data-tab="voice"]');
+  const micBtn = page.locator("#voice-mic-btn");
   await micBtn.dispatchEvent("mousedown");
   // Wait for ensureMicStream → getUserMedia → startRecording retry → MediaRecorder.start
   // and for the fake chunk to be emitted (50ms). Then hold past MIN_RECORDING_MS (300ms).
@@ -162,7 +164,7 @@ test.describe("STT timeout recovery", () => {
     await page.waitForTimeout(800);
 
     // The transcription element should show the timeout error.
-    const text = await page.locator("#transcription").textContent();
+    const text = await page.locator("#voice-transcription").textContent();
     expect(text).toContain("timed out");
   });
 
@@ -185,13 +187,13 @@ test.describe("STT timeout recovery", () => {
     });
 
     // Should now show "Transcribing..."
-    await expect(page.locator("#transcription")).toHaveText("Transcribing...");
+    await expect(page.locator("#voice-transcription")).toHaveText("Transcribing...");
 
     // Wait for the transcription timeout (500ms + margin).
     await page.waitForTimeout(800);
 
     // The transcription element should show the timeout error.
-    const text = await page.locator("#transcription").textContent();
+    const text = await page.locator("#voice-transcription").textContent();
     expect(text).toContain("timed out");
   });
 
@@ -212,18 +214,18 @@ test.describe("STT timeout recovery", () => {
     await page.evaluate(() => {
       window.__wsInstance._deliver({ type: "transcribing" });
     });
-    await expect(page.locator("#transcription")).toHaveText("Transcribing...");
+    await expect(page.locator("#voice-transcription")).toHaveText("Transcribing...");
 
     await page.evaluate(() => {
       window.__wsInstance._deliver({ type: "transcription", text: "hello world" });
     });
 
     // Should show the transcribed text, not an error.
-    await expect(page.locator("#transcription")).toHaveText("hello world");
+    await expect(page.locator("#voice-transcription")).toHaveText("hello world");
 
     // Wait past both timeouts — no error should appear.
     await page.waitForTimeout(800);
-    await expect(page.locator("#transcription")).toHaveText("hello world");
+    await expect(page.locator("#voice-transcription")).toHaveText("hello world");
   });
 
   test("timeout is cleared when stt_error arrives", async ({ page }) => {
@@ -243,11 +245,11 @@ test.describe("STT timeout recovery", () => {
       window.__wsInstance._deliver({ type: "stt_error", message: "No speech detected" });
     });
 
-    await expect(page.locator("#transcription")).toHaveText("No speech detected");
+    await expect(page.locator("#voice-transcription")).toHaveText("No speech detected");
 
     // Wait past the timeout — should still show the original error, not timeout.
     await page.waitForTimeout(800);
-    await expect(page.locator("#transcription")).toHaveText("No speech detected");
+    await expect(page.locator("#voice-transcription")).toHaveText("No speech detected");
   });
 
   test("detects dead WebSocket during upload drain", async ({ page }) => {
@@ -288,7 +290,7 @@ test.describe("STT timeout recovery", () => {
     // The drain loop should detect the dead socket and show an error.
     await page.waitForTimeout(800);
 
-    const text = await page.locator("#transcription").textContent();
+    const text = await page.locator("#voice-transcription").textContent();
     expect(text).toContain("Connection lost");
   });
 });
