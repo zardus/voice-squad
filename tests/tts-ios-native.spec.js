@@ -187,7 +187,7 @@ test.describe("iOS native app TTS playback", () => {
     });
 
     // Text IS displayed (Live Activity would show this)
-    await expect(page.locator("#summary")).toHaveText("Status: all workers idle");
+    await expect(page.locator("#voice-summary")).toHaveText("Status: all workers idle");
   });
 
   // ── Replay button works with nativeApp=1 ──────────────────────────

@@ -36,7 +36,7 @@ test.describe("Tasks tab", () => {
 
     await expect(page.locator('[data-tab="tasks"]')).toHaveClass(/active/);
     await expect(page.locator("#tasks-view")).toHaveClass(/active/);
-    await expect(page.locator("#terminal-view")).not.toHaveClass(/active/);
+    await expect(page.locator("#projects-view")).not.toHaveClass(/active/);
   });
 
   test("tasks view has Pending and Completed sections", async ({ page }) => {

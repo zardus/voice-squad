@@ -234,10 +234,10 @@ test.describe("Projects tab UI", () => {
     expect(body.name).toBe("test-proj");
   });
 
-  test("tab bar shows Projects instead of Screens", async ({ page }) => {
+  test("tab bar shows Projects as first tab", async ({ page }) => {
     await page.goto(pageUrl());
     const tabs = page.locator("#tab-bar .tab");
-    await expect(tabs).toHaveCount(5);
-    await expect(tabs.nth(1)).toHaveText("Projects");
+    await expect(tabs).toHaveCount(4);
+    await expect(tabs.nth(0)).toHaveText("Projects");
   });
 });

@@ -54,7 +54,7 @@ test.describe("Auto-read", () => {
     await page.goto(pageUrl("test-token"));
     await page.waitForFunction(() => !!window.__testWs);
 
-    const cb = page.locator("#autoread-cb");
+    const cb = page.locator("#voice-autoread-cb");
     await expect(cb).not.toBeChecked();
 
     // Inject a "speak_text" then binary audio. With auto-read OFF, nothing should autoplay.
@@ -66,7 +66,7 @@ test.describe("Auto-read", () => {
     await expect.poll(async () => page.evaluate(() => window.__playCount)).toBe(0);
 
     // Toggle auto-read ON and inject another summary + Blob audio; it should autoplay once.
-    await page.locator("#autoread-toggle").click();
+    await page.locator("#voice-autoread-toggle").click();
     await expect(cb).toBeChecked();
     const before = await page.evaluate(() => window.__playCount);
 
@@ -111,7 +111,7 @@ test.describe("Auto-read", () => {
     await page.goto(pageUrl("test-token"));
     await page.waitForFunction(() => !!window.__testWs);
 
-    const cb = page.locator("#autoread-cb");
+    const cb = page.locator("#voice-autoread-cb");
 
     // Programmatically set to false
     await page.evaluate(() => setAutoReadEnabled(false));

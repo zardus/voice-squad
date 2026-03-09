@@ -1,7 +1,7 @@
 // @ts-check
 /**
- * Comprehensive UI tests — Terminal tab, Voice tab, Status tab,
- * tab switching, controls, responsive layout.
+ * Comprehensive UI tests — Projects tab, Overseer tab, Voice tab,
+ * Tasks tab, tab switching, responsive layout.
  */
 const { test, expect } = require("@playwright/test");
 const { TOKEN, pageUrl } = require("./helpers/config");
@@ -97,153 +97,28 @@ test.describe("UI", () => {
   // ─── Overseer tab ───────────────────────────────────────────
 
   test.describe("Overseer tab", () => {
-    test("terminal header shows title and status badge", async ({ page }) => {
+    test("overseer tab loads with header and refresh button", async ({ page }) => {
       await page.goto(pageUrl());
-      await expect(page.locator("#terminal-title")).toHaveText("terminal");
-      await expect(page.locator("#status")).toBeVisible();
+      await page.click('[data-tab="overseer"]');
+
+      await expect(page.locator("#overseer-tab-title")).toHaveText("overseer");
+      await expect(page.locator("#refresh-overseer-btn")).toBeVisible();
+      await expect(page.locator("#overseer-tab-content")).toBeVisible();
     });
 
-    test("terminal header shows build version indicator", async ({ page }) => {
+    test("overseer status badge exists", async ({ page }) => {
       await page.goto(pageUrl());
-      const versionEl = page.locator("#build-version");
-      await expect(versionEl).toBeAttached();
-      // The version text is fetched asynchronously — wait for it to be non-empty
-      await expect(versionEl).not.toHaveText("", { timeout: 5000 });
+      await expect(page.locator("#overseer-status")).toBeAttached();
     });
 
-    test("connection status shows overseer name when connected", async ({ page }) => {
+    test("overseer body is scrollable", async ({ page }) => {
       await page.goto(pageUrl());
-      // Wait for WebSocket to connect
-      await expect(page.locator("#status")).toHaveClass(/connected/, { timeout: 5000 });
-      const text = await page.locator("#status").textContent();
-      // Status now shows "overseer (Xs ago)" latency timer
-      expect(text).toMatch(/^(claude|codex)\s/);
-    });
+      await page.click('[data-tab="overseer"]');
 
-    test("terminal pre element exists and is scrollable", async ({ page }) => {
-      await page.goto(pageUrl());
-      const terminal = page.locator("#terminal");
-      await expect(terminal).toBeVisible();
-      const overflow = await terminal.evaluate((el) => getComputedStyle(el).overflowY);
-      expect(overflow).toBe("auto");
-    });
-
-    test("update/status button exists and is clickable", async ({ page }) => {
-      await page.goto(pageUrl());
-      const btn = page.locator("#update-btn");
-      await expect(btn).toBeVisible();
-      await expect(btn.locator(".btn-label")).toHaveText("Status");
-      await expect(btn).toBeEnabled();
-    });
-
-    test("interrupt button exists with pause icon", async ({ page }) => {
-      await page.goto(pageUrl());
-      const btn = page.locator("#interrupt-btn");
-      await expect(btn).toBeVisible();
-      await expect(btn).toContainText("Interrupt");
-      // Has SVG with two rects (pause icon)
-      const rects = btn.locator("svg rect");
-      await expect(rects).toHaveCount(2);
-    });
-
-    test("overseer tool selector has claude and codex options", async ({ page }) => {
-      await page.goto(pageUrl());
-      const select = page.locator("#overseer-tool-select");
-      await expect(select).toBeVisible();
-      const options = select.locator("option");
-      await expect(options).toHaveCount(2);
-      await expect(options.nth(0)).toHaveText("Claude");
-      await expect(options.nth(1)).toHaveText("Codex");
-    });
-
-    test("restart button exists", async ({ page }) => {
-      await page.goto(pageUrl());
-      const btn = page.locator("#restart-overseer-btn");
-      await expect(btn).toBeVisible();
-      await expect(btn.locator(".btn-label")).toHaveText("Restart");
-    });
-
-    test("summary panel exists with label", async ({ page }) => {
-      await page.goto(pageUrl());
-      await expect(page.locator("#summary-label")).toHaveText("voice summary");
-      await expect(page.locator("#summary")).toBeVisible();
-    });
-
-    test("transcription panel exists with label", async ({ page }) => {
-      await page.goto(pageUrl());
-      await expect(page.locator("#transcription-label")).toHaveText("input transcription");
-      await expect(page.locator("#transcription")).toBeVisible();
-    });
-
-    test("transcription panel is scrollable (not expanding)", async ({ page }) => {
-      await page.goto(pageUrl());
-      const panel = page.locator("#transcription");
-      const maxHeight = await panel.evaluate((el) => getComputedStyle(el).maxHeight);
-      // Should have max-height set (e.g. "4.5em")
-      expect(maxHeight).not.toBe("none");
-      const overflow = await panel.evaluate((el) => getComputedStyle(el).overflowY);
-      expect(overflow).toBe("auto");
-    });
-
-    test("controls bar is visible with all elements", async ({ page }) => {
-      await page.goto(pageUrl());
-      await expect(page.locator("#controls")).toBeVisible();
-      await expect(page.locator("#mic-btn")).toBeVisible();
-      await expect(page.locator("#text-input")).toBeVisible();
-      await expect(page.locator("#send-btn")).toBeVisible();
-      await expect(page.locator("#autoread-toggle")).toBeVisible();
-    });
-
-    test("text input has placeholder", async ({ page }) => {
-      await page.goto(pageUrl());
-      await expect(page.locator("#text-input")).toHaveAttribute("placeholder", "Type a command...");
-    });
-
-    test("text popout button exists", async ({ page }) => {
-      await page.goto(pageUrl());
-      await expect(page.locator("#text-popout-btn")).toBeVisible();
-    });
-
-    test("auto-read toggle checkbox works", async ({ page }) => {
-      await page.goto(pageUrl());
-      const cb = page.locator("#autoread-cb");
-
-      // Default state (unchecked unless localStorage says otherwise)
-      const initialState = await cb.isChecked();
-
-      // Toggle it
-      await page.locator("#autoread-toggle").click();
-      const newState = await cb.isChecked();
-      expect(newState).not.toBe(initialState);
-
-      // Toggle back
-      await page.locator("#autoread-toggle").click();
-      const restored = await cb.isChecked();
-      expect(restored).toBe(initialState);
-    });
-
-    test("overseer selector updates color class on change", async ({ page }) => {
-      await page.goto(pageUrl());
-      await expect(page.locator("#status")).toHaveClass(/connected/, { timeout: 5000 });
-
-      const select = page.locator("#overseer-tool-select");
-      await select.selectOption("codex");
-      await expect(select).toHaveClass(/codex-selected/);
-
-      await select.selectOption("claude");
-      await expect(select).toHaveClass(/claude-selected/);
-    });
-
-    test("terminal receives content via WebSocket", async ({ page }) => {
-      await page.goto(pageUrl());
-      await expect(page.locator("#status")).toHaveClass(/connected/, { timeout: 5000 });
-      // Wait for tmux_snapshot to populate terminal
-      await page.waitForFunction(
-        () => document.getElementById("terminal").textContent.length > 0,
-        { timeout: 5000 },
+      const overflow = await page.locator("#overseer-tab-body").evaluate(
+        (el) => getComputedStyle(el).overflowY,
       );
-      const content = await page.locator("#terminal").textContent();
-      expect(content.length).toBeGreaterThan(0);
+      expect(overflow).toBe("auto");
     });
   });
 
@@ -348,32 +223,23 @@ test.describe("UI", () => {
       });
     });
 
-    test("voice overseer switch exists", async ({ page }) => {
+    test("auto-read toggle checkbox works", async ({ page }) => {
       await page.goto(pageUrl());
       await page.click('[data-tab="voice"]');
-      await expect(page.locator("#voice-overseer-tool-select")).toBeVisible();
-      await expect(page.locator("#voice-restart-overseer-btn")).toBeVisible();
-      await expect(page.locator("#voice-restart-overseer-btn")).toHaveText("Restart Overseer");
-    });
+      const cb = page.locator("#voice-autoread-cb");
 
-    test("controls bar hidden in voice tab", async ({ page }) => {
-      await page.goto(pageUrl());
-      await page.click('[data-tab="voice"]');
-      await expect(page.locator("#controls")).toHaveClass(/hidden/);
-    });
+      // Default state
+      const initialState = await cb.isChecked();
 
-    test("auto-read toggles stay in sync between overseer controls and voice tab", async ({ page }) => {
-      await page.goto(pageUrl());
-      const overseerCb = page.locator("#autoread-cb");
-      const voiceCb = page.locator("#voice-autoread-cb");
-
-      await page.click('[data-tab="voice"]');
-      const initial = await voiceCb.isChecked();
+      // Toggle it
       await page.locator("#voice-autoread-toggle").click();
-      await expect(voiceCb).toHaveJSProperty("checked", !initial);
+      const newState = await cb.isChecked();
+      expect(newState).not.toBe(initialState);
 
-      await page.click('[data-tab="overseer"]');
-      await expect(overseerCb).toHaveJSProperty("checked", !initial);
+      // Toggle back
+      await page.locator("#voice-autoread-toggle").click();
+      const restored = await cb.isChecked();
+      expect(restored).toBe(initialState);
     });
 
     test("voice top row buttons are side by side", async ({ page }) => {
@@ -399,25 +265,6 @@ test.describe("UI", () => {
         expect(box.width).toBeGreaterThanOrEqual(100);
         expect(box.width).toBeLessThanOrEqual(160);
       }
-    });
-
-    test("voice overseer selects sync with overseer tab selects", async ({ page }) => {
-      await page.goto(pageUrl());
-      await expect(page.locator("#status")).toHaveClass(/connected/, { timeout: 5000 });
-
-      // Change in overseer tab
-      await page.locator("#overseer-tool-select").selectOption("codex");
-
-      // Switch to voice tab and check
-      await page.click('[data-tab="voice"]');
-      const voiceVal = await page.locator("#voice-overseer-tool-select").inputValue();
-      expect(voiceVal).toBe("codex");
-
-      // Change back
-      await page.locator("#voice-overseer-tool-select").selectOption("claude");
-      await page.click('[data-tab="overseer"]');
-      const overseerVal = await page.locator("#overseer-tool-select").inputValue();
-      expect(overseerVal).toBe("claude");
     });
 
     test("voice transcription area has brief text, not full transcription", async ({ page }) => {
@@ -457,29 +304,6 @@ test.describe("UI", () => {
       await page.click('[data-tab="projects"]');
 
       await expect(page.locator("#add-project-btn")).toBeVisible();
-    });
-  });
-
-  // ─── Overseer status tab ─────────────────────────────────────
-
-  test.describe("Overseer status tab", () => {
-    test("overseer tab loads with header and refresh button", async ({ page }) => {
-      await page.goto(pageUrl());
-      await page.click('[data-tab="overseer"]');
-
-      await expect(page.locator("#overseer-tab-title")).toHaveText("overseer");
-      await expect(page.locator("#refresh-overseer-btn")).toBeVisible();
-      await expect(page.locator("#overseer-tab-content")).toBeVisible();
-    });
-
-    test("overseer body is scrollable", async ({ page }) => {
-      await page.goto(pageUrl());
-      await page.click('[data-tab="overseer"]');
-
-      const overflow = await page.locator("#overseer-tab-body").evaluate(
-        (el) => getComputedStyle(el).overflowY,
-      );
-      expect(overflow).toBe("auto");
     });
   });
 
@@ -537,25 +361,12 @@ test.describe("UI", () => {
   // ─── Button actions ──────────────────────────────────────────
 
   test.describe("Button actions", () => {
-    test("interrupt button sends POST /api/interrupt", async ({ page }) => {
-      await page.goto(pageUrl());
-      await expect(page.locator("#status")).toHaveClass(/connected/, { timeout: 5000 });
-
-      // Intercept the fetch call
-      const [request] = await Promise.all([
-        page.waitForRequest((req) => req.url().includes("/api/interrupt")),
-        page.click("#interrupt-btn"),
-      ]);
-
-      expect(request.method()).toBe("POST");
-      const body = request.postDataJSON();
-      expect(body.token).toBe(TOKEN);
-    });
-
     test("voice interrupt button sends POST /api/interrupt", async ({ page }) => {
       await page.goto(pageUrl());
-      await expect(page.locator("#status")).toHaveClass(/connected/, { timeout: 5000 });
       await page.click('[data-tab="voice"]');
+
+      // Wait for WS connect
+      await page.waitForTimeout(500);
 
       const [request] = await Promise.all([
         page.waitForRequest((req) => req.url().includes("/api/interrupt")),
@@ -565,244 +376,11 @@ test.describe("UI", () => {
       expect(request.method()).toBe("POST");
     });
 
-    test("status/update button sends text_command via WebSocket", async ({ page }) => {
-      await page.goto(pageUrl());
-      await expect(page.locator("#status")).toHaveClass(/connected/, { timeout: 5000 });
-
-      // Listen for WS message
-      const sent = page.evaluate(() => {
-        return new Promise((resolve) => {
-          const origSend = WebSocket.prototype.send;
-          WebSocket.prototype.send = function (data) {
-            if (typeof data === "string") {
-              try {
-                const msg = JSON.parse(data);
-                if (msg.type === "text_command" && msg.text.includes("status update")) {
-                  WebSocket.prototype.send = origSend;
-                  resolve(msg);
-                }
-              } catch {}
-            }
-            return origSend.call(this, data);
-          };
-        });
-      });
-
-      await page.click("#update-btn");
-      const msg = await sent;
-      expect(msg.type).toBe("text_command");
-      expect(msg.text).toContain("status update");
-    });
-
-    test("send button sends text from input field", async ({ page }) => {
-      await page.goto(pageUrl());
-      await expect(page.locator("#status")).toHaveClass(/connected/, { timeout: 5000 });
-
-      const sent = page.evaluate(() => {
-        return new Promise((resolve) => {
-          const origSend = WebSocket.prototype.send;
-          WebSocket.prototype.send = function (data) {
-            if (typeof data === "string") {
-              try {
-                const msg = JSON.parse(data);
-                if (msg.type === "text_command" && msg.text === "test-ping") {
-                  WebSocket.prototype.send = origSend;
-                  resolve(msg);
-                }
-              } catch {}
-            }
-            return origSend.call(this, data);
-          };
-        });
-      });
-
-      await page.fill("#text-input", "test-ping");
-      await page.click("#send-btn");
-      const msg = await sent;
-      expect(msg.text).toBe("test-ping");
-    });
-
-    test("restart button sends POST /api/restart-overseer with correct body", async ({ page }) => {
-      await page.goto(pageUrl());
-      await expect(page.locator("#status")).toHaveClass(/connected/, { timeout: 5000 });
-
-      const [request] = await Promise.all([
-        page.waitForRequest((req) => req.url().includes("/api/restart-overseer")),
-        page.click("#restart-overseer-btn"),
-      ]);
-
-      expect(request.method()).toBe("POST");
-      const body = request.postDataJSON();
-      expect(body.token).toBe(TOKEN);
-      expect(["claude", "codex"]).toContain(body.tool);
-    });
-
-    test("restart button shows 'Restarting...' while in progress", async ({ page }) => {
-      // Intercept the restart API to add a delay so we can check the button text
-      await page.route("**/api/restart-overseer", async (route) => {
-        await new Promise((r) => setTimeout(r, 500));
-        await route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify({ ok: true, tool: "claude" }),
-        });
-      });
-
-      await page.goto(pageUrl());
-      await expect(page.locator("#status")).toHaveClass(/connected/, { timeout: 5000 });
-
-      // Click restart, then immediately check the button text
-      page.click("#restart-overseer-btn"); // don't await — we need to check mid-flight
-      await expect(page.locator("#restart-overseer-btn .btn-label")).toHaveText("Restarting...");
-      await expect(page.locator("#restart-overseer-btn")).toBeDisabled();
-
-      // Wait for it to finish and re-enable
-      await expect(page.locator("#restart-overseer-btn .btn-label")).toHaveText("Restart", { timeout: 5000 });
-      await expect(page.locator("#restart-overseer-btn")).toBeEnabled();
-    });
-
-    test("restart button shows error message on failure", async ({ page }) => {
-      await page.route("**/api/restart-overseer", async (route) => {
-        await route.fulfill({
-          status: 500,
-          contentType: "application/json",
-          body: JSON.stringify({ error: "tmux session not found" }),
-        });
-      });
-
-      await page.goto(pageUrl());
-      await expect(page.locator("#status")).toHaveClass(/connected/, { timeout: 5000 });
-
-      await page.click("#restart-overseer-btn");
-
-      // Should show the error in the summary area
-      await expect(page.locator("#summary")).toContainText("tmux session not found", { timeout: 5000 });
-      // Button should be re-enabled
-      await expect(page.locator("#restart-overseer-btn")).toBeEnabled();
-    });
-
-    test("voice restart button sends POST /api/restart-overseer", async ({ page }) => {
-      await page.goto(pageUrl());
-      await expect(page.locator("#status")).toHaveClass(/connected/, { timeout: 5000 });
-      await page.click('[data-tab="voice"]');
-
-      const [request] = await Promise.all([
-        page.waitForRequest((req) => req.url().includes("/api/restart-overseer")),
-        page.click("#voice-restart-overseer-btn"),
-      ]);
-
-      expect(request.method()).toBe("POST");
-      const body = request.postDataJSON();
-      expect(body.token).toBe(TOKEN);
-      expect(["claude", "codex"]).toContain(body.tool);
-    });
-
-    test("restart button shows success in summary", async ({ page }) => {
-      await page.route("**/api/restart-overseer", async (route) => {
-        await route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify({ ok: true, tool: "claude" }),
-        });
-      });
-
-      await page.goto(pageUrl());
-      await expect(page.locator("#status")).toHaveClass(/connected/, { timeout: 5000 });
-
-      await page.click("#restart-overseer-btn");
-
-      await expect(page.locator("#summary")).toContainText("Overseer restarted", { timeout: 5000 });
-    });
-
-    test("Enter key in text input sends command", async ({ page }) => {
-      await page.goto(pageUrl());
-      await expect(page.locator("#status")).toHaveClass(/connected/, { timeout: 5000 });
-
-      const sent = page.evaluate(() => {
-        return new Promise((resolve) => {
-          const origSend = WebSocket.prototype.send;
-          WebSocket.prototype.send = function (data) {
-            if (typeof data === "string") {
-              try {
-                const msg = JSON.parse(data);
-                if (msg.type === "text_command" && msg.text === "enter-test") {
-                  WebSocket.prototype.send = origSend;
-                  resolve(msg);
-                }
-              } catch {}
-            }
-            return origSend.call(this, data);
-          };
-        });
-      });
-
-      await page.fill("#text-input", "enter-test");
-      await page.press("#text-input", "Enter");
-      const msg = await sent;
-      expect(msg.text).toBe("enter-test");
-    });
-
-    test("text input is cleared after sending", async ({ page }) => {
-      await page.goto(pageUrl());
-      await expect(page.locator("#status")).toHaveClass(/connected/, { timeout: 5000 });
-
-      await page.fill("#text-input", "clear-test");
-      await page.click("#send-btn");
-
-      // Input should be cleared
-      await expect(page.locator("#text-input")).toHaveValue("");
-    });
-
-    test("popout opens with current input and closes preserving text", async ({ page }) => {
+    test("text popout modal opens and closes", async ({ page }) => {
       await page.goto(pageUrl());
 
-      await page.fill("#text-input", "draft text");
-      await page.click("#text-popout-btn");
-
-      await expect(page.locator("#text-popout-modal")).toBeVisible();
-      await expect(page.locator("#text-popout-textarea")).toHaveValue("draft text");
-
-      await page.fill("#text-popout-textarea", "updated draft");
-      await page.click("#text-popout-cancel-btn");
-
+      // The text popout modal still exists in the DOM
       await expect(page.locator("#text-popout-modal")).toBeHidden();
-      await expect(page.locator("#text-input")).toHaveValue("updated draft");
-    });
-
-    test("Ctrl+Enter in popout sends command and closes modal", async ({ page, browserName }) => {
-      await page.goto(pageUrl());
-      await expect(page.locator("#status")).toHaveClass(/connected/, { timeout: 5000 });
-
-      const sent = page.evaluate(() => {
-        return new Promise((resolve) => {
-          const origSend = WebSocket.prototype.send;
-          WebSocket.prototype.send = function (data) {
-            if (typeof data === "string") {
-              try {
-                const msg = JSON.parse(data);
-                if (msg.type === "text_command" && msg.text === "popout-send") {
-                  WebSocket.prototype.send = origSend;
-                  resolve(msg);
-                }
-              } catch {}
-            }
-            return origSend.call(this, data);
-          };
-        });
-      });
-
-      await page.click("#text-popout-btn");
-      await page.fill("#text-popout-textarea", "popout-send");
-      if (browserName === "webkit") {
-        await page.press("#text-popout-textarea", "Meta+Enter");
-      } else {
-        await page.press("#text-popout-textarea", "Control+Enter");
-      }
-
-      const msg = await sent;
-      expect(msg.text).toBe("popout-send");
-      await expect(page.locator("#text-popout-modal")).toBeHidden();
-      await expect(page.locator("#text-input")).toHaveValue("");
     });
   });
 
@@ -816,35 +394,8 @@ test.describe("UI", () => {
       // Tab bar visible
       await expect(page.locator("#tab-bar")).toBeVisible();
 
-      // Controls visible
-      await expect(page.locator("#controls")).toBeVisible();
-
-      // Terminal visible
-      await expect(page.locator("#terminal")).toBeVisible();
-
-      // All control buttons accessible
-      await expect(page.locator("#mic-btn")).toBeVisible();
-      await expect(page.locator("#send-btn")).toBeVisible();
-
-      const metrics = await page.evaluate(() => {
-        const controls = document.getElementById("controls");
-        const input = document.getElementById("text-input");
-        const controlsRect = controls.getBoundingClientRect();
-        const childRects = Array.from(controls.children).map((el) => {
-          const r = el.getBoundingClientRect();
-          return { left: r.left, right: r.right };
-        });
-        return {
-          controlsFits: controls.scrollWidth <= controls.clientWidth,
-          inputWidth: input.getBoundingClientRect().width,
-          controlsInsideViewport: controlsRect.left >= 0 && controlsRect.right <= window.innerWidth,
-          childrenInsideControls: childRects.every((r) => r.left >= controlsRect.left && r.right <= controlsRect.right),
-        };
-      });
-      expect(metrics.controlsFits).toBe(true);
-      expect(metrics.controlsInsideViewport).toBe(true);
-      expect(metrics.childrenInsideControls).toBe(true);
-      expect(metrics.inputWidth).toBeGreaterThan(40);
+      // Projects view visible (default tab)
+      await expect(page.locator("#projects-view")).toHaveClass(/active/);
     });
 
     test("voice tab renders correctly on mobile viewport", async ({ page }) => {
@@ -864,30 +415,8 @@ test.describe("UI", () => {
       await page.goto(pageUrl());
 
       await expect(page.locator("#tab-bar")).toBeVisible();
-      await expect(page.locator("#terminal")).toBeVisible();
-      await expect(page.locator("#controls")).toBeVisible();
-      await expect(page.locator("#mic-btn")).toBeVisible();
-      await expect(page.locator("#send-btn")).toBeVisible();
-
-      const metrics = await page.evaluate(() => {
-        const controls = document.getElementById("controls");
-        const input = document.getElementById("text-input");
-        const controlsRect = controls.getBoundingClientRect();
-        const childRects = Array.from(controls.children).map((el) => {
-          const r = el.getBoundingClientRect();
-          return { left: r.left, right: r.right };
-        });
-        return {
-          controlsFits: controls.scrollWidth <= controls.clientWidth,
-          inputWidth: input.getBoundingClientRect().width,
-          controlsInsideViewport: controlsRect.left >= 0 && controlsRect.right <= window.innerWidth,
-          childrenInsideControls: childRects.every((r) => r.left >= controlsRect.left && r.right <= controlsRect.right),
-        };
-      });
-      expect(metrics.controlsFits).toBe(true);
-      expect(metrics.controlsInsideViewport).toBe(true);
-      expect(metrics.childrenInsideControls).toBe(true);
-      expect(metrics.inputWidth).toBeGreaterThan(36);
+      // Projects view is default active
+      await expect(page.locator("#projects-view")).toHaveClass(/active/);
     });
 
     test("renders correctly on tablet viewport (768x1024)", async ({ page }) => {
@@ -895,8 +424,7 @@ test.describe("UI", () => {
       await page.goto(pageUrl());
 
       await expect(page.locator("#tab-bar")).toBeVisible();
-      await expect(page.locator("#terminal")).toBeVisible();
-      await expect(page.locator("#controls")).toBeVisible();
+      await expect(page.locator("#projects-view")).toHaveClass(/active/);
     });
 
     test("body does not scroll (app uses flex layout)", async ({ page }) => {

@@ -1,7 +1,7 @@
 // @ts-check
 /**
  * Screenshot generator for README — produces polished mobile screenshots
- * of all three PWA tabs with realistic mock data injected.
+ * of all PWA tabs with realistic mock data injected.
  *
  * Run via: npx playwright test tests/screenshots.spec.js
  * Output:  /tmp/screenshots/*.png
@@ -12,49 +12,8 @@ const fs = require("fs");
 
 const SCREENSHOT_DIR = "/tmp/screenshots";
 
-// Realistic overseer terminal output — looks like a Claude overseer monitoring workers
-const TERMINAL_CONTENT = `╭────────────────────────────────────────────────╮
-│ Claude Code — Overseer                         │
-╰────────────────────────────────────────────────╯
-
-> Got it. I'll break this into two parallel tasks and dispatch workers.
-
-⏺ Dispatching worker 1 → auth-service / window 1
-  Task: Refactor JWT validation module + add refresh token rotation
-
-⏺ Dispatching worker 2 → auth-service / window 2
-  Task: Write integration tests for the auth endpoints
-
-⏺ Using tool: create_session (auth-service)
-  ✓ Session created
-
-⏺ Using tool: send_command (auth-service, window 1)
-  Command: "Refactor src/auth/jwt.ts — add refresh token rotation…"
-  ✓ Sent to worker 1
-
-⏺ Using tool: send_command (auth-service, window 2)
-  Command: "Write integration tests for POST /auth/login, …"
-  ✓ Sent to worker 2
-
-> Both workers are running. Worker 1 is refactoring the JWT module
-  and adding refresh token rotation. Worker 2 is writing integration
-  tests for the auth endpoints. I'll check on their progress.
-
-⏺ Using tool: read_output (auth-service, window 1)
-  Worker 1: Editing src/auth/jwt.ts — adding rotateRefreshToken()
-
-⏺ Using tool: read_output (auth-service, window 2)
-  Worker 2: Created tests/auth.integration.test.ts — 4/7 tests written
-
-> Both workers are making good progress. Worker 1 is about halfway
-  through the JWT refactor, and worker 2 has written 4 of 7 tests.
-
-`;
-
 const SUMMARY_TEXT =
   "Two workers dispatched for the auth service refactor. First worker is handling JWT validation and refresh token rotation. Second is writing integration tests for the auth endpoints. Both are making good progress.";
-
-const TRANSCRIPTION_TEXT = "How are the workers doing on the auth service?";
 
 // Status tab: live stream panes
 const STATUS_PANES = [
@@ -128,7 +87,7 @@ test.describe("Screenshots", () => {
     viewport: { width: 390, height: 844 },
   });
 
-  test("capture all three tabs", async ({ page }) => {
+  test("capture all tabs", async ({ page }) => {
     // Stub WebSocket so the app doesn't try to connect for real
     await page.addInitScript(() => {
       class FakeWebSocket {
@@ -152,52 +111,7 @@ test.describe("Screenshots", () => {
     // Ensure screenshot output directory exists
     fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
 
-    // ── Terminal Tab ──────────────────────────────────────────
-    // Simulate the "connected" message
-    await page.evaluate(
-      ({ terminal, summary, transcription }) => {
-        // Set connected status
-        const statusEl = document.getElementById("status");
-        statusEl.textContent = "claude";
-        statusEl.className = "connected";
-
-        // Populate terminal
-        document.getElementById("terminal").textContent = terminal;
-
-        // Set summary
-        document.getElementById("summary").textContent = summary;
-
-        // Set transcription
-        const transcriptionEl = document.getElementById("transcription");
-        transcriptionEl.textContent = transcription;
-        transcriptionEl.className = "";
-
-        // Set overseer select to claude
-        const sel = document.getElementById("overseer-tool-select");
-        sel.value = "claude";
-        sel.classList.add("claude-selected");
-
-        // Scroll terminal to bottom
-        const term = document.getElementById("terminal");
-        term.scrollTop = term.scrollHeight;
-      },
-      {
-        terminal: TERMINAL_CONTENT,
-        summary: SUMMARY_TEXT,
-        transcription: TRANSCRIPTION_TEXT,
-      }
-    );
-
-    await page.waitForTimeout(300);
-    await page.screenshot({
-      path: `${SCREENSHOT_DIR}/terminal-tab.png`,
-      type: "png",
-    });
-
-    // ── Projects Tab ─────────────────────────────────────────
-    await page.click('[data-tab="projects"]');
-    await page.waitForTimeout(100);
-
+    // ── Projects Tab (default) ─────────────────────────────────
     await page.evaluate(
       ({ panes }) => {
         document.getElementById("projects-time").textContent = "\u25cf LIVE";
@@ -228,6 +142,25 @@ test.describe("Screenshots", () => {
     await page.waitForTimeout(300);
     await page.screenshot({
       path: `${SCREENSHOT_DIR}/projects-tab.png`,
+      type: "png",
+    });
+
+    // ── Overseer Tab ──────────────────────────────────────────
+    await page.click('[data-tab="overseer"]');
+    await page.waitForTimeout(100);
+
+    // Set connected status
+    await page.evaluate(() => {
+      const statusEl = document.getElementById("overseer-status");
+      if (statusEl) {
+        statusEl.textContent = "claude";
+        statusEl.className = "connected";
+      }
+    });
+
+    await page.waitForTimeout(300);
+    await page.screenshot({
+      path: `${SCREENSHOT_DIR}/overseer-tab.png`,
       type: "png",
     });
 
