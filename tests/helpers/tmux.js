@@ -1,17 +1,17 @@
 /**
  * Shared tmux helpers for tests — wraps socket-aware tmux commands.
  *
- * Uses CAPTAIN_TMUX_SOCKET / PROJECTS_SOCKETS_DIR env vars when set.
+ * Uses OVERSEER_TMUX_SOCKET / PROJECTS_SOCKETS_DIR env vars when set.
  */
 const { execSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 
-const CAPTAIN_SOCKET = process.env.CAPTAIN_TMUX_SOCKET || "";
+const OVERSEER_SOCKET = process.env.OVERSEER_TMUX_SOCKET || "";
 const PROJECTS_SOCKETS_DIR = process.env.PROJECTS_SOCKETS_DIR || "/run/squad-sockets/projects";
 
-function captainTmuxCmd(args) {
-  const socketArgs = CAPTAIN_SOCKET ? `-S ${CAPTAIN_SOCKET} ` : "";
+function overseerTmuxCmd(args) {
+  const socketArgs = OVERSEER_SOCKET ? `-S ${OVERSEER_SOCKET} ` : "";
   return `tmux ${socketArgs}${args}`;
 }
 
@@ -20,8 +20,8 @@ function projectTmuxCmd(projectName, args) {
   return `tmux -S ${socketPath} ${args}`;
 }
 
-function captainExec(args, opts = {}) {
-  return execSync(captainTmuxCmd(args), {
+function overseerExec(args, opts = {}) {
+  return execSync(overseerTmuxCmd(args), {
     encoding: "utf8",
     timeout: 5000,
     ...opts,
@@ -60,11 +60,11 @@ function discoverProjectSockets() {
 }
 
 module.exports = {
-  CAPTAIN_SOCKET,
+  OVERSEER_SOCKET,
   PROJECTS_SOCKETS_DIR,
-  captainTmuxCmd,
+  overseerTmuxCmd,
   projectTmuxCmd,
-  captainExec,
+  overseerExec,
   projectExec,
   discoverProjectSockets,
 };

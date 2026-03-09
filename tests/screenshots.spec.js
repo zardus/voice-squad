@@ -12,9 +12,9 @@ const fs = require("fs");
 
 const SCREENSHOT_DIR = "/tmp/screenshots";
 
-// Realistic captain terminal output — looks like a Claude captain managing workers
+// Realistic overseer terminal output — looks like a Claude overseer monitoring workers
 const TERMINAL_CONTENT = `╭────────────────────────────────────────────────╮
-│ Claude Code — Captain                          │
+│ Claude Code — Overseer                         │
 ╰────────────────────────────────────────────────╯
 
 > Got it. I'll break this into two parallel tasks and dispatch workers.
@@ -172,8 +172,8 @@ test.describe("Screenshots", () => {
         transcriptionEl.textContent = transcription;
         transcriptionEl.className = "";
 
-        // Set captain select to claude
-        const sel = document.getElementById("captain-tool-select");
+        // Set overseer select to claude
+        const sel = document.getElementById("overseer-tool-select");
         sel.value = "claude";
         sel.classList.add("claude-selected");
 

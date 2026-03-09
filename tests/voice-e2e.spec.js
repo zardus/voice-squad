@@ -4,16 +4,16 @@
  * STT transcription via OpenAI Whisper.
  *
  * These tests require a real OPENAI_API_KEY and are opt-in:
- *   TEST_CAPTAIN=1 ./test.sh voice-e2e.spec.js
+ *   TEST_OVERSEER=1 ./test.sh voice-e2e.spec.js
  */
 const { test, expect } = require("@playwright/test");
 const { BASE_URL, TOKEN, pageUrl } = require("./helpers/config");
 const https = require("https");
 const { execSync } = require("child_process");
 const fs = require("fs");
-const { captainExec } = require("./helpers/tmux");
+const { overseerExec } = require("./helpers/tmux");
 
-const CAPTAIN = process.env.TEST_CAPTAIN === "1";
+const OVERSEER = process.env.TEST_OVERSEER === "1";
 
 /**
  * Generate a valid WAV buffer with a sine wave tone.
@@ -52,8 +52,8 @@ function sleep(ms) {
 
 /**
  * Call OpenAI Whisper API directly for STT verification.
- * Bypasses the voice server pipeline to avoid feeding the transcription
- * back to the captain (which would create a feedback loop).
+ * Bypasses the hub pipeline to avoid feeding the transcription
+ * back to the overseer (which would create a feedback loop).
  */
 function whisperTranscribe(audioBuffer) {
   const boundary = "----TestBoundary" + Date.now();
@@ -116,10 +116,10 @@ function whisperTranscribe(audioBuffer) {
 }
 
 /**
- * Ensure the Claude captain is running in tmux captain:0.
+ * Ensure the Claude overseer is running in tmux overseer:0.
  * Configures API keys, handles first-run dialogs, waits for the prompt.
  */
-async function ensureCaptainRunning() {
+async function ensureOverseerRunning() {
   let apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey || apiKey.startsWith("sk-ant-test")) {
     try {
@@ -130,7 +130,7 @@ async function ensureCaptainRunning() {
     } catch {}
   }
   if (!apiKey || apiKey.startsWith("sk-ant-test")) {
-    throw new Error("Real ANTHROPIC_API_KEY required for captain voice E2E");
+    throw new Error("Real ANTHROPIC_API_KEY required for overseer voice E2E");
   }
 
   // Pre-configure Claude Code (skip onboarding)
@@ -167,21 +167,21 @@ async function ensureCaptainRunning() {
     );
   }
   try {
-    captainExec(`set-environment -t captain ANTHROPIC_API_KEY '${apiKey}'`);
+    overseerExec(`set-environment -t overseer ANTHROPIC_API_KEY '${apiKey}'`);
   } catch {}
 
-  // Kill anything currently running in captain:0
+  // Kill anything currently running in overseer:0
   for (let i = 0; i < 3; i++) {
     try {
-      captainExec("send-keys -t captain:0 C-c");
+      overseerExec("send-keys -t overseer:0 C-c");
     } catch {}
   }
   await sleep(1000);
 
   // Start Claude
-  console.log("[voice-e2e] Starting Claude captain...");
-  captainExec(
-    'send-keys -t captain:0 "cd /opt/squad/captain && unset TMUX && source ~/.bashrc && claude --dangerously-skip-permissions" Enter',
+  console.log("[voice-e2e] Starting Claude overseer...");
+  overseerExec(
+    'send-keys -t overseer:0 "cd /opt/squad/overseer && unset TMUX && source ~/.bashrc && claude --dangerously-skip-permissions" Enter',
     { timeout: 10000 }
   );
 
@@ -190,8 +190,8 @@ async function ensureCaptainRunning() {
   for (let i = 0; i < 90; i++) {
     await sleep(2000);
     try {
-      const shellPid = captainExec(
-        "list-panes -t captain:0 -F '#{pane_pid}'"
+      const shellPid = overseerExec(
+        "list-panes -t overseer:0 -F '#{pane_pid}'"
       ).trim();
       const childPid = execSync(
         `ps -o pid= --ppid ${shellPid} 2>/dev/null | head -1`,
@@ -199,26 +199,26 @@ async function ensureCaptainRunning() {
       ).trim();
 
       if (!childPid) {
-        const raw = captainExec("capture-pane -t captain:0 -p -S -50");
+        const raw = overseerExec("capture-pane -t overseer:0 -p -S -50");
         if (stripAnsi(raw).includes("Yes, I accept")) {
-          captainExec("send-keys -t captain:0 Enter");
+          overseerExec("send-keys -t overseer:0 Enter");
           await sleep(1000);
-          captainExec(
-            'send-keys -t captain:0 "unset TMUX && claude --dangerously-skip-permissions" Enter',
+          overseerExec(
+            'send-keys -t overseer:0 "unset TMUX && claude --dangerously-skip-permissions" Enter',
             { timeout: 10000 }
           );
         }
         continue;
       }
 
-      const raw = captainExec("capture-pane -t captain:0 -p");
+      const raw = overseerExec("capture-pane -t overseer:0 -p");
       const cleaned = stripAnsi(raw);
 
       if (
         cleaned.includes("Choose the text style") ||
         cleaned.includes("Let's get started")
       ) {
-        captainExec("send-keys -t captain:0 Enter");
+        overseerExec("send-keys -t overseer:0 Enter");
         await sleep(1000);
         continue;
       }
@@ -226,14 +226,14 @@ async function ensureCaptainRunning() {
         cleaned.includes("Yes, I accept") &&
         cleaned.includes("Enter to confirm")
       ) {
-        captainExec("send-keys -t captain:0 2");
+        overseerExec("send-keys -t overseer:0 2");
         await sleep(500);
-        captainExec("send-keys -t captain:0 Enter");
+        overseerExec("send-keys -t overseer:0 Enter");
         await sleep(3000);
         continue;
       }
       if (cleaned.includes("Enter to confirm")) {
-        captainExec("send-keys -t captain:0 Enter");
+        overseerExec("send-keys -t overseer:0 Enter");
         await sleep(2000);
         continue;
       }
@@ -246,7 +246,7 @@ async function ensureCaptainRunning() {
       ) {
         if (!cleaned.includes("Enter to confirm")) {
           ready = true;
-          console.log("[voice-e2e] Claude captain ready.");
+          console.log("[voice-e2e] Claude overseer ready.");
           break;
         }
       }
@@ -255,13 +255,13 @@ async function ensureCaptainRunning() {
         const lines = cleaned.split("\n").filter((l) => l.trim());
         const tail = lines.slice(-2).map((l) => l.slice(-80));
         console.log(
-          `[voice-e2e] Waiting for captain (${i * 2}s)... ${JSON.stringify(tail)}`
+          `[voice-e2e] Waiting for overseer (${i * 2}s)... ${JSON.stringify(tail)}`
         );
       }
     } catch {}
   }
 
-  if (!ready) throw new Error("Captain failed to start within timeout");
+  if (!ready) throw new Error("Overseer failed to start within timeout");
   await sleep(3000);
 }
 
@@ -271,7 +271,7 @@ test.describe("Voice E2E", () => {
   });
 
   test("STT via WAV: send audio and get Whisper transcription", async ({ page }) => {
-    test.skip(!CAPTAIN, "Set TEST_CAPTAIN=1 to run voice E2E tests");
+    test.skip(!OVERSEER, "Set TEST_OVERSEER=1 to run voice E2E tests");
     test.setTimeout(30000);
 
     await page.goto(pageUrl());
@@ -325,7 +325,7 @@ test.describe("Voice E2E", () => {
   });
 
   test("STT via WebM: MediaRecorder audio gets Whisper transcription", async ({ page }) => {
-    test.skip(!CAPTAIN, "Set TEST_CAPTAIN=1 to run voice E2E tests");
+    test.skip(!OVERSEER, "Set TEST_OVERSEER=1 to run voice E2E tests");
     test.setTimeout(30000);
 
     await page.goto(pageUrl());
@@ -406,14 +406,14 @@ test.describe("Voice E2E", () => {
     expect(result.ok).toBe(true);
   });
 
-  test("Voice round trip: TTS command → captain → speak response → STT verify", async ({ page }) => {
-    test.skip(!CAPTAIN, "Set TEST_CAPTAIN=1 to run voice E2E tests");
-    test.setTimeout(10 * 60 * 1000); // 10 minutes — captain startup + processing
+  test("Voice round trip: TTS command -> overseer -> speak response -> STT verify", async ({ page }) => {
+    test.skip(!OVERSEER, "Set TEST_OVERSEER=1 to run voice E2E tests");
+    test.setTimeout(10 * 60 * 1000); // 10 minutes — overseer startup + processing
 
-    // ── Phase 0: Ensure captain is running ──
-    await ensureCaptainRunning();
+    // -- Phase 0: Ensure overseer is running --
+    await ensureOverseerRunning();
 
-    // ── Phase 1: Synthesize command audio via TTS ──
+    // -- Phase 1: Synthesize command audio via TTS --
     const TARGET_PHRASE = "purple elephants dance at midnight under golden stars";
     const COMMAND =
       `Use the speak command to say exactly this phrase and nothing else: ${TARGET_PHRASE}`;
@@ -435,9 +435,9 @@ test.describe("Voice E2E", () => {
     console.log(`[voice-e2e] Command TTS: ${commandAudio.length} bytes of mp3`);
     expect(commandAudio.length).toBeGreaterThan(1000);
 
-    // ── Phase 2: Send command through the actual voice pipeline via Playwright ──
-    // The audio goes: browser WS → voice server STT → tmux send-keys → captain
-    // Captain responds via `speak "..."` -> internal speak socket -> TTS -> WS broadcast
+    // -- Phase 2: Send command through the actual voice pipeline via Playwright --
+    // The audio goes: browser WS -> hub STT -> tmux send-keys -> overseer
+    // Overseer responds via `speak "..."` -> internal speak socket -> TTS -> WS broadcast
     await page.goto(pageUrl());
     await expect(page.locator("#status")).toHaveClass(/connected/, { timeout: 10000 });
 
@@ -457,7 +457,7 @@ test.describe("Voice E2E", () => {
           const timeout = setTimeout(() => {
             reject(
               new Error(
-                `timeout (${TIMEOUT_MS / 1000}s): captain never spoke back with target phrase. ` +
+                `timeout (${TIMEOUT_MS / 1000}s): overseer never spoke back with target phrase. ` +
                   `Transcription: "${commandTranscription}", speak_texts: ${JSON.stringify(allSpeakTexts)}`
               )
             );
@@ -486,13 +486,13 @@ test.describe("Voice E2E", () => {
           ws.onmessage = (evt) => {
             if (found) return;
 
-            // Binary frame = TTS audio from captain's speak command
+            // Binary frame = TTS audio from overseer's speak command
             if (evt.data instanceof ArrayBuffer) {
               if (pendingSpeakText && gotTranscription) {
                 const lower = pendingSpeakText.toLowerCase();
                 const matches = keywords.every((k) => lower.includes(k));
                 if (matches) {
-                  // This is the captain's response with our target phrase
+                  // This is the overseer's response with our target phrase
                   found = true;
                   const bytes = new Uint8Array(evt.data);
                   // Convert ArrayBuffer to base64 in chunks (avoid stack overflow)
@@ -509,8 +509,8 @@ test.describe("Voice E2E", () => {
                   ws.close();
                   resolve({
                     commandTranscription,
-                    captainSpeakText: pendingSpeakText,
-                    captainAudioB64: btoa(binary),
+                    overseerSpeakText: pendingSpeakText,
+                    overseerAudioB64: btoa(binary),
                     allSpeakTexts,
                   });
                 }
@@ -552,21 +552,21 @@ test.describe("Voice E2E", () => {
     console.log(
       `[voice-e2e] Command transcription: "${result.commandTranscription}"`
     );
-    console.log(`[voice-e2e] Captain spoke: "${result.captainSpeakText}"`);
+    console.log(`[voice-e2e] Overseer spoke: "${result.overseerSpeakText}"`);
     console.log(
       `[voice-e2e] All speak texts: ${JSON.stringify(result.allSpeakTexts)}`
     );
 
-    // ── Phase 3: Verify captain's speak_text contains the target phrase ──
-    const speakLower = result.captainSpeakText.toLowerCase();
+    // -- Phase 3: Verify overseer's speak_text contains the target phrase --
+    const speakLower = result.overseerSpeakText.toLowerCase();
     expect(speakLower).toContain("purple");
     expect(speakLower).toContain("elephant");
 
-    // ── Phase 4: STT the captain's response audio to verify it was actually spoken ──
-    // Uses Whisper API directly (not through the voice server pipeline, which
-    // would send the transcription back to the captain and create a loop).
-    console.log("[voice-e2e] Running STT on captain's response audio...");
-    const responseAudio = Buffer.from(result.captainAudioB64, "base64");
+    // -- Phase 4: STT the overseer's response audio to verify it was actually spoken --
+    // Uses Whisper API directly (not through the hub pipeline, which
+    // would send the transcription back to the overseer and create a loop).
+    console.log("[voice-e2e] Running STT on overseer's response audio...");
+    const responseAudio = Buffer.from(result.overseerAudioB64, "base64");
     console.log(`[voice-e2e] Response audio: ${responseAudio.length} bytes`);
     expect(responseAudio.length).toBeGreaterThan(1000);
 
@@ -580,10 +580,10 @@ test.describe("Voice E2E", () => {
 
     console.log("[voice-e2e] Full voice round trip verified!");
 
-    // Cleanup: stop captain
+    // Cleanup: stop overseer
     try {
-      captainExec("send-keys -t captain:0 C-c");
-      captainExec("send-keys -t captain:0 C-c");
+      overseerExec("send-keys -t overseer:0 C-c");
+      overseerExec("send-keys -t overseer:0 C-c");
     } catch {}
   });
 });

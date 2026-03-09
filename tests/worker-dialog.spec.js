@@ -129,7 +129,7 @@ test.describe("Worker dialog auto-accept", () => {
   });
 
   test("create-worker script contains dialog auto-accept logic", () => {
-    const script = fs.readFileSync("/opt/squad/captain/create-worker", "utf8");
+    const script = fs.readFileSync("/opt/squad/overseer/create-worker", "utf8");
 
     // Must detect trust dialog
     expect(script).toContain("Yes, I accept");

@@ -26,19 +26,19 @@ RUN usermod -aG sudo ubuntu \
     && echo "ubuntu ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
 # Shared sockets directory for cross-container sharing
-RUN mkdir -p /run/squad-sockets/captain-tmux /run/squad-sockets/projects \
+RUN mkdir -p /run/squad-sockets/overseer-tmux /run/squad-sockets/projects \
     && chown -R ubuntu:ubuntu /run/squad-sockets
 
 # ── Scripts under test ──────────────────────────────────────
 # show-qr.js + its qrcode-terminal dependency
 RUN mkdir -p /opt/squad/voice && cd /opt/squad/voice && npm install --save qrcode-terminal
 COPY src/tunnel/show-qr.js /opt/squad/voice/show-qr.js
-COPY src/captain/restart-captain.sh /opt/squad/restart-captain.sh
+COPY src/overseer/restart-overseer.sh /opt/squad/restart-overseer.sh
 COPY src/pane-monitor/pane-monitor.sh /opt/squad/pane-monitor.sh
-COPY src/captain/switch-account.sh /opt/tests/src/captain/switch-account.sh
-COPY src/captain/speak /opt/squad/captain/speak
-COPY src/captain/bin/create-worker /opt/squad/captain/create-worker
-RUN chmod +x /opt/squad/restart-captain.sh /opt/squad/pane-monitor.sh /opt/squad/captain/speak /opt/squad/captain/create-worker
+COPY src/overseer/switch-account.sh /opt/tests/src/overseer/switch-account.sh
+COPY src/overseer/speak /opt/squad/overseer/speak
+COPY src/overseer/bin/create-worker /opt/squad/overseer/create-worker
+RUN chmod +x /opt/squad/restart-overseer.sh /opt/squad/pane-monitor.sh /opt/squad/overseer/speak /opt/squad/overseer/create-worker
 
 # ── Switch to ubuntu for npm/playwright install ─────────────
 # Avoids a slow chown -R over hundreds of MB of Chromium binaries.

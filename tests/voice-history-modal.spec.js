@@ -25,7 +25,7 @@ test.describe("Voice history modal", () => {
           setTimeout(() => {
             if (this.onopen) this.onopen();
             if (this.onmessage) {
-              this.onmessage({ data: JSON.stringify({ type: "connected", captain: "codex" }) });
+              this.onmessage({ data: JSON.stringify({ type: "connected", overseer: "codex" }) });
             }
           }, 0);
         }

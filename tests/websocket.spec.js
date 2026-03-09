@@ -34,7 +34,7 @@ test.describe("WebSocket", () => {
     }, { token: TOKEN, wsUrl: WS_URL });
 
     expect(msg.type).toBe("connected");
-    expect(["claude", "codex"]).toContain(msg.captain);
+    expect(["claude", "codex"]).toContain(msg.overseer);
   });
 
   test("new connections receive voice history payload", async ({ page }) => {

@@ -183,7 +183,7 @@ async function createProject(name) {
     "-v",
     `${HOST_HOME_PATH}/.codex:/home/ubuntu/.codex`,
     "-v",
-    `${HOST_HOME_PATH}/captain:/home/ubuntu/captain:ro`,
+    `${HOST_HOME_PATH}/overseer:/home/ubuntu/overseer:ro`,
     "-v",
     `${SQUAD_SOCKETS_VOLUME}:/run/squad-sockets`,
   ];

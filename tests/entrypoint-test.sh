@@ -2,29 +2,29 @@
 # Test-runner entrypoint: waits for infrastructure, then runs Playwright.
 set -euo pipefail
 
-CAPTAIN_TMUX_SOCKET="${CAPTAIN_TMUX_SOCKET:-/run/squad-sockets/captain-tmux/default}"
+OVERSEER_TMUX_SOCKET="${OVERSEER_TMUX_SOCKET:-/run/squad-sockets/overseer-tmux/default}"
 PROJECTS_SOCKETS_DIR="${PROJECTS_SOCKETS_DIR:-/run/squad-sockets/projects}"
-CAPTAIN_TMUX_DIR="$(dirname "$CAPTAIN_TMUX_SOCKET")"
-export CAPTAIN_TMUX_SOCKET PROJECTS_SOCKETS_DIR
+OVERSEER_TMUX_DIR="$(dirname "$OVERSEER_TMUX_SOCKET")"
+export OVERSEER_TMUX_SOCKET PROJECTS_SOCKETS_DIR
 
 # Ensure tmux socket dirs are accessible
-sudo mkdir -p "$CAPTAIN_TMUX_DIR" "$PROJECTS_SOCKETS_DIR" 2>/dev/null || true
-sudo chown ubuntu:ubuntu "$CAPTAIN_TMUX_DIR" "$PROJECTS_SOCKETS_DIR" 2>/dev/null || true
-sudo chmod 755 "$CAPTAIN_TMUX_DIR" "$PROJECTS_SOCKETS_DIR" 2>/dev/null || true
+sudo mkdir -p "$OVERSEER_TMUX_DIR" "$PROJECTS_SOCKETS_DIR" 2>/dev/null || true
+sudo chown ubuntu:ubuntu "$OVERSEER_TMUX_DIR" "$PROJECTS_SOCKETS_DIR" 2>/dev/null || true
+sudo chmod 755 "$OVERSEER_TMUX_DIR" "$PROJECTS_SOCKETS_DIR" 2>/dev/null || true
 
-# Wait for captain tmux session (started by captain container)
-echo "Waiting for captain tmux session..."
+# Wait for overseer tmux session (started by overseer container)
+echo "Waiting for overseer tmux session..."
 timeout=30
-while ! tmux -S "$CAPTAIN_TMUX_SOCKET" has-session -t captain 2>/dev/null && [ $timeout -gt 0 ]; do
+while ! tmux -S "$OVERSEER_TMUX_SOCKET" has-session -t overseer 2>/dev/null && [ $timeout -gt 0 ]; do
     sleep 1
     timeout=$((timeout - 1))
 done
 
-if ! tmux -S "$CAPTAIN_TMUX_SOCKET" has-session -t captain 2>/dev/null; then
-    echo "ERROR: captain tmux session not available after 30s"
+if ! tmux -S "$OVERSEER_TMUX_SOCKET" has-session -t overseer 2>/dev/null; then
+    echo "ERROR: overseer tmux session not available after 30s"
     exit 1
 fi
-echo "[ok] captain tmux session found"
+echo "[ok] overseer tmux session found"
 
 # Discover VOICE_TOKEN from shared volume if not set in environment
 if [ -z "${VOICE_TOKEN:-}" ] && [ -f /home/ubuntu/.voice-token ]; then
@@ -34,7 +34,7 @@ if [ -z "${VOICE_TOKEN:-}" ] && [ -f /home/ubuntu/.voice-token ]; then
 fi
 
 # Write voice URL for tests
-echo "http://voice-server:3000?token=${VOICE_TOKEN}" > /tmp/voice-url.txt
+echo "http://hub:3000?token=${VOICE_TOKEN}" > /tmp/voice-url.txt
 
 # Run tests
 cd /opt/tests

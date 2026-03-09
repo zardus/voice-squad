@@ -36,29 +36,28 @@ test.describe("UI", () => {
   // ─── Tab bar ─────────────────────────────────────────────────
 
   test.describe("Tab bar", () => {
-    test("shows five tabs: Terminal, Projects, Summary, Tasks, Voice", async ({ page }) => {
+    test("shows four tabs: Projects, Overseer, Tasks, Voice", async ({ page }) => {
       await page.goto(pageUrl());
       const tabs = page.locator("#tab-bar .tab");
-      await expect(tabs).toHaveCount(5);
-      await expect(tabs.nth(0)).toHaveText("Terminal");
-      await expect(tabs.nth(1)).toHaveText("Projects");
-      await expect(tabs.nth(2)).toHaveText("Summary");
-      await expect(tabs.nth(3)).toHaveText("Tasks");
-      await expect(tabs.nth(4)).toHaveText("Voice");
+      await expect(tabs).toHaveCount(4);
+      await expect(tabs.nth(0)).toHaveText("Projects");
+      await expect(tabs.nth(1)).toHaveText("Overseer");
+      await expect(tabs.nth(2)).toHaveText("Tasks");
+      await expect(tabs.nth(3)).toHaveText("Voice");
     });
 
-    test("Terminal tab is active by default", async ({ page }) => {
+    test("Projects tab is active by default", async ({ page }) => {
       await page.goto(pageUrl());
-      await expect(page.locator('[data-tab="terminal"]')).toHaveClass(/active/);
-      await expect(page.locator("#terminal-view")).toHaveClass(/active/);
-    });
-
-    test("clicking Projects tab switches to projects view", async ({ page }) => {
-      await page.goto(pageUrl());
-      await page.click('[data-tab="projects"]');
       await expect(page.locator('[data-tab="projects"]')).toHaveClass(/active/);
       await expect(page.locator("#projects-view")).toHaveClass(/active/);
-      await expect(page.locator("#terminal-view")).not.toHaveClass(/active/);
+    });
+
+    test("clicking Overseer tab switches to overseer view", async ({ page }) => {
+      await page.goto(pageUrl());
+      await page.click('[data-tab="overseer"]');
+      await expect(page.locator('[data-tab="overseer"]')).toHaveClass(/active/);
+      await expect(page.locator("#overseer-view")).toHaveClass(/active/);
+      await expect(page.locator("#projects-view")).not.toHaveClass(/active/);
     });
 
     test("clicking Voice tab switches to voice view", async ({ page }) => {
@@ -66,13 +65,13 @@ test.describe("UI", () => {
       await page.click('[data-tab="voice"]');
       await expect(page.locator('[data-tab="voice"]')).toHaveClass(/active/);
       await expect(page.locator("#voice-view")).toHaveClass(/active/);
-      await expect(page.locator("#terminal-view")).not.toHaveClass(/active/);
+      await expect(page.locator("#projects-view")).not.toHaveClass(/active/);
     });
 
     test("only one tab content visible at a time", async ({ page }) => {
       await page.goto(pageUrl());
 
-      // Terminal active
+      // Projects active
       let visible = await page.locator(".tab-content.active").count();
       expect(visible).toBe(1);
 
@@ -81,24 +80,23 @@ test.describe("UI", () => {
       visible = await page.locator(".tab-content.active").count();
       expect(visible).toBe(1);
 
-      // Switch to Projects
-      await page.click('[data-tab="projects"]');
+      // Switch to Overseer
+      await page.click('[data-tab="overseer"]');
       visible = await page.locator(".tab-content.active").count();
       expect(visible).toBe(1);
     });
 
-    test("switching back to Terminal from Voice restores view", async ({ page }) => {
+    test("switching back to Projects from Voice restores view", async ({ page }) => {
       await page.goto(pageUrl());
       await page.click('[data-tab="voice"]');
-      await page.click('[data-tab="terminal"]');
-      await expect(page.locator("#terminal-view")).toHaveClass(/active/);
-      await expect(page.locator("#controls")).not.toHaveClass(/hidden/);
+      await page.click('[data-tab="projects"]');
+      await expect(page.locator("#projects-view")).toHaveClass(/active/);
     });
   });
 
-  // ─── Terminal tab ────────────────────────────────────────────
+  // ─── Overseer tab ───────────────────────────────────────────
 
-  test.describe("Terminal tab", () => {
+  test.describe("Overseer tab", () => {
     test("terminal header shows title and status badge", async ({ page }) => {
       await page.goto(pageUrl());
       await expect(page.locator("#terminal-title")).toHaveText("terminal");
@@ -113,12 +111,12 @@ test.describe("UI", () => {
       await expect(versionEl).not.toHaveText("", { timeout: 5000 });
     });
 
-    test("connection status shows captain name when connected", async ({ page }) => {
+    test("connection status shows overseer name when connected", async ({ page }) => {
       await page.goto(pageUrl());
       // Wait for WebSocket to connect
       await expect(page.locator("#status")).toHaveClass(/connected/, { timeout: 5000 });
       const text = await page.locator("#status").textContent();
-      // Status now shows "captain (Xs ago)" latency timer
+      // Status now shows "overseer (Xs ago)" latency timer
       expect(text).toMatch(/^(claude|codex)\s/);
     });
 
@@ -148,9 +146,9 @@ test.describe("UI", () => {
       await expect(rects).toHaveCount(2);
     });
 
-    test("captain tool selector has claude and codex options", async ({ page }) => {
+    test("overseer tool selector has claude and codex options", async ({ page }) => {
       await page.goto(pageUrl());
-      const select = page.locator("#captain-tool-select");
+      const select = page.locator("#overseer-tool-select");
       await expect(select).toBeVisible();
       const options = select.locator("option");
       await expect(options).toHaveCount(2);
@@ -160,7 +158,7 @@ test.describe("UI", () => {
 
     test("restart button exists", async ({ page }) => {
       await page.goto(pageUrl());
-      const btn = page.locator("#restart-captain-btn");
+      const btn = page.locator("#restart-overseer-btn");
       await expect(btn).toBeVisible();
       await expect(btn.locator(".btn-label")).toHaveText("Restart");
     });
@@ -224,11 +222,11 @@ test.describe("UI", () => {
       expect(restored).toBe(initialState);
     });
 
-    test("captain selector updates color class on change", async ({ page }) => {
+    test("overseer selector updates color class on change", async ({ page }) => {
       await page.goto(pageUrl());
       await expect(page.locator("#status")).toHaveClass(/connected/, { timeout: 5000 });
 
-      const select = page.locator("#captain-tool-select");
+      const select = page.locator("#overseer-tool-select");
       await select.selectOption("codex");
       await expect(select).toHaveClass(/codex-selected/);
 
@@ -350,12 +348,12 @@ test.describe("UI", () => {
       });
     });
 
-    test("voice captain switch exists", async ({ page }) => {
+    test("voice overseer switch exists", async ({ page }) => {
       await page.goto(pageUrl());
       await page.click('[data-tab="voice"]');
-      await expect(page.locator("#voice-captain-tool-select")).toBeVisible();
-      await expect(page.locator("#voice-restart-captain-btn")).toBeVisible();
-      await expect(page.locator("#voice-restart-captain-btn")).toHaveText("Restart Captain");
+      await expect(page.locator("#voice-overseer-tool-select")).toBeVisible();
+      await expect(page.locator("#voice-restart-overseer-btn")).toBeVisible();
+      await expect(page.locator("#voice-restart-overseer-btn")).toHaveText("Restart Overseer");
     });
 
     test("controls bar hidden in voice tab", async ({ page }) => {
@@ -364,9 +362,9 @@ test.describe("UI", () => {
       await expect(page.locator("#controls")).toHaveClass(/hidden/);
     });
 
-    test("auto-read toggles stay in sync between terminal controls and voice tab", async ({ page }) => {
+    test("auto-read toggles stay in sync between overseer controls and voice tab", async ({ page }) => {
       await page.goto(pageUrl());
-      const terminalCb = page.locator("#autoread-cb");
+      const overseerCb = page.locator("#autoread-cb");
       const voiceCb = page.locator("#voice-autoread-cb");
 
       await page.click('[data-tab="voice"]');
@@ -374,8 +372,8 @@ test.describe("UI", () => {
       await page.locator("#voice-autoread-toggle").click();
       await expect(voiceCb).toHaveJSProperty("checked", !initial);
 
-      await page.click('[data-tab="terminal"]');
-      await expect(terminalCb).toHaveJSProperty("checked", !initial);
+      await page.click('[data-tab="overseer"]');
+      await expect(overseerCb).toHaveJSProperty("checked", !initial);
     });
 
     test("voice top row buttons are side by side", async ({ page }) => {
@@ -403,23 +401,23 @@ test.describe("UI", () => {
       }
     });
 
-    test("voice captain selects sync with terminal captain selects", async ({ page }) => {
+    test("voice overseer selects sync with overseer tab selects", async ({ page }) => {
       await page.goto(pageUrl());
       await expect(page.locator("#status")).toHaveClass(/connected/, { timeout: 5000 });
 
-      // Change in terminal tab
-      await page.locator("#captain-tool-select").selectOption("codex");
+      // Change in overseer tab
+      await page.locator("#overseer-tool-select").selectOption("codex");
 
       // Switch to voice tab and check
       await page.click('[data-tab="voice"]');
-      const voiceVal = await page.locator("#voice-captain-tool-select").inputValue();
+      const voiceVal = await page.locator("#voice-overseer-tool-select").inputValue();
       expect(voiceVal).toBe("codex");
 
       // Change back
-      await page.locator("#voice-captain-tool-select").selectOption("claude");
-      await page.click('[data-tab="terminal"]');
-      const termVal = await page.locator("#captain-tool-select").inputValue();
-      expect(termVal).toBe("claude");
+      await page.locator("#voice-overseer-tool-select").selectOption("claude");
+      await page.click('[data-tab="overseer"]');
+      const overseerVal = await page.locator("#overseer-tool-select").inputValue();
+      expect(overseerVal).toBe("claude");
     });
 
     test("voice transcription area has brief text, not full transcription", async ({ page }) => {
@@ -462,23 +460,23 @@ test.describe("UI", () => {
     });
   });
 
-  // ─── Summary tab ────────────────────────────────────────────
+  // ─── Overseer status tab ─────────────────────────────────────
 
-  test.describe("Summary tab", () => {
-    test("summary tab loads with header and refresh button", async ({ page }) => {
+  test.describe("Overseer status tab", () => {
+    test("overseer tab loads with header and refresh button", async ({ page }) => {
       await page.goto(pageUrl());
-      await page.click('[data-tab="summary"]');
+      await page.click('[data-tab="overseer"]');
 
-      await expect(page.locator("#summary-tab-title")).toHaveText("summary");
-      await expect(page.locator("#refresh-summary-btn")).toBeVisible();
-      await expect(page.locator("#summary-tab-content")).toBeVisible();
+      await expect(page.locator("#overseer-tab-title")).toHaveText("overseer");
+      await expect(page.locator("#refresh-overseer-btn")).toBeVisible();
+      await expect(page.locator("#overseer-tab-content")).toBeVisible();
     });
 
-    test("summary body is scrollable", async ({ page }) => {
+    test("overseer body is scrollable", async ({ page }) => {
       await page.goto(pageUrl());
-      await page.click('[data-tab="summary"]');
+      await page.click('[data-tab="overseer"]');
 
-      const overflow = await page.locator("#summary-tab-body").evaluate(
+      const overflow = await page.locator("#overseer-tab-body").evaluate(
         (el) => getComputedStyle(el).overflowY,
       );
       expect(overflow).toBe("auto");
@@ -624,13 +622,13 @@ test.describe("UI", () => {
       expect(msg.text).toBe("test-ping");
     });
 
-    test("restart button sends POST /api/restart-captain with correct body", async ({ page }) => {
+    test("restart button sends POST /api/restart-overseer with correct body", async ({ page }) => {
       await page.goto(pageUrl());
       await expect(page.locator("#status")).toHaveClass(/connected/, { timeout: 5000 });
 
       const [request] = await Promise.all([
-        page.waitForRequest((req) => req.url().includes("/api/restart-captain")),
-        page.click("#restart-captain-btn"),
+        page.waitForRequest((req) => req.url().includes("/api/restart-overseer")),
+        page.click("#restart-overseer-btn"),
       ]);
 
       expect(request.method()).toBe("POST");
@@ -641,7 +639,7 @@ test.describe("UI", () => {
 
     test("restart button shows 'Restarting...' while in progress", async ({ page }) => {
       // Intercept the restart API to add a delay so we can check the button text
-      await page.route("**/api/restart-captain", async (route) => {
+      await page.route("**/api/restart-overseer", async (route) => {
         await new Promise((r) => setTimeout(r, 500));
         await route.fulfill({
           status: 200,
@@ -654,17 +652,17 @@ test.describe("UI", () => {
       await expect(page.locator("#status")).toHaveClass(/connected/, { timeout: 5000 });
 
       // Click restart, then immediately check the button text
-      page.click("#restart-captain-btn"); // don't await — we need to check mid-flight
-      await expect(page.locator("#restart-captain-btn .btn-label")).toHaveText("Restarting...");
-      await expect(page.locator("#restart-captain-btn")).toBeDisabled();
+      page.click("#restart-overseer-btn"); // don't await — we need to check mid-flight
+      await expect(page.locator("#restart-overseer-btn .btn-label")).toHaveText("Restarting...");
+      await expect(page.locator("#restart-overseer-btn")).toBeDisabled();
 
       // Wait for it to finish and re-enable
-      await expect(page.locator("#restart-captain-btn .btn-label")).toHaveText("Restart", { timeout: 5000 });
-      await expect(page.locator("#restart-captain-btn")).toBeEnabled();
+      await expect(page.locator("#restart-overseer-btn .btn-label")).toHaveText("Restart", { timeout: 5000 });
+      await expect(page.locator("#restart-overseer-btn")).toBeEnabled();
     });
 
     test("restart button shows error message on failure", async ({ page }) => {
-      await page.route("**/api/restart-captain", async (route) => {
+      await page.route("**/api/restart-overseer", async (route) => {
         await route.fulfill({
           status: 500,
           contentType: "application/json",
@@ -675,22 +673,22 @@ test.describe("UI", () => {
       await page.goto(pageUrl());
       await expect(page.locator("#status")).toHaveClass(/connected/, { timeout: 5000 });
 
-      await page.click("#restart-captain-btn");
+      await page.click("#restart-overseer-btn");
 
       // Should show the error in the summary area
       await expect(page.locator("#summary")).toContainText("tmux session not found", { timeout: 5000 });
       // Button should be re-enabled
-      await expect(page.locator("#restart-captain-btn")).toBeEnabled();
+      await expect(page.locator("#restart-overseer-btn")).toBeEnabled();
     });
 
-    test("voice restart button sends POST /api/restart-captain", async ({ page }) => {
+    test("voice restart button sends POST /api/restart-overseer", async ({ page }) => {
       await page.goto(pageUrl());
       await expect(page.locator("#status")).toHaveClass(/connected/, { timeout: 5000 });
       await page.click('[data-tab="voice"]');
 
       const [request] = await Promise.all([
-        page.waitForRequest((req) => req.url().includes("/api/restart-captain")),
-        page.click("#voice-restart-captain-btn"),
+        page.waitForRequest((req) => req.url().includes("/api/restart-overseer")),
+        page.click("#voice-restart-overseer-btn"),
       ]);
 
       expect(request.method()).toBe("POST");
@@ -700,7 +698,7 @@ test.describe("UI", () => {
     });
 
     test("restart button shows success in summary", async ({ page }) => {
-      await page.route("**/api/restart-captain", async (route) => {
+      await page.route("**/api/restart-overseer", async (route) => {
         await route.fulfill({
           status: 200,
           contentType: "application/json",
@@ -711,9 +709,9 @@ test.describe("UI", () => {
       await page.goto(pageUrl());
       await expect(page.locator("#status")).toHaveClass(/connected/, { timeout: 5000 });
 
-      await page.click("#restart-captain-btn");
+      await page.click("#restart-overseer-btn");
 
-      await expect(page.locator("#summary")).toContainText("Captain restarted", { timeout: 5000 });
+      await expect(page.locator("#summary")).toContainText("Overseer restarted", { timeout: 5000 });
     });
 
     test("Enter key in text input sends command", async ({ page }) => {

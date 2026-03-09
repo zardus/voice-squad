@@ -20,8 +20,8 @@ test.describe("Speak socket reliability", () => {
   });
 
   test("internal speak socket exists and is a socket file", () => {
-    // The voice-server should have created the socket before tests start
-    // (test-runner depends_on voice-server healthy).
+    // The hub should have created the socket before tests start
+    // (test-runner depends_on hub healthy).
     test.skip(!fs.existsSync(SPEAK_SOCKET_PATH), "speak socket not bind-mounted into test-runner");
     const stat = fs.statSync(SPEAK_SOCKET_PATH);
     expect(stat.isSocket()).toBe(true);
@@ -90,7 +90,7 @@ test.describe("Speak socket reliability", () => {
         const start = Date.now();
         try {
           execSync(
-            `SPEAK_SOCKET_PATH="${tmpSocket}" SPEAK_TIMEOUT=2 /opt/squad/captain/speak "test" 2>&1`,
+            `SPEAK_SOCKET_PATH="${tmpSocket}" SPEAK_TIMEOUT=2 /opt/squad/overseer/speak "test" 2>&1`,
             { timeout: 10000 }
           );
           return { output: "", elapsedMs: Date.now() - start, succeeded: true };
@@ -117,7 +117,7 @@ test.describe("Speak socket reliability", () => {
     let exitCode = 0;
     let stderr = "";
     try {
-      execSync("bash /opt/squad/captain/speak 2>&1", { timeout: 5000 });
+      execSync("bash /opt/squad/overseer/speak 2>&1", { timeout: 5000 });
     } catch (err) {
       exitCode = err.status || 1;
       stderr = err.stdout ? err.stdout.toString() : "";

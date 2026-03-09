@@ -11,7 +11,7 @@ const fs = require("fs");
 const path = require("path");
 const os = require("os");
 
-const SCRIPT = path.resolve(__dirname, "../src/captain/switch-account.sh");
+const SCRIPT = path.resolve(__dirname, "../src/overseer/switch-account.sh");
 
 test.describe("switch-account.sh", () => {
   /** @type {string} */
@@ -21,7 +21,7 @@ test.describe("switch-account.sh", () => {
 
   test.beforeEach(() => {
     tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), "switch-acct-test-"));
-    fs.mkdirSync(path.join(tmpHome, "captain"), { recursive: true });
+    fs.mkdirSync(path.join(tmpHome, "overseer"), { recursive: true });
 
     // Create stub bin directory with no-op commands for claude/codex/tmux
     stubBin = path.join(tmpHome, ".stub-bin");
@@ -56,7 +56,7 @@ test.describe("switch-account.sh", () => {
         env: {
           HOME: tmpHome,
           PATH: `${stubBin}:/usr/bin:/bin`,
-          SQUAD_CAPTAIN: env.SQUAD_CAPTAIN || "claude",
+          SQUAD_OVERSEER: env.SQUAD_OVERSEER || "claude",
           ...env,
         },
       });
@@ -96,7 +96,7 @@ test.describe("switch-account.sh", () => {
     // Script will exit 1 at tmux check, but files are created before that
     run("claude test@example.com");
 
-    const accountFile = path.join(tmpHome, "captain/accounts/claude-test@example.com");
+    const accountFile = path.join(tmpHome, "overseer/accounts/claude-test@example.com");
     expect(fs.existsSync(accountFile)).toBe(true);
     expect(JSON.parse(fs.readFileSync(accountFile, "utf8"))).toEqual({});
 
@@ -106,7 +106,7 @@ test.describe("switch-account.sh", () => {
   });
 
   test("reuses existing claude account file", () => {
-    const accountFile = path.join(tmpHome, "captain/accounts/claude-existing@test.com");
+    const accountFile = path.join(tmpHome, "overseer/accounts/claude-existing@test.com");
     fs.mkdirSync(path.dirname(accountFile), { recursive: true });
     const existingData = JSON.stringify({ oauthAccount: { email: "existing@test.com" } });
     fs.writeFileSync(accountFile, existingData);
@@ -123,7 +123,7 @@ test.describe("switch-account.sh", () => {
   });
 
   test("replaces existing claude symlink when switching accounts", () => {
-    const acctDir = path.join(tmpHome, "captain/accounts");
+    const acctDir = path.join(tmpHome, "overseer/accounts");
     fs.mkdirSync(acctDir, { recursive: true });
 
     // Create two account files
@@ -149,7 +149,7 @@ test.describe("switch-account.sh", () => {
   test("creates account file and symlink for codex", () => {
     run("codex alt@example.com");
 
-    const accountFile = path.join(tmpHome, "captain/accounts/codex-alt@example.com");
+    const accountFile = path.join(tmpHome, "overseer/accounts/codex-alt@example.com");
     expect(fs.existsSync(accountFile)).toBe(true);
     expect(JSON.parse(fs.readFileSync(accountFile, "utf8"))).toEqual({});
 
@@ -169,17 +169,17 @@ test.describe("switch-account.sh", () => {
   });
 
   // -----------------------------------------------------------------------
-  // Captain restart messaging
+  // Overseer restart messaging
   // -----------------------------------------------------------------------
 
   test("reports error when tmux session not found", () => {
     const { stdout, exitCode } = run("claude test@example.com");
     // Script should fail at tmux has-session check
     expect(exitCode).toBe(1);
-    expect(stdout).toContain("tmux session 'captain' not found");
+    expect(stdout).toContain("tmux session 'overseer' not found");
   });
 
-  test("proceeds to captain restart when tmux session exists", () => {
+  test("proceeds to overseer restart when tmux session exists", () => {
     // Override tmux stub to succeed for has-session and list-panes
     fs.writeFileSync(
       path.join(stubBin, "tmux"),
@@ -193,7 +193,7 @@ test.describe("switch-account.sh", () => {
       ].join("\n"),
     );
 
-    // Also stub ps (captain process lookup)
+    // Also stub ps (overseer process lookup)
     fs.writeFileSync(path.join(stubBin, "ps"), "#!/bin/bash\nexit 0\n");
     fs.chmodSync(path.join(stubBin, "ps"), 0o755);
 
@@ -202,7 +202,7 @@ test.describe("switch-account.sh", () => {
     fs.chmodSync(path.join(stubBin, "kill"), 0o755);
 
     const { stdout } = run("claude test@example.com");
-    expect(stdout).toContain("Launching new captain");
+    expect(stdout).toContain("Launching new overseer");
     expect(stdout).toContain("Account switch complete");
   });
 });

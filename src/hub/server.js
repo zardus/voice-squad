@@ -10,7 +10,7 @@ const crypto = require("crypto");
 const { execSync } = require("child_process");
 const { WebSocketServer, WebSocket } = require("ws");
 const {
-  sendToCaptain,
+  sendToOverseer,
   capturePaneOutputAsync,
   sendTextToPaneTarget,
   sendCtrlCToPaneTarget,
@@ -20,24 +20,25 @@ const { transcribe } = require("./stt");
 const { synthesize } = require("./tts");
 const statusDaemon = require("./status-daemon");
 const projectManager = require("./project-manager");
+const workerManager = require("./worker-manager");
 
 const PORT = process.env.VOICE_PORT || 3000;
 const TOKEN = process.env.VOICE_TOKEN;
-const CAPTAIN_DIR = process.env.SQUAD_CAPTAIN_DIR || path.join(os.homedir(), "captain");
-const CAPTAIN_CONFIG_FILE = path.join(CAPTAIN_DIR, "config.yml");
+const OVERSEER_DIR = process.env.SQUAD_OVERSEER_DIR || path.join(os.homedir(), "overseer");
+const OVERSEER_CONFIG_FILE = path.join(OVERSEER_DIR, "config.yml");
 
-// Read captain type from config.yml (written by captain entrypoint), fall back to env var
-function readCaptainConfig() {
+// Read overseer type from config.yml (written by overseer entrypoint), fall back to env var
+function readOverseerConfig() {
   try {
-    const content = fsSync.readFileSync(CAPTAIN_CONFIG_FILE, "utf8");
+    const content = fsSync.readFileSync(OVERSEER_CONFIG_FILE, "utf8");
     const match = content.match(/^type:\s*(\S+)/m);
     if (match && (match[1] === "claude" || match[1] === "codex")) return match[1];
   } catch {}
   return null;
 }
 
-let CAPTAIN = readCaptainConfig() || process.env.SQUAD_CAPTAIN || "claude";
-const TASK_DEFS_DIR = process.env.SQUAD_TASK_DEFS_DIR || path.join(CAPTAIN_DIR, "tasks");
+let OVERSEER = readOverseerConfig() || process.env.SQUAD_OVERSEER || "claude";
+const TASK_DEFS_DIR = process.env.SQUAD_TASK_DEFS_DIR || path.join(os.homedir(), "tasks");
 const TASK_DEFS_PENDING_DIR = path.join(TASK_DEFS_DIR, "pending");
 const TASK_DEFS_ARCHIVED_DIR = path.join(TASK_DEFS_DIR, "archived");
 const COMPLETED_TASKS_LIMIT = Number(process.env.SQUAD_COMPLETED_TASKS_LIMIT || process.env.COMPLETED_TASKS_LIMIT || 2000);
@@ -588,6 +589,71 @@ app.delete("/api/projects/:name", async (req, res) => {
   }
 });
 
+// --- Worker management ---
+
+app.get("/api/workers", async (req, res) => {
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  if (url.searchParams.get("token") !== TOKEN) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  try {
+    const workers = await workerManager.listWorkers();
+    res.json({ workers });
+  } catch (err) {
+    console.error("[workers] list error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/workers", async (req, res) => {
+  const { token: reqToken, project, name, tool, prompt, env } = req.body || {};
+  if (reqToken !== TOKEN) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  if (!project || !name) {
+    return res.status(400).json({ error: "Missing required fields: project, name" });
+  }
+  try {
+    await workerManager.createWorker(project, name, tool, prompt, env);
+
+    // Also write a task file to the pending dir so the task shows up in the tasks list
+    if (prompt) {
+      try {
+        await fs.mkdir(TASK_DEFS_PENDING_DIR, { recursive: true });
+        const taskFileName = sanitizeTaskName(name);
+        await fs.writeFile(
+          path.join(TASK_DEFS_PENDING_DIR, `${taskFileName}.task`),
+          prompt + "\n",
+          "utf8"
+        );
+      } catch (taskErr) {
+        console.warn(`[workers] failed to write task file for ${name}: ${taskErr.message}`);
+      }
+    }
+
+    console.log(`[workers] created: project=${project} worker=${name} tool=${tool || "claude"}`);
+    res.json({ ok: true, project, worker: name, tool: tool || "claude" });
+  } catch (err) {
+    console.error("[workers] create error:", err.message);
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.delete("/api/workers/:project/:name", async (req, res) => {
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  if (url.searchParams.get("token") !== TOKEN) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  try {
+    await workerManager.killWorker(req.params.project, req.params.name);
+    console.log(`[workers] killed: project=${req.params.project} worker=${req.params.name}`);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("[workers] kill error:", err.message);
+    res.status(400).json({ error: err.message });
+  }
+});
+
 app.get("/api/status", (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   if (url.searchParams.get("token") !== TOKEN) {
@@ -1098,13 +1164,13 @@ app.post("/api/interrupt", (req, res) => {
     return res.status(401).json({ error: "Unauthorized" });
   }
   try {
-    const captainSocket = process.env.CAPTAIN_TMUX_SOCKET || "";
-    const socketArgs = captainSocket ? `-S ${captainSocket} ` : "";
-    // Some captain runs need multiple SIGINT attempts before returning to prompt.
+    const overseerSocket = process.env.OVERSEER_TMUX_SOCKET || "";
+    const socketArgs = overseerSocket ? `-S ${overseerSocket} ` : "";
+    // Some overseer runs need multiple SIGINT attempts before returning to prompt.
     for (let i = 0; i < 3; i++) {
-      execSync(`tmux ${socketArgs}send-keys -t captain:0 C-c`, { timeout: 5000 });
+      execSync(`tmux ${socketArgs}send-keys -t overseer:0 C-c`, { timeout: 5000 });
     }
-    console.log("[interrupt] sent Ctrl+C x3 to captain pane captain:0");
+    console.log("[interrupt] sent Ctrl+C x3 to overseer pane overseer:0");
     res.json({ ok: true });
   } catch (err) {
     console.error("[interrupt] error:", err.message);
@@ -1115,7 +1181,7 @@ app.post("/api/interrupt", (req, res) => {
 let restartInProgress = false;
 let loginState = { inProgress: false, tool: null, url: null, status: "idle", error: null, child: null };
 
-app.post("/api/restart-captain", async (req, res) => {
+app.post("/api/restart-overseer", async (req, res) => {
   const { token, tool } = req.body || {};
   if (token !== TOKEN) {
     return res.status(401).json({ error: "Unauthorized" });
@@ -1130,29 +1196,29 @@ app.post("/api/restart-captain", async (req, res) => {
   restartInProgress = true;
 
   try {
-    // Write the desired captain type to config.yml — the captain entrypoint reads this on boot
-    await fs.mkdir(CAPTAIN_DIR, { recursive: true });
-    await fs.writeFile(CAPTAIN_CONFIG_FILE, `type: ${tool}\n`);
-    console.log(`[restart] wrote ${CAPTAIN_CONFIG_FILE}: type=${tool}`);
+    // Write the desired overseer type to config.yml — the overseer entrypoint reads this on boot
+    await fs.mkdir(OVERSEER_DIR, { recursive: true });
+    await fs.writeFile(OVERSEER_CONFIG_FILE, `type: ${tool}\n`);
+    console.log(`[restart] wrote ${OVERSEER_CONFIG_FILE}: type=${tool}`);
 
-    // Kill the sleep infinity process in the captain container via its tmux socket.
-    // The captain entrypoint runs `sleep infinity` (without exec) so bash is PID 1.
+    // Kill the sleep infinity process in the overseer container via its tmux socket.
+    // The overseer entrypoint runs `sleep infinity` (without exec) so bash is PID 1.
     // Killing sleep causes bash to exit -> container dies -> docker-compose restarts it.
-    const captainSocket = process.env.CAPTAIN_TMUX_SOCKET || "";
-    const socketArgs = captainSocket ? `-S ${captainSocket}` : "";
+    const overseerSocket = process.env.OVERSEER_TMUX_SOCKET || "";
+    const socketArgs = overseerSocket ? `-S ${overseerSocket}` : "";
     // pkill -P 1 targets children of PID 1 (the entrypoint bash) — avoids self-match
     const killCmd = `tmux ${socketArgs} new-window 'sudo pkill -P 1 sleep'`;
     console.log(`[restart] sending: ${killCmd}`);
     execSync(killCmd, { timeout: 10000 });
 
-    CAPTAIN = tool;
-    console.log(`[restart] captain container kill triggered, will restart as ${tool}`);
+    OVERSEER = tool;
+    console.log(`[restart] overseer container kill triggered, will restart as ${tool}`);
     res.json({ ok: true, tool });
   } catch (err) {
     console.error(`[restart] failed: ${err.message}`);
     res.status(500).json({ error: err.message });
   } finally {
-    // Clear the flag after a delay — the captain container needs time to die and restart.
+    // Clear the flag after a delay — the overseer container needs time to die and restart.
     // The voice server itself stays up; restartInProgress just prevents double-clicks.
     setTimeout(() => { restartInProgress = false; }, 15000);
   }
@@ -1163,7 +1229,7 @@ app.get("/api/restart-status", (req, res) => {
   if (url.searchParams.get("token") !== TOKEN) {
     return res.status(401).json({ error: "Unauthorized" });
   }
-  res.json({ restartInProgress, captain: CAPTAIN });
+  res.json({ restartInProgress, overseer: OVERSEER });
 });
 
 app.post("/api/login", (req, res) => {
@@ -1487,7 +1553,7 @@ wss.on("connection", (ws, req) => {
   let audioTooLarge = false;
 
   const lastSpeak = voiceSummaryHistory.length > 0 ? voiceSummaryHistory[0].text : null;
-  ws.send(JSON.stringify({ type: "connected", captain: CAPTAIN, lastSpeakText: lastSpeak }));
+  ws.send(JSON.stringify({ type: "connected", overseer: OVERSEER, lastSpeakText: lastSpeak }));
   ws.send(JSON.stringify({ type: "tts_config", format: ws.ttsFormat, mime: ws.ttsMime }));
   ws.send(JSON.stringify({ type: "voice_history", entries: voiceSummaryHistory }));
 
@@ -1580,10 +1646,9 @@ wss.on("connection", (ws, req) => {
       }
 
       case "text_command":
-        if (msg.text && msg.text.trim()) {
-          console.log(`[cmd] text: "${msg.text.trim()}"`);
-          sendCommand(msg.text.trim());
-        }
+        // text_command no longer routes to the overseer automatically.
+        // Clients should use pane_send_text with a specific target instead.
+        ws.send(JSON.stringify({ type: "error", message: "text_command is deprecated. Use pane_send_text with a target." }));
         break;
 
       case "status_tab_active":
@@ -1716,8 +1781,9 @@ wss.on("connection", (ws, req) => {
         safeSend(JSON.stringify({ type: "stt_error", message: "No speech detected" }));
         return;
       }
+      // Send transcription back to the client; the frontend handles routing
+      // based on the currently focused worker.
       safeSend(JSON.stringify({ type: "transcription", text }));
-      sendCommand("INPUT FROM SPEECH-TO-TEXT (might have transcription errors): " + text);
     } catch (err) {
       console.error("[stt] error:", err.message);
       try {
@@ -1725,18 +1791,6 @@ wss.on("connection", (ws, req) => {
       } catch (sendErr) {
         console.error("[stt] failed to send error to client:", sendErr.message);
       }
-    }
-  }
-
-  async function sendCommand(text) {
-    try {
-      await sendToCaptain(text);
-      console.log(`[cmd] sent to captain tmux`);
-    } catch (err) {
-      console.error(`[cmd] failed to send: ${err.message}`);
-      ws.send(
-        JSON.stringify({ type: "error", message: "Failed to send to captain: " + err.message })
-      );
     }
   }
 });

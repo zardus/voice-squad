@@ -15,63 +15,13 @@
 <body>
   <div id="app">
     <div id="tab-bar">
-      <button class="tab active" data-tab="terminal">Terminal</button>
-      <button class="tab" data-tab="projects">Projects</button>
-      <button class="tab" data-tab="summary">Summary</button>
+      <button class="tab active" data-tab="projects">Projects</button>
+      <button class="tab" data-tab="overseer">Overseer</button>
       <button class="tab" data-tab="tasks">Tasks</button>
       <button class="tab" data-tab="voice">Voice</button>
     </div>
 
-    <div id="terminal-view" class="tab-content active">
-      <div id="terminal-panel">
-        <div id="terminal-header">
-          <span id="terminal-title">terminal</span>
-          <span id="build-version" class="version-tag"></span>
-          <span id="status" class="disconnected">disconnected</span>
-        </div>
-        <pre id="terminal"></pre>
-      </div>
-
-      <div id="update-bar">
-        <button id="update-btn" title="Ask captain for a status update">
-          <span class="btn-icon" aria-hidden="true">&#x2139;</span>
-          <span class="btn-label">Status</span>
-        </button>
-        <button id="interrupt-btn" title="Interrupt captain (Ctrl+C)">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-            <rect x="5" y="4" width="5" height="16" rx="1"/>
-            <rect x="14" y="4" width="5" height="16" rx="1"/>
-          </svg>
-          <span class="btn-label">Interrupt</span>
-        </button>
-        <div id="captain-switch">
-          <select id="captain-tool-select">
-            <option value="claude">Claude</option>
-            <option value="codex">Codex</option>
-          </select>
-          <button id="restart-captain-btn" title="Restart captain with selected tool">
-            <span class="btn-icon" aria-hidden="true">&#x21BB;</span>
-            <span class="btn-label">Restart</span>
-          </button>
-          <button id="login-btn" title="Login to captain account">
-            <span class="btn-icon" aria-hidden="true">&#x2197;</span>
-            <span class="btn-label">Login</span>
-          </button>
-        </div>
-      </div>
-
-      <div id="summary-panel">
-        <div id="summary-label">voice summary</div>
-        <div id="summary"></div>
-      </div>
-
-      <div id="transcription-panel">
-        <div id="transcription-label">input transcription</div>
-        <div id="transcription"></div>
-      </div>
-    </div>
-
-    <div id="projects-view" class="tab-content">
+    <div id="projects-view" class="tab-content active">
       <div id="projects-header">
         <span id="projects-title">projects</span>
         <span id="projects-time">waiting...</span>
@@ -92,6 +42,8 @@
         <div id="create-project-body">
           <label for="create-project-name">Project name</label>
           <input type="text" id="create-project-name" placeholder="my-project" autocomplete="off" spellcheck="false">
+          <label for="create-project-repo">Git repository (optional)</label>
+          <input type="text" id="create-project-repo" placeholder="https://github.com/org/repo.git" autocomplete="off" spellcheck="false">
           <div id="create-project-error" class="hidden"></div>
           <div id="create-project-actions">
             <button id="create-project-cancel">Cancel</button>
@@ -101,13 +53,41 @@
       </div>
     </div>
 
-    <div id="summary-view" class="tab-content">
-      <div id="summary-tab-header">
-        <span id="summary-tab-title">summary</span>
-        <button id="refresh-summary-btn" title="Refresh summary">Refresh</button>
+    <div id="create-worker-modal" class="hidden" aria-hidden="true">
+      <div id="create-worker-backdrop"></div>
+      <div id="create-worker-dialog" role="dialog" aria-modal="true">
+        <div id="create-worker-header">
+          <span id="create-worker-modal-title">Create Worker</span>
+          <button id="create-worker-close" title="Close" aria-label="Close">&times;</button>
+        </div>
+        <div id="create-worker-body">
+          <input type="hidden" id="create-worker-project">
+          <label for="create-worker-name">Worker name</label>
+          <input type="text" id="create-worker-name" placeholder="fix-auth" autocomplete="off" spellcheck="false">
+          <label for="create-worker-tool">Tool</label>
+          <select id="create-worker-tool">
+            <option value="codex">Codex</option>
+            <option value="claude">Claude</option>
+          </select>
+          <label for="create-worker-prompt">Task prompt</label>
+          <textarea id="create-worker-prompt" placeholder="Fix the authentication bug..." rows="6"></textarea>
+          <div id="create-worker-error" class="hidden"></div>
+          <div id="create-worker-actions">
+            <button id="create-worker-cancel">Cancel</button>
+            <button id="create-worker-submit">Create</button>
+          </div>
+        </div>
       </div>
-      <div id="summary-tab-body">
-        <div id="summary-tab-content">Click Refresh to generate an AI summary of all screens.</div>
+    </div>
+
+    <div id="overseer-view" class="tab-content">
+      <div id="overseer-tab-header">
+        <span id="overseer-tab-title">overseer</span>
+        <span id="overseer-status" class="disconnected">disconnected</span>
+        <button id="refresh-overseer-btn" title="Refresh voice history">Refresh</button>
+      </div>
+      <div id="overseer-tab-body">
+        <div id="overseer-tab-content">Voice history will appear here.</div>
       </div>
     </div>
 
@@ -134,7 +114,7 @@
           <button id="voice-status-btn" title="Ask for status update">
             <span class="voice-status-mark" aria-hidden="true">?</span>
           </button>
-          <button id="voice-interrupt-btn" title="Interrupt captain (Ctrl+C)">
+          <button id="voice-interrupt-btn" title="Interrupt focused pane (Ctrl+C)">
             <svg viewBox="0 0 24 24" width="64" height="64" fill="currentColor">
               <rect x="5" y="4" width="5" height="16" rx="1"/>
               <rect x="14" y="4" width="5" height="16" rx="1"/>
@@ -176,32 +156,10 @@
           <div id="voice-summary" aria-live="polite"></div>
         </details>
         <div id="voice-transcription" class="voice-transcription"></div>
-        <div id="voice-captain-switch">
-          <select id="voice-captain-tool-select">
-            <option value="claude">Claude</option>
-            <option value="codex">Codex</option>
-          </select>
-          <button id="voice-restart-captain-btn" title="Restart captain with selected tool">Restart Captain</button>
-          <button id="voice-login-btn" title="Login to captain account">Login</button>
-        </div>
+        <div id="voice-pane-target" class="voice-pane-target">No pane focused</div>
       </div>
     </div>
 
-    <div id="controls">
-      <label id="autoread-toggle" class="toggle" title="Auto-read summaries aloud">
-        <input type="checkbox" id="autoread-cb">
-        <span class="toggle-slider"></span>
-        <span class="toggle-label">Auto-read</span>
-      </label>
-      <button id="mic-btn" title="Hold to speak">
-        <svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor">
-          <path d="M12 14a3 3 0 003-3V5a3 3 0 00-6 0v6a3 3 0 003 3zm-1-9a1 1 0 012 0v6a1 1 0 01-2 0V5zm6 6a5 5 0 01-10 0H5a7 7 0 0014 0h-2zm-5 9a1 1 0 01-1-1v-2h2v2a1 1 0 01-1 1z"/>
-        </svg>
-      </button>
-      <input type="text" id="text-input" placeholder="Type a command..." autocomplete="off">
-      <button id="text-popout-btn" title="Expand editor" aria-label="Expand editor">&#x2922;</button>
-      <button id="send-btn" title="Send">&#x27A4;</button>
-    </div>
 
     <div id="text-popout-modal" class="hidden" aria-hidden="true">
       <div id="text-popout-backdrop"></div>

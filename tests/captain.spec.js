@@ -1,9 +1,9 @@
 // @ts-check
 /**
- * Captain E2E tests — start a real captain agent and exercise the full pipeline.
+ * Overseer E2E tests — start a real overseer agent and exercise the full pipeline.
  *
  * These tests require real API keys and are opt-in:
- *   TEST_CAPTAIN=1 ./test.sh captain.spec.js
+ *   TEST_OVERSEER=1 ./test.sh captain.spec.js
  *
  * API keys should be set as env vars (OPENAI_API_KEY, ANTHROPIC_API_KEY) or
  * written to home/env (sourced automatically by test.sh).
@@ -12,10 +12,10 @@ const { test, expect } = require("@playwright/test");
 const { execSync } = require("child_process");
 const fs = require("fs");
 const { BASE_URL, TOKEN, pageUrl } = require("./helpers/config");
-const { captainExec } = require("./helpers/tmux");
+const { overseerExec } = require("./helpers/tmux");
 
-const CAPTAIN = process.env.TEST_CAPTAIN === "1";
-const TEST_FILE = "/home/ubuntu/captain-test.txt";
+const OVERSEER = process.env.TEST_OVERSEER === "1";
+const TEST_FILE = "/home/ubuntu/overseer-test.txt";
 
 function stripAnsi(str) {
   return str.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, "");
@@ -25,13 +25,13 @@ function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-test.describe("Captain E2E", () => {
+test.describe("Overseer E2E", () => {
   test.beforeAll(() => {
     if (!TOKEN) throw new Error("Cannot discover VOICE_TOKEN");
   });
 
-  test("captain processes a task and spawns a worker", async () => {
-    test.skip(!CAPTAIN, "Set TEST_CAPTAIN=1 to run captain tests");
+  test("overseer processes a task and spawns a worker", async () => {
+    test.skip(!OVERSEER, "Set TEST_OVERSEER=1 to run overseer tests");
     test.setTimeout(10 * 60 * 1000); // 10 minutes
 
     // Clean up any leftover test file
@@ -65,69 +65,69 @@ test.describe("Captain E2E", () => {
     fs.appendFileSync("/home/ubuntu/.bashrc",
       `\nexport ANTHROPIC_API_KEY='${apiKey}'\n`
     );
-    captainExec(`set-environment -t captain ANTHROPIC_API_KEY '${apiKey}'`);
+    overseerExec(`set-environment -t overseer ANTHROPIC_API_KEY '${apiKey}'`);
 
     // --- Start Claude ---
-    console.log("[captain-test] Starting claude captain...");
+    console.log("[overseer-test] Starting claude overseer...");
     try {
-      captainExec("send-keys -t captain:0 C-c");
-      captainExec("send-keys -t captain:0 C-c");
+      overseerExec("send-keys -t overseer:0 C-c");
+      overseerExec("send-keys -t overseer:0 C-c");
     } catch {}
     await sleep(1000);
 
-    captainExec(
-      'send-keys -t captain:0 "cd /opt/squad/captain && unset TMUX && source ~/.bashrc && claude --dangerously-skip-permissions" Enter',
+    overseerExec(
+      'send-keys -t overseer:0 "cd /opt/squad/overseer && unset TMUX && source ~/.bashrc && claude --dangerously-skip-permissions" Enter',
       { timeout: 10000 }
     );
 
     // --- Wait for Claude to be ready ---
-    console.log("[captain-test] Waiting for claude to be ready...");
+    console.log("[overseer-test] Waiting for claude to be ready...");
     let ready = false;
     for (let i = 0; i < 90; i++) {
       await sleep(2000);
       try {
-        const shellPid = captainExec("list-panes -t captain:0 -F '#{pane_pid}'").trim();
+        const shellPid = overseerExec("list-panes -t overseer:0 -F '#{pane_pid}'").trim();
         const childPid = execSync(`ps -o pid= --ppid ${shellPid} 2>/dev/null | head -1`, {
           encoding: "utf8", timeout: 5000,
         }).trim();
 
         if (!childPid) {
           // Claude may have exited at a trust prompt — restart
-          const raw = captainExec("capture-pane -t captain:0 -p -S -50");
+          const raw = overseerExec("capture-pane -t overseer:0 -p -S -50");
           if (stripAnsi(raw).includes("Yes, I accept")) {
-            captainExec("send-keys -t captain:0 Enter");
+            overseerExec("send-keys -t overseer:0 Enter");
             await sleep(1000);
-            captainExec(
-              'send-keys -t captain:0 "unset TMUX && claude --dangerously-skip-permissions" Enter',
+            overseerExec(
+              'send-keys -t overseer:0 "unset TMUX && claude --dangerously-skip-permissions" Enter',
               { timeout: 10000 }
             );
           }
           continue;
         }
 
-        const raw = captainExec("capture-pane -t captain:0 -p");
+        const raw = overseerExec("capture-pane -t overseer:0 -p");
         const cleaned = stripAnsi(raw);
 
         // Handle setup dialogs
         if (cleaned.includes("Choose the text style") ||
             cleaned.includes("Let's get started")) {
-          captainExec("send-keys -t captain:0 Enter");
+          overseerExec("send-keys -t overseer:0 Enter");
           await sleep(1000);
           continue;
         }
 
         // Trust dialog — select "Yes, I accept" (option 2)
         if (cleaned.includes("Yes, I accept") && cleaned.includes("Enter to confirm")) {
-          captainExec("send-keys -t captain:0 2");
+          overseerExec("send-keys -t overseer:0 2");
           await sleep(500);
-          captainExec("send-keys -t captain:0 Enter");
+          overseerExec("send-keys -t overseer:0 Enter");
           await sleep(3000);
           continue;
         }
 
         // Other "Enter to confirm" dialogs — accept default
         if (cleaned.includes("Enter to confirm")) {
-          captainExec("send-keys -t captain:0 Enter");
+          overseerExec("send-keys -t overseer:0 Enter");
           await sleep(2000);
           continue;
         }
@@ -139,7 +139,7 @@ test.describe("Captain E2E", () => {
             cleaned.includes("help you")) {
           if (!cleaned.includes("Enter to confirm")) {
             ready = true;
-            console.log("[captain-test] Claude ready.");
+            console.log("[overseer-test] Claude ready.");
             break;
           }
         }
@@ -147,7 +147,7 @@ test.describe("Captain E2E", () => {
         if (i > 0 && i % 15 === 0) {
           const lines = cleaned.split("\n").filter((l) => l.trim());
           const tail = lines.slice(-2).map((l) => l.slice(-80));
-          console.log(`[captain-test] Waiting (${i * 2}s)... ${JSON.stringify(tail)}`);
+          console.log(`[overseer-test] Waiting (${i * 2}s)... ${JSON.stringify(tail)}`);
         }
       } catch {}
     }
@@ -155,36 +155,36 @@ test.describe("Captain E2E", () => {
     await sleep(5000);
 
     // --- Send task ---
-    const task = `Create a file at ${TEST_FILE} with the text 'hello from captain test'`;
-    console.log(`[captain-test] Sending task: ${task}`);
+    const task = `Create a file at ${TEST_FILE} with the text 'hello from overseer test'`;
+    console.log(`[overseer-test] Sending task: ${task}`);
 
     // Capture pane BEFORE sending task for comparison
     try {
-      const pre = captainExec("capture-pane -t captain:0 -p");
+      const pre = overseerExec("capture-pane -t overseer:0 -p");
       const preClean = stripAnsi(pre).split("\n").filter((l) => l.trim());
-      console.log(`[captain-test] PRE-SEND pane (${preClean.length} lines):`);
+      console.log(`[overseer-test] PRE-SEND pane (${preClean.length} lines):`);
       preClean.slice(-8).forEach((l) => console.log(`  | ${l.slice(0, 120)}`));
-    } catch (e) { console.log(`[captain-test] PRE-SEND capture failed: ${e.message}`); }
+    } catch (e) { console.log(`[overseer-test] PRE-SEND capture failed: ${e.message}`); }
 
-    captainExec(`send-keys -t captain:0 -l "${task.replace(/"/g, '\\"')}"`);
-    // Send Enter twice with delay — matches tmux-bridge.js sendToCaptain() which
+    overseerExec(`send-keys -t overseer:0 -l "${task.replace(/"/g, '\\"')}"`);
+    // Send Enter twice with delay — matches tmux-bridge.js sendToOverseer() which
     // retries Enter to work around Claude Code's autocomplete consuming the first one.
     await sleep(400);
-    captainExec("send-keys -t captain:0 Enter");
+    overseerExec("send-keys -t overseer:0 Enter");
     await sleep(400);
-    captainExec("send-keys -t captain:0 Enter");
+    overseerExec("send-keys -t overseer:0 Enter");
 
     // Capture pane AFTER sending task to verify input was received
     await sleep(2000);
     try {
-      const post = captainExec("capture-pane -t captain:0 -p");
+      const post = overseerExec("capture-pane -t overseer:0 -p");
       const postClean = stripAnsi(post).split("\n").filter((l) => l.trim());
-      console.log(`[captain-test] POST-SEND pane (${postClean.length} lines):`);
+      console.log(`[overseer-test] POST-SEND pane (${postClean.length} lines):`);
       postClean.forEach((l) => console.log(`  | ${l.slice(0, 120)}`));
-    } catch (e) { console.log(`[captain-test] POST-SEND capture failed: ${e.message}`); }
+    } catch (e) { console.log(`[overseer-test] POST-SEND capture failed: ${e.message}`); }
 
     // --- Poll for file creation (up to 5 minutes) ---
-    console.log("[captain-test] Polling for test file...");
+    console.log("[overseer-test] Polling for test file...");
     let fileCreated = false;
     for (let i = 0; i < 150; i++) {
       await sleep(2000);
@@ -194,19 +194,19 @@ test.describe("Captain E2E", () => {
       }
       if (i > 0 && i % 15 === 0) {
         try {
-          const raw = captainExec("capture-pane -t captain:0 -p");
+          const raw = overseerExec("capture-pane -t overseer:0 -p");
           const lines = stripAnsi(raw).split("\n").filter((l) => l.trim());
           // Show MORE context — last 8 lines instead of just 2
           const tail = lines.slice(-8).map((l) => l.slice(0, 120));
-          console.log(`[captain-test] Polling (${i * 2}s), ${lines.length} lines:`);
+          console.log(`[overseer-test] Polling (${i * 2}s), ${lines.length} lines:`);
           tail.forEach((l) => console.log(`  | ${l}`));
           // Also check if claude process is still alive
           try {
-            const shellPid = captainExec("list-panes -t captain:0 -F '#{pane_pid}'").trim();
+            const shellPid = overseerExec("list-panes -t overseer:0 -F '#{pane_pid}'").trim();
             const childPid = execSync(`ps -o pid= --ppid ${shellPid} 2>/dev/null | head -1`, {
               encoding: "utf8", timeout: 5000,
             }).trim();
-            console.log(`[captain-test] Shell PID=${shellPid}, Claude PID=${childPid || "NONE"}`);
+            console.log(`[overseer-test] Shell PID=${shellPid}, Claude PID=${childPid || "NONE"}`);
           } catch {}
         } catch {}
       }
@@ -215,25 +215,25 @@ test.describe("Captain E2E", () => {
 
     // Verify file contents
     const contents = fs.readFileSync(TEST_FILE, "utf8");
-    expect(contents).toContain("hello from captain test");
-    console.log(`[captain-test] File created: ${contents.trim()}`);
+    expect(contents).toContain("hello from overseer test");
+    console.log(`[overseer-test] File created: ${contents.trim()}`);
 
     // Verify worker was spawned (should have >1 tmux window)
-    const windowList = captainExec("list-windows -t captain");
+    const windowList = overseerExec("list-windows -t overseer");
     const windowCount = windowList.trim().split("\n").length;
-    console.log(`[captain-test] tmux windows: ${windowCount}`);
+    console.log(`[overseer-test] tmux windows: ${windowCount}`);
     expect(windowCount).toBeGreaterThan(1);
 
     // Cleanup
     try {
-      captainExec("send-keys -t captain:0 C-c");
-      captainExec("send-keys -t captain:0 C-c");
+      overseerExec("send-keys -t overseer:0 C-c");
+      overseerExec("send-keys -t overseer:0 C-c");
     } catch {}
     try { fs.unlinkSync(TEST_FILE); } catch {}
   });
 
   test("voice round-trip: /api/speak produces TTS audio", async ({ page }) => {
-    test.skip(!CAPTAIN, "Set TEST_CAPTAIN=1 to run captain tests");
+    test.skip(!OVERSEER, "Set TEST_OVERSEER=1 to run overseer tests");
     test.setTimeout(30000);
 
     await page.goto(pageUrl());
@@ -253,11 +253,11 @@ test.describe("Captain E2E", () => {
     const json = await resp.json();
     expect(json.ok).toBe(true);
     expect(json.clients).toBeGreaterThanOrEqual(1);
-    console.log(`[captain-test] /api/speak: sent to ${json.clients} client(s)`);
+    console.log(`[overseer-test] /api/speak: sent to ${json.clients} client(s)`);
   });
 
   test("summary API returns Haiku status overview", async () => {
-    test.skip(!CAPTAIN, "Set TEST_CAPTAIN=1 to run captain tests");
+    test.skip(!OVERSEER, "Set TEST_OVERSEER=1 to run overseer tests");
     test.setTimeout(30000);
 
     const resp = await fetch(`${BASE_URL}/api/summary`, {
@@ -271,6 +271,6 @@ test.describe("Captain E2E", () => {
     expect(json).toHaveProperty("summary");
     expect(typeof json.summary).toBe("string");
     expect(json.summary.length).toBeGreaterThan(0);
-    console.log(`[captain-test] /api/summary: ${json.summary.slice(0, 120)}...`);
+    console.log(`[overseer-test] /api/summary: ${json.summary.slice(0, 120)}...`);
   });
 });

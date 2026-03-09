@@ -2,7 +2,7 @@
   "name": "squad-voice",
   "version": "1.0.0",
   "private": true,
-  "description": "Voice interface for Squad captain",
+  "description": "Hub for Squad orchestration",
   "main": "server.js",
   "dependencies": {
     "express": "^4.21.0",

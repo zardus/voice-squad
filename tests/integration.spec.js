@@ -1,17 +1,17 @@
 // @ts-check
 /**
- * Integration tests — send commands to the captain and verify behavior.
+ * Integration tests — send commands to the overseer and verify behavior.
  *
- * These tests interact with the live captain agent and are opt-in:
+ * These tests interact with the live overseer agent and are opt-in:
  *   TEST_INTEGRATION=1 npx playwright test integration.spec.js
  *
- * They are skipped by default to avoid disrupting a running captain.
+ * They are skipped by default to avoid disrupting a running overseer.
  */
 const { test, expect } = require("@playwright/test");
 const { execSync } = require("child_process");
 const fs = require("fs");
 const { TOKEN, pageUrl, BASE_URL } = require("./helpers/config");
-const { captainExec } = require("./helpers/tmux");
+const { overseerExec } = require("./helpers/tmux");
 
 const WS_URL = BASE_URL.replace(/^http/, "ws");
 
@@ -21,9 +21,9 @@ const TEST_FILE = "/home/ubuntu/test-hello-e2e.txt";
 test.describe("Integration", () => {
   test.beforeAll(() => {
     if (!TOKEN) throw new Error("Cannot discover VOICE_TOKEN");
-    // Ensure captain:0 has a clean bash shell — earlier tests (e.g. restart-captain)
-    // may have started a real captain agent if API keys are present.
-    try { captainExec("respawn-pane -k -t captain:0 bash"); } catch {}
+    // Ensure overseer:0 has a clean bash shell — earlier tests (e.g. restart-overseer)
+    // may have started a real overseer agent if API keys are present.
+    try { overseerExec("respawn-pane -k -t overseer:0 bash"); } catch {}
   });
 
   test("send text command and observe tmux_snapshot change", async ({ page }) => {
@@ -55,24 +55,24 @@ test.describe("Integration", () => {
     expect(newContent).not.toBe(initialContent);
   });
 
-  test("command sent via UI creates a file in the captain pane", async ({ page }) => {
+  test("command sent via UI creates a file in the overseer pane", async ({ page }) => {
     test.skip(!INTEGRATION, "Set TEST_INTEGRATION=1 to run integration tests");
     test.setTimeout(30000);
 
     // Clean up any leftover test file
     try { fs.unlinkSync(TEST_FILE); } catch {}
 
-    // Other tests (notably /api/restart-captain) may leave captain:0 running something other than a shell.
+    // Other tests (notably /api/restart-overseer) may leave overseer:0 running something other than a shell.
     // Force a predictable bash pane so the redirection command works deterministically.
     try {
-      captainExec("respawn-pane -k -t captain:0 bash");
+      overseerExec("respawn-pane -k -t overseer:0 bash");
     } catch {}
 
     await page.goto(pageUrl());
     await expect(page.locator("#status")).toHaveClass(/connected/, { timeout: 5000 });
 
     // Send a shell command via the UI text input.
-    // The captain pane runs a shell, so this exercises the full pipeline:
+    // The overseer pane runs a shell, so this exercises the full pipeline:
     // UI -> WebSocket text_command -> tmux send-keys -> shell execution -> file created.
     await page.fill(
       "#text-input",
@@ -104,7 +104,7 @@ test.describe("Integration", () => {
     try { fs.unlinkSync(TEST_FILE); } catch {}
   });
 
-  test("interrupt stops captain processing", async ({ page }) => {
+  test("interrupt stops overseer processing", async ({ page }) => {
     test.skip(!INTEGRATION, "Set TEST_INTEGRATION=1 to run integration tests");
     test.setTimeout(30000);
 
@@ -112,7 +112,7 @@ test.describe("Integration", () => {
     await expect(page.locator("#status")).toHaveClass(/connected/, { timeout: 5000 });
 
     // Send interrupt via API
-    const resp = await fetch(`http://voice-server:3000/api/interrupt`, {
+    const resp = await fetch(`http://hub:3000/api/interrupt`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ token: TOKEN }),
@@ -122,8 +122,8 @@ test.describe("Integration", () => {
     const json = await resp.json();
     expect(json.ok).toBe(true);
 
-    // Verify captain pane is still alive after interrupt
-    const paneContent = captainExec("capture-pane -t captain:0 -p -S -10");
+    // Verify overseer pane is still alive after interrupt
+    const paneContent = overseerExec("capture-pane -t overseer:0 -p -S -10");
     expect(paneContent).toBeTruthy();
   });
 

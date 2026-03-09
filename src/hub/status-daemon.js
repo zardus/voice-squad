@@ -4,7 +4,7 @@ const path = require("path");
 
 const POLL_INTERVAL_MS = 1000;
 
-const CAPTAIN_TMUX_SOCKET = process.env.CAPTAIN_TMUX_SOCKET || "";
+const OVERSEER_TMUX_SOCKET = process.env.OVERSEER_TMUX_SOCKET || "";
 const PROJECTS_SOCKETS_DIR = process.env.PROJECTS_SOCKETS_DIR || "/run/squad-sockets/projects";
 
 function tmuxExecAsync(args, socket) {
@@ -112,9 +112,9 @@ async function collectPanesFromSocket(socket, sessionPrefix) {
 async function collectPanes() {
   const promises = [];
 
-  // Captain socket
-  if (CAPTAIN_TMUX_SOCKET) {
-    promises.push(collectPanesFromSocket(CAPTAIN_TMUX_SOCKET, null));
+  // Overseer socket
+  if (OVERSEER_TMUX_SOCKET) {
+    promises.push(collectPanesFromSocket(OVERSEER_TMUX_SOCKET, null));
   }
 
   // Discover all project sockets

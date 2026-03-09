@@ -90,7 +90,7 @@ function addStubs(page, opts = {}) {
         setTimeout(() => {
           if (this.onopen) this.onopen();
           // Send initial "connected" message.
-          this._deliver({ type: "connected", captain: "claude", lastSpeakText: null });
+          this._deliver({ type: "connected", overseer: "claude", lastSpeakText: null });
           this._deliver({ type: "tts_config", format: "mp3", mime: "audio/mpeg" });
           this._deliver({ type: "voice_history", entries: [] });
         }, 0);

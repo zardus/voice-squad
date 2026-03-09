@@ -84,7 +84,7 @@ test.describe("iOS native app TTS playback", () => {
     await page.evaluate((wavSrc) => {
       const ws = window.__testWs;
       ws.onmessage({ data: JSON.stringify({ type: "tts_config", format: "wav", mime: "audio/wav" }) });
-      ws.onmessage({ data: JSON.stringify({ type: "speak_text", text: "Hello from captain" }) });
+      ws.onmessage({ data: JSON.stringify({ type: "speak_text", text: "Hello from overseer" }) });
       ws.onmessage({ data: eval(wavSrc) });
     }, generateSilenceWavSource());
 
@@ -144,7 +144,7 @@ test.describe("iOS native app TTS playback", () => {
     await page.evaluate((wavSrc) => {
       const ws = window.__testWs;
       ws.onmessage({ data: JSON.stringify({ type: "tts_config", format: "wav", mime: "audio/wav" }) });
-      ws.onmessage({ data: JSON.stringify({ type: "speak_text", text: "Hello from captain" }) });
+      ws.onmessage({ data: JSON.stringify({ type: "speak_text", text: "Hello from overseer" }) });
       ws.onmessage({ data: eval(wavSrc) });
     }, generateSilenceWavSource());
 
