@@ -85,6 +85,8 @@ test.describe("Voice history modal", () => {
 
     // Switch to voice tab where #voice-summary lives
     await page.click('[data-tab="voice"]');
+    // Open the <details> panel to reveal #voice-summary
+    await page.click("#voice-summary-label");
     await page.click("#voice-summary");
     await expect(page.locator("#voice-history-modal")).toBeVisible();
     await expect(page.locator(".voice-history-entry").first()).toContainText("Newest from websocket");
@@ -150,6 +152,7 @@ test.describe("Voice history modal", () => {
   test("clicking an entry triggers speak request", async ({ page }) => {
     await page.goto(pageUrl());
     await page.click('[data-tab="voice"]');
+    await page.click("#voice-summary-label");
     await page.click("#voice-summary");
 
     const [req] = await Promise.all([

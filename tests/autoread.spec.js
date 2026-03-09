@@ -54,6 +54,9 @@ test.describe("Auto-read", () => {
     await page.goto(pageUrl("test-token"));
     await page.waitForFunction(() => !!window.__testWs);
 
+    // Navigate to voice tab where auto-read toggle lives
+    await page.click('[data-tab="voice"]');
+
     const cb = page.locator("#voice-autoread-cb");
     await expect(cb).not.toBeChecked();
 

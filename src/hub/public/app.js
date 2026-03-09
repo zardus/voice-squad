@@ -1137,7 +1137,7 @@ function showSttError(message) {
   clearSttTimers();
   transcriptionEl.textContent = message;
   transcriptionEl.className = "error";
-  voiceTranscriptionEl.textContent = "Error";
+  voiceTranscriptionEl.textContent = message;
   voiceTranscriptionEl.className = "voice-transcription error";
   playDing(false);
 }
