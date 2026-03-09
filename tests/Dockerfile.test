@@ -37,7 +37,8 @@ COPY src/captain/restart-captain.sh /opt/squad/restart-captain.sh
 COPY src/pane-monitor/pane-monitor.sh /opt/squad/pane-monitor.sh
 COPY src/captain/switch-account.sh /opt/tests/src/captain/switch-account.sh
 COPY src/captain/speak /opt/squad/captain/speak
-RUN chmod +x /opt/squad/restart-captain.sh /opt/squad/pane-monitor.sh /opt/squad/captain/speak
+COPY src/captain/bin/create-worker /opt/squad/captain/create-worker
+RUN chmod +x /opt/squad/restart-captain.sh /opt/squad/pane-monitor.sh /opt/squad/captain/speak /opt/squad/captain/create-worker
 
 # ── Switch to ubuntu for npm/playwright install ─────────────
 # Avoids a slow chown -R over hundreds of MB of Chromium binaries.

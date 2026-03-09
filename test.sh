@@ -35,26 +35,30 @@ else
     done
 fi
 
+# Max parallel test stacks. Each stack creates a Docker network; too many in
+# parallel exhausts Docker's default address pools ("all predefined address
+# pools have been fully subnetted"). 8 is safe for typical CI runners.
+MAX_PARALLEL="${MAX_PARALLEL:-8}"
+
 echo ""
-echo "=== Running ${#TEST_FILES[@]} test files in parallel ==="
+echo "=== Running ${#TEST_FILES[@]} test files (max $MAX_PARALLEL parallel) ==="
 echo ""
 
-# ── Launch each test file in its own isolated stack ──────────
-PIDS=()
-PROJECTS=()
+# ── Launch test files in batches ─────────────────────────────
+ALL_PROJECTS=()
 RESULTS_DIR=$(mktemp -d)
 # Unique run ID to prevent project name collisions between simultaneous test.sh runs
 RUN_ID="$$"
 
 cleanup() {
     # Kill any still-running test subshells
-    for pid in "${PIDS[@]+"${PIDS[@]}"}"; do
+    for pid in "${BATCH_PIDS[@]+"${BATCH_PIDS[@]}"}"; do
         kill "$pid" 2>/dev/null || true
     done
-    wait "${PIDS[@]+"${PIDS[@]}"}" 2>/dev/null || true
+    wait "${BATCH_PIDS[@]+"${BATCH_PIDS[@]}"}" 2>/dev/null || true
 
     # Tear down all test stacks in parallel
-    for proj in "${PROJECTS[@]+"${PROJECTS[@]}"}"; do
+    for proj in "${ALL_PROJECTS[@]+"${ALL_PROJECTS[@]}"}"; do
         docker compose -p "$proj" $COMPOSE_FILES down -v --remove-orphans 2>/dev/null &
     done
     wait
@@ -62,10 +66,30 @@ cleanup() {
 }
 trap cleanup EXIT
 
+BATCH_PIDS=()
+BATCH_PROJECTS=()
+
+flush_batch() {
+    # Wait for current batch to finish
+    for pid in "${BATCH_PIDS[@]+"${BATCH_PIDS[@]}"}"; do
+        wait "$pid" 2>/dev/null || true
+    done
+
+    # Tear down batch stacks to free Docker networks
+    for proj in "${BATCH_PROJECTS[@]+"${BATCH_PROJECTS[@]}"}"; do
+        docker compose -p "$proj" $COMPOSE_FILES down -v --remove-orphans 2>/dev/null &
+    done
+    wait
+
+    BATCH_PIDS=()
+    BATCH_PROJECTS=()
+}
+
 for spec in "${TEST_FILES[@]}"; do
     name="${spec%.spec.js}"
     project="squad-test-${RUN_ID}-${name}"
-    PROJECTS+=("$project")
+    ALL_PROJECTS+=("$project")
+    BATCH_PROJECTS+=("$project")
     log="$RESULTS_DIR/${name}.log"
 
     (
@@ -73,20 +97,29 @@ for spec in "${TEST_FILES[@]}"; do
             tests/"$spec" > "$log" 2>&1
         echo $? > "$RESULTS_DIR/${name}.exit"
     ) &
-    PIDS+=($!)
+    BATCH_PIDS+=($!)
     echo "  started: $spec (pid $!, project $project)"
+
+    # When batch is full, wait for it to finish and clean up networks
+    if [ "${#BATCH_PIDS[@]}" -ge "$MAX_PARALLEL" ]; then
+        echo "  --- waiting for batch of ${#BATCH_PIDS[@]} to finish ---"
+        flush_batch
+    fi
 done
 
-# ── Wait for all and collect results ─────────────────────────
+# Wait for final (partial) batch
+if [ "${#BATCH_PIDS[@]}" -gt 0 ]; then
+    echo "  --- waiting for final batch of ${#BATCH_PIDS[@]} ---"
+    flush_batch
+fi
+
+# ── Collect results ──────────────────────────────────────────
 echo ""
 FAILED=0
-for i in "${!TEST_FILES[@]}"; do
-    spec="${TEST_FILES[$i]}"
+for spec in "${TEST_FILES[@]}"; do
     name="${spec%.spec.js}"
-    pid="${PIDS[$i]}"
     log="$RESULTS_DIR/${name}.log"
 
-    wait "$pid" 2>/dev/null || true
     exit_code=$(cat "$RESULTS_DIR/${name}.exit" 2>/dev/null || echo 1)
 
     if [ "$exit_code" -eq 0 ]; then
