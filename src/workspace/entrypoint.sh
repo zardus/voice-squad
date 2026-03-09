@@ -27,6 +27,14 @@ fi
 export OPENAI_API_KEY="${OPENAI_API_KEY:-${_OPENAI_API_KEY:-}}"
 export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-${_ANTHROPIC_API_KEY:-}}"
 
+# Pre-configure Claude Code onboarding (skip first-run dialogs)
+if [ -f /home/ubuntu/.claude.json ]; then
+    jq '. + {hasCompletedOnboarding: true}' /home/ubuntu/.claude.json > /tmp/.claude.json.tmp \
+        && mv /tmp/.claude.json.tmp /home/ubuntu/.claude.json 2>/dev/null || true
+else
+    echo '{"hasCompletedOnboarding": true}' > /home/ubuntu/.claude.json 2>/dev/null || true
+fi
+
 # Create the agents tmux session at a fixed socket path (workers run as windows here)
 # The initial window is named PLACEHOLDER and is hidden from the UI;
 # actual workers are added as new windows by create-worker.

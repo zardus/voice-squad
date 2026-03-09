@@ -59,4 +59,57 @@ tmux -S "$SOCKET" send-keys -t "agents:${TASK_NAME}" "$FULL_CMD"
 sleep 1
 tmux -S "$SOCKET" send-keys -t "agents:${TASK_NAME}" Enter
 
+# ---------------------------------------------------------------------------
+# Auto-accept trust/setup dialogs (Claude only)
+# ---------------------------------------------------------------------------
+if [ "$TOOL" = "claude" ]; then
+    echo "Waiting for Claude worker to start (handling dialogs)..."
+    TMUX_TARGET="agents:${TASK_NAME}"
+    for i in $(seq 1 15); do
+        sleep 2
+
+        PANE_TEXT=$(tmux -S "$SOCKET" capture-pane -t "$TMUX_TARGET" -p -S -30 2>/dev/null \
+            | sed 's/\x1b\[[0-9;]*[a-zA-Z]//g' || true)
+        HANDLED=""
+
+        # Setup dialogs (text style, getting started)
+        if echo "$PANE_TEXT" | grep -q "Choose the text style\|Let's get started"; then
+            echo "[create-worker] Handling setup dialog..."
+            tmux -S "$SOCKET" send-keys -t "$TMUX_TARGET" Enter
+            HANDLED=1
+
+        # Trust dialog: "Yes, I accept" + "Enter to confirm"
+        elif echo "$PANE_TEXT" | grep -q "Yes, I accept"; then
+            if echo "$PANE_TEXT" | grep -q "Enter to confirm"; then
+                echo "[create-worker] Accepting trust dialog..."
+                tmux -S "$SOCKET" send-keys -t "$TMUX_TARGET" 2
+                sleep 0.5
+                tmux -S "$SOCKET" send-keys -t "$TMUX_TARGET" Enter
+                HANDLED=1
+            else
+                # Claude may have exited at trust prompt — dismiss and restart
+                echo "[create-worker] Claude exited at trust prompt, restarting..."
+                tmux -S "$SOCKET" send-keys -t "$TMUX_TARGET" Enter
+                sleep 1
+                tmux -S "$SOCKET" send-keys -t "$TMUX_TARGET" "$FULL_CMD"
+                sleep 0.5
+                tmux -S "$SOCKET" send-keys -t "$TMUX_TARGET" Enter
+                HANDLED=1
+            fi
+
+        # Other "Enter to confirm" dialogs
+        elif echo "$PANE_TEXT" | grep -q "Enter to confirm"; then
+            echo "[create-worker] Accepting dialog..."
+            tmux -S "$SOCKET" send-keys -t "$TMUX_TARGET" Enter
+            HANDLED=1
+        fi
+
+        # If no dialog detected after initial startup period, worker is past dialogs
+        if [ -z "$HANDLED" ] && [ "$i" -ge 5 ]; then
+            echo "[create-worker] No dialog detected, worker running."
+            break
+        fi
+    done
+fi
+
 echo "Worker '${TASK_NAME}' created ($TOOL) in project '${PROJECT_NAME}'."
