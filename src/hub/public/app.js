@@ -980,7 +980,7 @@ function connect() {
         clearSttTimers();
         transcriptionEl.textContent = msg.text;
         transcriptionEl.className = "";
-        voiceTranscriptionEl.textContent = "Sent";
+        voiceTranscriptionEl.textContent = msg.text;
         voiceTranscriptionEl.className = "voice-transcription";
         addMessageToHistory(msg.text);
         break;
@@ -1001,7 +1001,7 @@ function connect() {
         clearSttTimers();
         transcriptionEl.textContent = msg.message;
         transcriptionEl.className = "error";
-        voiceTranscriptionEl.textContent = "Error";
+        voiceTranscriptionEl.textContent = msg.message;
         voiceTranscriptionEl.className = "voice-transcription error";
         playDing(false);
         break;

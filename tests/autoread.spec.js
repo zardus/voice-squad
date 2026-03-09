@@ -56,6 +56,8 @@ test.describe("Auto-read", () => {
 
     // Navigate to voice tab where auto-read toggle lives
     await page.click('[data-tab="voice"]');
+    // Reset play count — the tab click triggers unlockAudio() which calls ttsAudio.play()
+    await page.evaluate(() => { window.__playCount = 0; });
 
     const cb = page.locator("#voice-autoread-cb");
     await expect(cb).not.toBeChecked();
