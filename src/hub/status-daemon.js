@@ -5,7 +5,7 @@ const path = require("path");
 const POLL_INTERVAL_MS = 1000;
 
 const OVERSEER_TMUX_SOCKET = process.env.OVERSEER_TMUX_SOCKET || "";
-const PROJECTS_SOCKETS_DIR = process.env.PROJECTS_SOCKETS_DIR || "/run/squad-sockets/projects";
+const PROJECTS_SOCKETS_DIR = process.env.PROJECTS_SOCKETS_DIR || "/run/squad/tmux/projects";
 
 function tmuxExecAsync(args, socket) {
   const fullArgs = socket ? ["-S", socket, ...args] : args;

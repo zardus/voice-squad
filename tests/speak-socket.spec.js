@@ -12,7 +12,7 @@ const { BASE_URL, TOKEN } = require("./helpers/config");
 const { execSync } = require("child_process");
 const fs = require("fs");
 
-const SPEAK_SOCKET_PATH = process.env.SPEAK_SOCKET_PATH || "/run/squad-sockets/speak.sock";
+const SPEAK_SOCKET_PATH = process.env.SPEAK_SOCKET_PATH || "/run/squad/speak.sock";
 
 test.describe("Speak socket reliability", () => {
   test.beforeAll(() => {

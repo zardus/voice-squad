@@ -1,17 +1,33 @@
 #!/bin/bash
 set -e
 
-OVERSEER_TMUX_SOCKET="${OVERSEER_TMUX_SOCKET:-/run/squad-sockets/overseer-tmux/default}"
-PROJECTS_SOCKETS_DIR="${PROJECTS_SOCKETS_DIR:-/run/squad-sockets/projects}"
-SPEAK_SOCKET_PATH="${SPEAK_SOCKET_PATH:-/run/squad-sockets/speak.sock}"
+OVERSEER_TMUX_SOCKET="${OVERSEER_TMUX_SOCKET:-/run/squad/tmux/overseer/default}"
+PROJECTS_SOCKETS_DIR="${PROJECTS_SOCKETS_DIR:-/run/squad/tmux/projects}"
+SPEAK_SOCKET_PATH="${SPEAK_SOCKET_PATH:-/run/squad/speak.sock}"
 OVERSEER_TMUX_DIR="$(dirname "$OVERSEER_TMUX_SOCKET")"
 SPEAK_SOCKET_DIR="$(dirname "$SPEAK_SOCKET_PATH")"
 export OVERSEER_TMUX_SOCKET PROJECTS_SOCKETS_DIR SPEAK_SOCKET_PATH
 
-# Ensure tmux socket directories are accessible
-sudo mkdir -p "$OVERSEER_TMUX_DIR" "$PROJECTS_SOCKETS_DIR" "$SPEAK_SOCKET_DIR"
-sudo chown ubuntu:ubuntu "$OVERSEER_TMUX_DIR" "$PROJECTS_SOCKETS_DIR" "$SPEAK_SOCKET_DIR"
+# Ensure shared volume directories are accessible
+sudo mkdir -p "$OVERSEER_TMUX_DIR" "$PROJECTS_SOCKETS_DIR" "$SPEAK_SOCKET_DIR" /run/squad/auth
+sudo chown -R ubuntu:ubuntu /run/squad
 sudo chmod 755 "$OVERSEER_TMUX_DIR" "$PROJECTS_SOCKETS_DIR" "$SPEAK_SOCKET_DIR"
+
+# Symlink auth from shared volume
+ln -sfn /run/squad/auth/claude.json /home/ubuntu/.claude.json
+ln -sfn /run/squad/auth/claude /home/ubuntu/.claude
+ln -sfn /run/squad/auth/codex /home/ubuntu/.codex
+
+# Start ssh-agent and place socket on shared volume for all containers
+SSH_AUTH_SOCK=/run/squad/ssh-agent.sock
+export SSH_AUTH_SOCK
+rm -f "$SSH_AUTH_SOCK"
+eval "$(ssh-agent -a "$SSH_AUTH_SOCK")"
+echo "[hub-entrypoint] ssh-agent started (socket: $SSH_AUTH_SOCK, pid: $SSH_AGENT_PID)"
+# Load any SSH keys from the home volume
+for key in /home/ubuntu/.ssh/id_* ; do
+    [ -f "$key" ] && [ "${key%.pub}" = "$key" ] && ssh-add "$key" 2>/dev/null || true
+done
 
 # Ensure Docker socket is accessible (host socket may be owned by root)
 if [ -S /var/run/docker.sock ]; then

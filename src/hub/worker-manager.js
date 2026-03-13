@@ -4,7 +4,7 @@ const fsp = require("fs/promises");
 const path = require("path");
 
 const PROJECTS_SOCKETS_DIR =
-  process.env.PROJECTS_SOCKETS_DIR || "/run/squad-sockets/projects";
+  process.env.PROJECTS_SOCKETS_DIR || "/run/squad/tmux/projects";
 const HOME_DIR = process.env.HOME || "/home/ubuntu";
 const TASKS_DIR = path.join(HOME_DIR, "tasks");
 const TASKS_PENDING_DIR = path.join(TASKS_DIR, "pending");

@@ -5,7 +5,7 @@
 
 set -euo pipefail
 
-PROJECTS_DIR="/run/squad-sockets/projects"
+PROJECTS_DIR="/run/squad/tmux/projects"
 output=""
 
 if [ -d "$PROJECTS_DIR" ]; then

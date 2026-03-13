@@ -9,7 +9,7 @@ set -euo pipefail
 PROJECT_NAME="${1:?Usage: archive-worker PROJECT_NAME WORKER_NAME}"
 WORKER_NAME="${2:?Usage: archive-worker PROJECT_NAME WORKER_NAME}"
 
-SOCKET="/run/squad-sockets/projects/${PROJECT_NAME}/default"
+SOCKET="/run/squad/tmux/projects/${PROJECT_NAME}/default"
 ARCHIVE_DIR="$HOME/tasks/archived"
 PENDING_DIR="$HOME/tasks/pending"
 

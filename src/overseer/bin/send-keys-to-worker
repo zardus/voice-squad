@@ -14,7 +14,7 @@ if [ $# -eq 0 ]; then
     exit 1
 fi
 
-SOCKET="/run/squad-sockets/projects/${PROJECT_NAME}/default"
+SOCKET="/run/squad/tmux/projects/${PROJECT_NAME}/default"
 
 if ! tmux -S "$SOCKET" has-session -t agents 2>/dev/null; then
     echo "ERROR: No agents session found for project '${PROJECT_NAME}'" >&2

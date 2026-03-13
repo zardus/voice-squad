@@ -7,7 +7,7 @@ const ENTER_RETRY_DELAY_MS = 400;
 const TERMINAL_TRIM_BOTTOM_LINES = Number(process.env.TMUX_TERMINAL_TRIM_BOTTOM_LINES || 5);
 
 const OVERSEER_TMUX_SOCKET = process.env.OVERSEER_TMUX_SOCKET || "";
-const PROJECTS_SOCKETS_DIR = process.env.PROJECTS_SOCKETS_DIR || "/run/squad-sockets/projects";
+const PROJECTS_SOCKETS_DIR = process.env.PROJECTS_SOCKETS_DIR || "/run/squad/tmux/projects";
 
 function overseerTmuxArgs(args) {
   if (OVERSEER_TMUX_SOCKET) return ["-S", OVERSEER_TMUX_SOCKET, ...args];

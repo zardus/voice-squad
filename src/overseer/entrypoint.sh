@@ -20,18 +20,33 @@ if [ "$OVERSEER" != "claude" ] && [ "$OVERSEER" != "codex" ]; then
     exit 1
 fi
 
-OVERSEER_TMUX_SOCKET="${OVERSEER_TMUX_SOCKET:-/run/squad-sockets/overseer-tmux/default}"
+OVERSEER_TMUX_SOCKET="${OVERSEER_TMUX_SOCKET:-/run/squad/tmux/overseer/default}"
 OVERSEER_TMUX_DIR="$(dirname "$OVERSEER_TMUX_SOCKET")"
 export OVERSEER_TMUX_SOCKET
 
-# Ensure tmux socket directories are accessible
-sudo mkdir -p "$OVERSEER_TMUX_DIR" /run/squad-sockets/projects
-sudo chown ubuntu:ubuntu "$OVERSEER_TMUX_DIR" /run/squad-sockets/projects
-sudo chmod 755 "$OVERSEER_TMUX_DIR" /run/squad-sockets/projects
+# Ensure shared volume directories are accessible
+sudo mkdir -p "$OVERSEER_TMUX_DIR" /run/squad/tmux/projects /run/squad/auth/claude /run/squad/auth/codex
+sudo chown -R ubuntu:ubuntu /run/squad
+sudo chmod 755 "$OVERSEER_TMUX_DIR" /run/squad/tmux/projects
 
 # Ensure home directory is writable (volume mounts may be owned by root)
 sudo chown ubuntu:ubuntu /home/ubuntu
-sudo chown -R ubuntu:ubuntu /home/ubuntu/.codex /home/ubuntu/.claude 2>/dev/null || true
+
+# Populate shared auth directory from persistent home volume (first container to start)
+if [ -f /home/ubuntu/.claude.json ]; then
+    cp -u /home/ubuntu/.claude.json /run/squad/auth/claude.json 2>/dev/null || true
+fi
+if [ -d /home/ubuntu/.claude ]; then
+    cp -ru /home/ubuntu/.claude/. /run/squad/auth/claude/ 2>/dev/null || true
+fi
+if [ -d /home/ubuntu/.codex ]; then
+    cp -ru /home/ubuntu/.codex/. /run/squad/auth/codex/ 2>/dev/null || true
+fi
+
+# Symlink auth from shared volume so all containers share credentials
+ln -sfn /run/squad/auth/claude.json /home/ubuntu/.claude.json
+ln -sfn /run/squad/auth/claude /home/ubuntu/.claude
+ln -sfn /run/squad/auth/codex /home/ubuntu/.codex
 
 # Source user environment if present (set -a auto-exports all vars)
 if [ -f /home/ubuntu/env ]; then
@@ -45,7 +60,7 @@ export OPENAI_API_KEY="${OPENAI_API_KEY:-${_OPENAI_API_KEY:-}}"
 export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-${_ANTHROPIC_API_KEY:-}}"
 
 # Pre-configure Claude Code onboarding (skip first-run dialogs)
-mkdir -p /home/ubuntu/.claude
+mkdir -p /run/squad/auth/claude
 if [ -f /home/ubuntu/.claude.json ]; then
     # Merge hasCompletedOnboarding into existing auth data
     jq '. + {hasCompletedOnboarding: true}' /home/ubuntu/.claude.json > /tmp/.claude.json.tmp \

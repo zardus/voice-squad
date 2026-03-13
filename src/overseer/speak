@@ -10,7 +10,7 @@ if [ -z "$1" ]; then
   exit 1
 fi
 
-SPEAK_SOCKET="${SPEAK_SOCKET_PATH:-/run/squad-sockets/speak.sock}"
+SPEAK_SOCKET="${SPEAK_SOCKET_PATH:-/run/squad/speak.sock}"
 SPEAK_TIMEOUT="${SPEAK_TIMEOUT:-10}"
 
 # Wait for the socket to appear (handles startup race and voice-server restarts).

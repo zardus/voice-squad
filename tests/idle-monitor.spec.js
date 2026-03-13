@@ -13,8 +13,8 @@ const path = require("path");
 const { TOKEN } = require("./helpers/config");
 
 const MONITOR_LOG = "/tmp/pane-monitor.log";
-const OVERSEER_SOCKET = "/run/squad-sockets/overseer-tmux/default";
-const PROJECTS_DIR = "/run/squad-sockets/projects";
+const OVERSEER_SOCKET = "/run/squad/tmux/overseer/default";
+const PROJECTS_DIR = "/run/squad/tmux/projects";
 const TEST_PROJECT = "idle-test-project";
 const TEST_PROJECT_SOCKET_DIR = path.join(PROJECTS_DIR, TEST_PROJECT);
 const TEST_PROJECT_SOCKET = path.join(TEST_PROJECT_SOCKET_DIR, "default");

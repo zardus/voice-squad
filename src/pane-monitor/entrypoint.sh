@@ -1,8 +1,8 @@
 #!/bin/bash
 set -e
 
-OVERSEER_TMUX_SOCKET="${OVERSEER_TMUX_SOCKET:-/run/squad-sockets/overseer-tmux/default}"
-PROJECTS_SOCKETS_DIR="${PROJECTS_SOCKETS_DIR:-/run/squad-sockets/projects}"
+OVERSEER_TMUX_SOCKET="${OVERSEER_TMUX_SOCKET:-/run/squad/tmux/overseer/default}"
+PROJECTS_SOCKETS_DIR="${PROJECTS_SOCKETS_DIR:-/run/squad/tmux/projects}"
 OVERSEER_TMUX_DIR="$(dirname "$OVERSEER_TMUX_SOCKET")"
 export OVERSEER_TMUX_SOCKET PROJECTS_SOCKETS_DIR
 

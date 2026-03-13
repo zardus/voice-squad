@@ -12,16 +12,16 @@
 #
 # Environment:
 #   OVERSEER_TMUX_SOCKET       — socket path for overseer tmux server
-#   PROJECTS_SOCKETS_DIR       — directory containing per-project socket dirs (default: /run/squad-sockets/projects)
+#   PROJECTS_SOCKETS_DIR       — directory containing per-project socket dirs (default: /run/squad/tmux/projects)
 #   HEARTBEAT_INTERVAL_SECONDS — overseer heartbeat threshold in seconds (default: 900 = 15 minutes)
-#   SPEAK_SOCKET_PATH          — unix socket for speak/TTS (default: /run/squad-sockets/speak.sock)
+#   SPEAK_SOCKET_PATH          — unix socket for speak/TTS (default: /run/squad/speak.sock)
 
 WORKER_OVERSEER_THRESHOLD=30   # 30 seconds — notify overseer
 WORKER_HUMAN_THRESHOLD=60      # 60 seconds — notify human via speak
 HEARTBEAT_THRESHOLD="${HEARTBEAT_INTERVAL_SECONDS:-900}"
-PROJECTS_SOCKETS_DIR="${PROJECTS_SOCKETS_DIR:-/run/squad-sockets/projects}"
-OVERSEER_TMUX_SOCKET="${OVERSEER_TMUX_SOCKET:-/run/squad-sockets/overseer-tmux/default}"
-SPEAK_SOCKET_PATH="${SPEAK_SOCKET_PATH:-/run/squad-sockets/speak.sock}"
+PROJECTS_SOCKETS_DIR="${PROJECTS_SOCKETS_DIR:-/run/squad/tmux/projects}"
+OVERSEER_TMUX_SOCKET="${OVERSEER_TMUX_SOCKET:-/run/squad/tmux/overseer/default}"
+SPEAK_SOCKET_PATH="${SPEAK_SOCKET_PATH:-/run/squad/speak.sock}"
 LOGFILE="/tmp/pane-monitor.log"
 
 set -o pipefail

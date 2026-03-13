@@ -25,9 +25,9 @@ RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
 RUN usermod -aG sudo ubuntu \
     && echo "ubuntu ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
-# Shared sockets directory for cross-container sharing
-RUN mkdir -p /run/squad-sockets/overseer-tmux /run/squad-sockets/projects \
-    && chown -R ubuntu:ubuntu /run/squad-sockets
+# Shared volume directory for cross-container sharing
+RUN mkdir -p /run/squad/tmux/overseer /run/squad/tmux/projects \
+    && chown -R ubuntu:ubuntu /run/squad
 
 # ── Scripts under test ──────────────────────────────────────
 # show-qr.js + its qrcode-terminal dependency
