@@ -32,19 +32,24 @@ Optional: `GH_TOKEN`, `HOST_HOME_PATH`, `SQUAD_OVERSEER`, `VOICE_TOKEN`
 The compose stack has **5 services** (workspace is build-only, replicas: 0):
 
 - `workspace` — build-only image (replicas: 0, never runs) with dev tools (tmux, Claude Code, Codex, nix, python, node). Hub starts project containers from this image.
-- `overseer` — runs Codex/Claude overseer in its own tmux server (`/run/squad-sockets/overseer-tmux/default`). No Docker access; monitors workers via tmux sockets only.
+- `overseer` — runs Codex/Claude overseer in its own tmux server (`/run/squad/tmux/overseer/default`). No Docker access; monitors workers via tmux sockets only.
 - `hub` — Express/WebSocket server, STT/TTS, status + task APIs, overseer control endpoints, project container management (Docker socket). Has the Projects tab UI for humans to create/stop projects and spawn workers.
 - `tunnel` — cloudflared quick tunnel and QR output
 - `pane-monitor` — idle worker alerts + overseer heartbeat nudges
 
 Per-project containers (created at runtime by humans via the web UI):
 
-- `squad-project-{NAME}` — each project gets its own container with socket at `/run/squad-sockets/projects/{NAME}/default`
+- `squad-project-{NAME}` — each project gets its own container with socket at `/run/squad/tmux/projects/{NAME}/default`
 
 Shared volumes:
 
 - `./home -> /home/ubuntu` (persistent state, gitignored)
-- `sockets` Docker volume mounted at `/run/squad-sockets` (tmux sockets + speak socket across containers)
+- `shared` Docker volume mounted at `/run/squad` — layout:
+  - `tmux/overseer/default` — overseer tmux socket
+  - `tmux/projects/{NAME}/default` — per-project tmux sockets
+  - `auth/claude.json`, `auth/claude/`, `auth/codex/` — shared credentials (symlinked to `~/.claude.json`, `~/.claude/`, `~/.codex/` in all containers)
+  - `speak.sock` — TTS speak socket
+  - `ssh-agent.sock` — shared SSH agent (started by hub container)
 
 By default, compose does **not** publish port `3000` to the host; external access is through the tunnel URL shown in tunnel logs.
 
@@ -80,9 +85,9 @@ Each runtime component is isolated under `src/` with its own Dockerfile/build co
   - Each project gets a `squad-project-{NAME}` container running the workspace image.
   - Workers are tmux windows in the project's `agents` session.
   - Overseer monitors workers via tmux sockets only (no Docker access). Overseer can read project files at `/home/ubuntu/projects/{NAME}/`.
-  - Socket convention: `/run/squad-sockets/projects/{PROJECT_NAME}/default`
+  - Socket convention: `/run/squad/tmux/projects/{PROJECT_NAME}/default`
 - **Overseer tmux server**:
-  - Overseer server socket: `/run/squad-sockets/overseer-tmux/default`
+  - Overseer server socket: `/run/squad/tmux/overseer/default`
   - Hub and pane monitor discover project sockets dynamically via `PROJECTS_SOCKETS_DIR`.
 - **Overseer lifecycle**:
   - Overseer entrypoint creates the `overseer` tmux session and starts tool via `/opt/squad/restart-overseer.sh`.
@@ -90,7 +95,7 @@ Each runtime component is isolated under `src/` with its own Dockerfile/build co
   - Voice UI restart endpoint (`/api/restart-overseer`) updates `config.yml`, then kills entrypoint `sleep` to let compose restart overseer with the new tool.
 - **Voice pipeline**:
   - Browser audio -> WebSocket -> OpenAI Whisper (`stt.js`) -> tmux send-keys to `overseer:0`
-  - Overseer uses `speak` script -> Unix socket (`/run/squad-sockets/speak.sock`) -> OpenAI TTS (`tts.js`) -> audio streamed back to connected clients
+  - Overseer uses `speak` script -> Unix socket (`/run/squad/speak.sock`) -> OpenAI TTS (`tts.js`) -> audio streamed back to connected clients
 - **Status and summaries**:
   - `status-daemon.js` polls overseer tmux + all project sockets every second only while status clients are active.
   - `/api/summary` and pending-task worker status enrichment call Anthropic Haiku (with secret scrubbing).

@@ -4,7 +4,7 @@ const fsp = require("fs/promises");
 const path = require("path");
 
 const PROJECTS_SOCKETS_DIR =
-  process.env.PROJECTS_SOCKETS_DIR || "/run/squad-sockets/projects";
+  process.env.PROJECTS_SOCKETS_DIR || "/run/squad/tmux/projects";
 
 // Auto-detect host path for /home/ubuntu by inspecting our own container's mounts.
 function detectHostHomePath() {
@@ -26,7 +26,7 @@ function detectHostHomePath() {
 const HOST_HOME_PATH = process.env.HOST_HOME_PATH || detectHostHomePath();
 const SQUAD_WORKSPACE_IMAGE = process.env.SQUAD_WORKSPACE_IMAGE || "";
 const SQUAD_DOCKER_NETWORK = process.env.SQUAD_DOCKER_NETWORK || "";
-const SQUAD_SOCKETS_VOLUME = process.env.SQUAD_SOCKETS_VOLUME || "";
+const SQUAD_SHARED_VOLUME = process.env.SQUAD_SHARED_VOLUME || "";
 const HOME_DIR = process.env.HOME || "/home/ubuntu";
 
 function validateProjectName(name) {
@@ -129,8 +129,8 @@ async function createProject(name) {
     throw new Error("SQUAD_WORKSPACE_IMAGE not configured");
   if (!SQUAD_DOCKER_NETWORK)
     throw new Error("SQUAD_DOCKER_NETWORK not configured");
-  if (!SQUAD_SOCKETS_VOLUME)
-    throw new Error("SQUAD_SOCKETS_VOLUME not configured");
+  if (!SQUAD_SHARED_VOLUME)
+    throw new Error("SQUAD_SHARED_VOLUME not configured");
 
   const containerName = `squad-project-${name}`;
   const projectDir = path.join(HOME_DIR, "projects", name);
@@ -177,15 +177,9 @@ async function createProject(name) {
     "-v",
     `${HOST_HOME_PATH}/projects/${name}:/home/ubuntu`,
     "-v",
-    `${HOST_HOME_PATH}/.claude:/home/ubuntu/.claude`,
-    "-v",
-    `${HOST_HOME_PATH}/.claude.json:/home/ubuntu/.claude.json`,
-    "-v",
-    `${HOST_HOME_PATH}/.codex:/home/ubuntu/.codex`,
-    "-v",
     `${HOST_HOME_PATH}/overseer:/home/ubuntu/overseer:ro`,
     "-v",
-    `${SQUAD_SOCKETS_VOLUME}:/run/squad-sockets`,
+    `${SQUAD_SHARED_VOLUME}:/run/squad`,
   ];
 
   // Mount env file if it exists

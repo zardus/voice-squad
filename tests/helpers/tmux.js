@@ -8,7 +8,7 @@ const fs = require("fs");
 const path = require("path");
 
 const OVERSEER_SOCKET = process.env.OVERSEER_TMUX_SOCKET || "";
-const PROJECTS_SOCKETS_DIR = process.env.PROJECTS_SOCKETS_DIR || "/run/squad-sockets/projects";
+const PROJECTS_SOCKETS_DIR = process.env.PROJECTS_SOCKETS_DIR || "/run/squad/tmux/projects";
 
 function overseerTmuxCmd(args) {
   const socketArgs = OVERSEER_SOCKET ? `-S ${OVERSEER_SOCKET} ` : "";

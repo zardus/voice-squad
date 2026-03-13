@@ -8,7 +8,7 @@ PROJECT_NAME="${1:?Usage: capture-worker-output PROJECT_NAME WORKER_NAME [LINE_C
 WORKER_NAME="${2:?Usage: capture-worker-output PROJECT_NAME WORKER_NAME [LINE_COUNT]}"
 LINE_COUNT="${3:-50}"
 
-SOCKET="/run/squad-sockets/projects/${PROJECT_NAME}/default"
+SOCKET="/run/squad/tmux/projects/${PROJECT_NAME}/default"
 
 if ! tmux -S "$SOCKET" has-session -t agents 2>/dev/null; then
     echo "ERROR: No agents session found for project '${PROJECT_NAME}'" >&2

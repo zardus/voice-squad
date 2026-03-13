@@ -3,7 +3,7 @@ set -e
 
 PROJECT_NAME="${PROJECT_NAME:?PROJECT_NAME env var is required}"
 
-SOCKET_DIR="/run/squad-sockets/projects/${PROJECT_NAME}"
+SOCKET_DIR="/run/squad/tmux/projects/${PROJECT_NAME}"
 SOCKET_PATH="${SOCKET_DIR}/default"
 export TMUX_TMPDIR="$SOCKET_DIR"
 
@@ -14,7 +14,14 @@ sudo chmod 755 "$SOCKET_DIR"
 
 # Ensure home directory is writable (volume mounts may be owned by root)
 sudo chown ubuntu:ubuntu /home/ubuntu
-sudo chown -R ubuntu:ubuntu /home/ubuntu/.codex /home/ubuntu/.claude 2>/dev/null || true
+
+# Symlink auth from shared volume so workers share credentials
+ln -sfn /run/squad/auth/claude.json /home/ubuntu/.claude.json
+ln -sfn /run/squad/auth/claude /home/ubuntu/.claude
+ln -sfn /run/squad/auth/codex /home/ubuntu/.codex
+
+# Expose shared ssh-agent to workers
+export SSH_AUTH_SOCK=/run/squad/ssh-agent.sock
 
 # Source user environment if present (set -a auto-exports all vars)
 if [ -f /home/ubuntu/env ]; then

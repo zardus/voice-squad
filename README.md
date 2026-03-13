@@ -149,7 +149,7 @@ You're attached to the captain's tmux session. Interact with the captain CLI dir
 | Host Path | Container Path | Purpose |
 |---|---|---|
 | `./home/` | `/home/ubuntu/` | Persistent project storage (gitignored) |
-| `sockets` (Docker volume) | `/run/squad-sockets` | Shared tmux + speak sockets across containers |
+| `shared` (Docker volume) | `/run/squad` | Shared volume: tmux sockets, speak socket, auth credentials, ssh-agent |
 
 ### Container Environment File
 

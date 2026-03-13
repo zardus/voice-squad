@@ -78,9 +78,9 @@ RUN npm install -g @anthropic-ai/claude-code @openai/codex@0.98.0
 # Set up ubuntu user (already exists in 24.04 base image)
 RUN echo "ubuntu ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
-# Shared sockets directory for cross-container sharing
-RUN mkdir -p /run/squad-sockets/overseer-tmux /run/squad-sockets/projects \
-    && chown -R ubuntu:ubuntu /run/squad-sockets
+# Shared volume directory for cross-container sharing (tmux sockets, auth, ssh-agent)
+RUN mkdir -p /run/squad/tmux/overseer /run/squad/tmux/projects /run/squad/auth/claude /run/squad/auth/codex \
+    && chown -R ubuntu:ubuntu /run/squad
 
 COPY entrypoint.sh /opt/squad/entrypoint-overseer.sh
 COPY restart-overseer.sh /opt/squad/restart-overseer.sh
