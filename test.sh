@@ -25,6 +25,11 @@ COMPOSE_FILES="-f docker-compose.yml -f docker-compose.test.yml"
 echo "=== Building images ==="
 docker compose $COMPOSE_FILES build
 
+# Export the workspace image name so per-test stacks (which use different -p
+# project names) can still find it. The workspace service has replicas:0 so
+# it's only built here under the default project name.
+export SQUAD_WORKSPACE_IMAGE="$(basename "$(pwd)")-workspace"
+
 # ── Discover test files ──────────────────────────────────────
 if [ $# -gt 0 ]; then
     TEST_FILES=("$@")
