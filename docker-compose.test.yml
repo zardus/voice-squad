@@ -22,8 +22,8 @@ services:
     environment:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-test-openai-key}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-test-anthropic-key}
-      HOST_HOME_PATH: /test-home-not-available
-      SQUAD_WORKSPACE_IMAGE: ${COMPOSE_PROJECT_NAME:-squad}-workspace
+      HOST_HOME_PATH: ""  # empty → auto-detect from container mounts (enables DinD project tests)
+      SQUAD_WORKSPACE_IMAGE: ${SQUAD_WORKSPACE_IMAGE:-squad-workspace}
       SQUAD_DOCKER_NETWORK: ${COMPOSE_PROJECT_NAME:-squad}_default
       SQUAD_SHARED_VOLUME: ${COMPOSE_PROJECT_NAME:-squad}_shared
 
